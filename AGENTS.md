@@ -6,6 +6,12 @@ shipping a favorable prompt experiment.
 
 ## Working agreements
 
+- Any claim or recommendation that a prompt, skill, tool, or other mechanism
+  should change model behavior begins as a dated file under `seeds/`. Capture
+  the intervention, predicted observable outcome, boundary/counterexample, and
+  originating context. It is a hypothesis seed, not evidence, a preregistration,
+  or authorization to change Assist. Keep rejected product ideas too: repeated
+  seeds reveal patterns worth testing.
 - A study begins with a committed registration under `experiments/<study>/`.
   It names the hypothesis, conditions, task split, model/configuration, sample
   plan, exclusions, randomization seed, primary outcome, and analysis script.

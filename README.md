@@ -18,6 +18,8 @@ The initial research plan is [docs/0001-agentic-guidance-experiments.md](docs/00
 The operating and review contract is [AGENTS.md](AGENTS.md); the full document
 map is [docs/README.md](docs/README.md). The initial setup and review record is
 [docs/0000-initial-documentation-report.md](docs/0000-initial-documentation-report.md).
+Product guidance claims first enter [seeds/](seeds/) as hypotheses, then earn a
+registered study if they are worth testing.
 
 ## Non-negotiable rules
 

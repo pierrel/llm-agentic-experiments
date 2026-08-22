@@ -19,6 +19,7 @@ translates recurring technical terms.
 | [Glossary](glossary.md) | Short plain-language definitions. |
 | [Study registry](study-registry.md) | Index of study versions and their status. |
 | [0004 Initial design review](0004-initial-design-review.md) | Findings and resolutions from the first review panel. |
+| [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
 `AGENTS.md` is the operating contract for scientific integrity, review, and GPU
 coordination. This directory records designs and reports; executable condition
