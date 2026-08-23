@@ -115,10 +115,9 @@ def _run_scripted_study(
     _assert_completed_prefix(bundle, completed, gate.index)
     if gate.current is None:
         return _finalize_or_verify(bundle_path, outcomes, admissions, trace_dir)
-    admission_attempts = {
-        trial_sha256: sum(record["trial_sha256"] == trial_sha256 for record in admissions.read_verified())
-        for trial_sha256 in (trial.sha256 for trial in bundle.schedule)
-    }
+    admission_attempts = {trial.sha256: 0 for trial in bundle.schedule}
+    for record in admissions.read_verified():
+        admission_attempts[str(record["trial_sha256"])] += 1
     while gate.current is not None:
         trial = gate.current
         admitted = False

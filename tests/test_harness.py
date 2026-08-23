@@ -103,6 +103,10 @@ class HarnessTest(unittest.TestCase):
                 configured,
                 settings=configured.settings | {"invalid": float("nan")},
             ).assert_complete()
+        with self.assertRaisesRegex(ValueError, "model identity"):
+            replace(study, model=None).assert_complete()  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "harness architecture identity"):
+            replace(study, harness_architecture=None).assert_complete()  # type: ignore[arg-type]
 
     def test_bundle_rejects_full_cycle_with_unbalanced_positions(self):
         study = bundle()

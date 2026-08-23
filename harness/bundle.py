@@ -156,9 +156,9 @@ class StudyBundle:
                         raise ValueError(f"unbalanced condition positions: {task}:{condition}")
 
 
-def _assert_axis(value: dict[str, str], name: str) -> None:
+def _assert_axis(value: object, name: str) -> None:
     """Require one precise, reusable identity for a between-run axis."""
-    if set(value) != {"id", "revision", "configuration_sha256"}:
+    if not isinstance(value, dict) or set(value) != {"id", "revision", "configuration_sha256"}:
         raise ValueError(f"{name} identity must name id, revision, and configuration digest")
     if not all(isinstance(item, str) and item for item in value.values()):
         raise ValueError(f"{name} identity values must be non-empty text")
