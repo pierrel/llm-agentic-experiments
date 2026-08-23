@@ -36,6 +36,7 @@ def run_current_assist_episode(
     """
     if max_turns < 1:
         raise ValueError("current Assist episode requires a positive turn limit")
+    _validate_initial_files(task.initial_files)
     if model_factory is None:
         from assist.model_manager import select_assistant_model
 
@@ -104,3 +105,15 @@ def _message_text(message: Any) -> str:
     if not isinstance(content, str):
         raise ValueError("current Assist terminal response must be text")
     return content
+
+
+def _validate_initial_files(files: dict[str, str]) -> None:
+    """Keep the virtual fixture inside its temporary root even for a bad descriptor."""
+    if not isinstance(files, dict):
+        raise ValueError("current Assist initial files must be an object")
+    for relative_path, content in files.items():
+        path = Path(relative_path)
+        if not isinstance(relative_path, str) or not isinstance(content, str):
+            raise ValueError("current Assist initial files must map text paths to text")
+        if path.is_absolute() or ".." in path.parts or not relative_path:
+            raise ValueError("current Assist initial file path escapes the virtual root")

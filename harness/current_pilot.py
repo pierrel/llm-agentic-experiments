@@ -146,7 +146,13 @@ def _run_current_assist_pilot(
         "bundle_sha256": bundle.sha256, "trial_sha256": trial.sha256,
         "max_turns": bundle.registration["max_turns"], "task": definition.task.payload(),
     }) + b"\n")
-    completed_process = command_runner(current_worker_command(root, workspace_root, assist_python, descriptor, result))
+    try:
+        completed_process = command_runner(current_worker_command(root, workspace_root, assist_python, descriptor, result))
+    except subprocess.TimeoutExpired:
+        _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "timeout": True})
+        gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
+        outcomes.append(TrialOutcome(trial, "timeout", True, False, "worker exceeded the sealed timeout"))
+        return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     if completed_process.returncode != 0:
         if _is_admission_denial(completed_process):
             gate.record(AdmissionAttempt(trial, False, attempt, "production reserved the GPU"))

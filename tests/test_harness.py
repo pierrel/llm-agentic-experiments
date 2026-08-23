@@ -97,6 +97,21 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(command[:5], ["/workspace/tools/agentic", "resource", "run", "llm", "--"])
             self.assertNotIn("8000", " ".join(command))
 
+    def test_current_pilot_retains_an_admitted_timeout(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=lambda command: (_ for _ in ()).throw(subprocess.TimeoutExpired(command, 720)),
+            )
+            self.assertEqual(progress.status, "complete")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "timeout")
+            self.assertTrue(outcome["model_request_made"])
+
     def test_current_assist_result_serialization_is_stable(self):
         result = CurrentAssistResult(
             final_response="done",
