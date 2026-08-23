@@ -102,13 +102,13 @@ def run_current_assist_pilot(
 
 
 def current_worker_command(
-    root: Path, workspace_root: Path, assist_python: Path, descriptor: Path, result: Path
+    root: Path, workspace_root: Path, assist_python: Path, descriptor: Path, result: Path, request_started: Path
 ) -> list[str]:
     """Build the only model-capable command, nested under the workspace admission gate."""
     return [
         str(workspace_root / "tools" / "agentic"), "resource", "run", "llm", "--",
-        "env", f"PYTHONPATH={root}", str(assist_python), "-m", "harness.current_worker",
-        "--descriptor", str(descriptor), "--result", str(result),
+        "env", f"PYTHONPATH={root.resolve()}", str(assist_python), "-m", "harness.current_worker",
+        "--descriptor", str(descriptor), "--result", str(result), "--request-started", str(request_started),
     ]
 
 
@@ -140,11 +140,12 @@ def _run_current_assist_pilot(
     if trace_dir.exists() and not trace_dir.is_dir():
         raise ValueError("trace path must be a real directory")
     trial = bundle.schedule[0]
+    request_started = output / f".{trial.sha256}.request-started"
     gate = ScheduledAdmission(bundle.schedule, admissions)
     completed = outcomes.read_verified()
     if gate.index == 1 and not completed:
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "interrupted": True})
-        outcomes.append(TrialOutcome(trial, "provider_error", True, False, "coordinator interrupted after worker admission"))
+        outcomes.append(TrialOutcome(trial, "provider_error", _request_started(request_started), False, "coordinator interrupted after worker admission"))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     if gate.current is None:
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
@@ -158,11 +159,11 @@ def _run_current_assist_pilot(
         "max_turns": bundle.registration["max_turns"], "task": definition.task.payload(),
     }) + b"\n")
     try:
-        completed_process = command_runner(current_worker_command(root, workspace_root, assist_python, descriptor, result))
+        completed_process = command_runner(current_worker_command(root, workspace_root, assist_python, descriptor, result, request_started))
     except subprocess.TimeoutExpired:
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "timeout": True})
         gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
-        outcomes.append(TrialOutcome(trial, "timeout", True, False, "worker exceeded the sealed timeout"))
+        outcomes.append(TrialOutcome(trial, "timeout", _request_started(request_started), False, "worker exceeded the sealed timeout"))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     if completed_process.returncode != 0:
         if _is_admission_denial(completed_process):
@@ -170,7 +171,7 @@ def _run_current_assist_pilot(
             return PilotProgress("retry_in_10_minutes" if attempt <= 6 else "blocked_after_60_minutes")
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "worker_error": _command_detail(completed_process)})
         gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
-        outcomes.append(TrialOutcome(trial, "provider_error", True, False, _command_detail(completed_process)))
+        outcomes.append(TrialOutcome(trial, "provider_error", _request_started(request_started), False, _command_detail(completed_process)))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
     try:
@@ -246,6 +247,12 @@ def _read_worker_result(path: Path, bundle_sha256: str, trial_sha256: str) -> di
     if not isinstance(value.get("result"), dict):
         raise ValueError("current Assist worker result is malformed")
     return value
+
+
+def _request_started(path: Path) -> bool:
+    if path.is_symlink():
+        raise ValueError("current Assist request marker cannot be a symlink")
+    return path.read_bytes() == b"model-invoke-started\n" if path.exists() else False
 
 
 def _verify_git_tag(root: Path, tag: str, bundle_path: Path) -> None:

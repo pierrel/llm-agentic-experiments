@@ -11,7 +11,7 @@ from .current_assist import result_payload, run_current_assist_episode
 from .manifests import TaskManifest
 
 
-def run_descriptor(descriptor_path: Path, result_path: Path) -> None:
+def run_descriptor(descriptor_path: Path, result_path: Path, request_started_path: Path) -> None:
     """Execute the one sealed task described by the coordinator."""
     descriptor = json.loads(descriptor_path.read_text())
     if set(descriptor) != {"bundle_sha256", "max_turns", "task", "trial_sha256"}:
@@ -19,7 +19,10 @@ def run_descriptor(descriptor_path: Path, result_path: Path) -> None:
     task = TaskManifest(**descriptor["task"])
     if not isinstance(descriptor["max_turns"], int):
         raise ValueError("current Assist worker requires an integer turn limit")
-    result = run_current_assist_episode(task, max_turns=descriptor["max_turns"])
+    result = run_current_assist_episode(
+        task, max_turns=descriptor["max_turns"],
+        before_model_invoke=lambda: atomic_write(request_started_path, b"model-invoke-started\n"),
+    )
     atomic_write(
         result_path,
         canonical_json({
@@ -35,8 +38,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--descriptor", type=Path, required=True)
     parser.add_argument("--result", type=Path, required=True)
+    parser.add_argument("--request-started", type=Path, required=True)
     args = parser.parse_args()
-    run_descriptor(args.descriptor, args.result)
+    run_descriptor(args.descriptor, args.result, args.request_started)
 
 
 if __name__ == "__main__":

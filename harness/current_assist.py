@@ -26,6 +26,7 @@ def run_current_assist_episode(
     *,
     max_turns: int,
     model_factory: Callable[[float], Any] | None = None,
+    before_model_invoke: Callable[[], None] | None = None,
 ) -> CurrentAssistResult:
     """Run the production-selected model in the current Deep Agents tool loop.
 
@@ -71,6 +72,8 @@ def run_current_assist_episode(
             system_prompt=task.system_prompt,
             permissions=[FilesystemPermission(operations=["read", "write"], paths=["/**"])],
         )
+        if before_model_invoke is not None:
+            before_model_invoke()
         result = agent.invoke(
             {"messages": [{"role": "user", "content": task.user_prompt}]},
             {"recursion_limit": max_turns},

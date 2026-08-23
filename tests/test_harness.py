@@ -118,9 +118,25 @@ class HarnessTest(unittest.TestCase):
             outcome = json.loads((output / "outcomes.jsonl").read_text())
             self.assertEqual(outcome["outcome"], "pass")
             self.assertTrue(outcome["model_request_made"])
-            command = current_worker_command(root, Path("/workspace"), Path("/venv/python"), Path("/d"), Path("/r"))
+            command = current_worker_command(root, Path("/workspace"), Path("/venv/python"), Path("/d"), Path("/r"), Path("/started"))
             self.assertEqual(command[:5], ["/workspace/tools/agentic", "resource", "run", "llm", "--"])
             self.assertNotIn("8000", " ".join(command))
+            self.assertIn(f"PYTHONPATH={root.resolve()}", command)
+
+    def test_current_pilot_marks_pre_worker_failure_without_a_model_request(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=lambda command: subprocess.CompletedProcess(command, 1, "", "worker import failed"),
+            )
+            self.assertEqual(progress.status, "complete")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "provider_error")
+            self.assertFalse(outcome["model_request_made"])
 
     def test_current_pilot_retains_an_admitted_timeout(self):
         from tempfile import TemporaryDirectory
@@ -135,7 +151,7 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(progress.status, "complete")
             outcome = json.loads((output / "outcomes.jsonl").read_text())
             self.assertEqual(outcome["outcome"], "timeout")
-            self.assertTrue(outcome["model_request_made"])
+            self.assertFalse(outcome["model_request_made"])
 
     def test_current_pilot_retains_an_interrupted_admitted_worker_as_a_post_request_failure(self):
         from tempfile import TemporaryDirectory
@@ -143,11 +159,16 @@ class HarnessTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
             output = Path(temporary) / "run"
+
+            def admitted_worker(command):
+                Path(command[command.index("--request-started") + 1]).write_text("model-invoke-started\n")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
             with patch("harness.current_pilot._read_worker_result", side_effect=KeyboardInterrupt):
                 with self.assertRaises(KeyboardInterrupt):
                     run_current_assist_pilot(
                         root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
-                        command_runner=lambda command: subprocess.CompletedProcess(command, 0, "", ""),
+                        command_runner=admitted_worker,
                     )
             progress = run_current_assist_pilot(
                 root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python")
