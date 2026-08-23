@@ -21,6 +21,10 @@ map is [docs/README.md](docs/README.md). The initial setup and review record is
 Product guidance claims first enter [seeds/](seeds/) as hypotheses, then earn a
 registered study if they are worth testing.
 
+The current [MVP roadmap](roadmap.org) covers the sealed, scripted no-model
+harness. It validates the measurement path only; real model trials remain
+deferred until a registered study and its design reviews are complete.
+
 ## Non-negotiable rules
 
 - Every real model run goes through the shared admission wrapper:
@@ -54,6 +58,22 @@ docs/              study designs, decisions, and research log
 
 The first implementation milestone is the harness, not a prompt rewrite.
 
+Each sealed run records three independent axes: test fixture, model, and
+harness architecture. A generic JSON `settings` object records every
+behavior-affecting option, including reasoning controls. This keeps an exact
+test reusable across a new model or an alternative architecture without
+mislabeling the resulting bundles as one cohort.
+
+## Result history and learning handoffs
+
+Archive every completed run in `results/<run-id>/`. A result capsule commits the
+sealed bundle and settings, admission/outcome chains and seals, report, and the
+hash inventory for locally retained raw traces. It also contains `learning.md`
+for the observation, evidence, and limits, plus `assist-roadmap-proposal.md`.
+A genuine learning gets a private `larochelle.io/seeds/` blog seed linked to the
+capsule and a proposed Assist roadmap item. These are evidence-preserving
+handoffs, not authorization to change Assist.
+
 ## Local checks
 
 The integrity kernel intentionally needs no third-party package:
@@ -61,4 +81,13 @@ The integrity kernel intentionally needs no third-party package:
 ```sh
 python -m unittest discover -s tests -v
 python -m compileall -q harness tests
+```
+
+To prove the committed synthetic fixture end to end, use a private local
+artifact directory. It writes bundle, trace, record, seal, and aggregate-report
+artifacts and makes no model, GPU, network, or Assist request. Repeating the
+same command verifies the sealed artifacts rather than rerunning them:
+
+```sh
+python -m harness.demo /tmp/llm-agentic-experiments-mvp
 ```

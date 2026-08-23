@@ -20,6 +20,18 @@ shipping a favorable prompt experiment.
 - Conditions must differ only in declared factors. The runner must capture and
   compare the rendered provider prompt, tool schemas, fixture digest, model
   request, and decoding configuration before it admits a trial.
+- A run separately pins its test fixture digest, model identity, and harness
+  architecture identity. Its one generic JSON `settings` object contains every
+  behavior-affecting setting, including reasoning, decoding, provider, graph,
+  middleware, and future setting types. The model and architecture identities
+  hash their respective settings subtrees. Reusing a test across a new model or
+  architecture requires a new sealed bundle; never merge their records.
+- Archive each completed run under `results/<run-id>/` before interpreting it.
+  Commit its sealed non-secret settings, bundle, result chains/seals, report,
+  raw-trace hashes, evidence/limits in `learning.md`, and an Assist-roadmap
+  proposal. Raw trace bodies remain local by default. A genuine learning also
+  becomes one private `larochelle.io/seeds/` blog seed linked to that capsule;
+  neither handoff authorizes an Assist change without Pierre's decision.
 - Preserve failures, refusals, timeouts, and interrupted model episodes. They
   are outcomes, not cleanup candidates. A GPU admission denial happens before a
   model request, so it is an administrative attempt under the same scheduled
@@ -67,6 +79,12 @@ reviews through at least these lenses:
    missingness, multiplicity, and interpretation.
 3. **Agentic harness fit:** agent loop, tool semantics, prompt assembly,
    fixture isolation, and trace/oracle validity.
+4. **Minimum adequate setup:** start from the registered causal question and
+   justify every model, harness feature, setting, task, replicate, metric, and
+   external dependency as necessary. Remove or hold fixed anything that does
+   not affect the inference. “Minimum” never permits an underpowered sample or
+   omission of a control, measurement, safety containment, or fidelity feature
+   required by the question.
 
 Each review identifies verified findings. Fixes and declined findings live in
 the study's design record before the first trial. Re-review after any material

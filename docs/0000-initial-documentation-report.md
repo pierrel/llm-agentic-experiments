@@ -37,6 +37,12 @@ historical archive.
   primary-versus-secondary outcomes, prompt audits, and limits visible.
 - `docs/0004-initial-design-review.md` records the scientific-integrity,
   statistical, agentic-harness, and plain-English reviews and their resolutions.
+- `docs/0005-current-assist-baseline.md` records the confirmed Deep Agents
+  tool-loop architecture, current Qwen model identity, and reasoning setting
+  that the first real-run profile must pin.
+- `results/mvp-scripted-v1/` is the committed synthetic MVP result capsule. It
+  captures settings, sealed outcome evidence, raw-trace hashes, and explicit
+  limits; it contains no behavioral learning or product proposal.
 - `docs/example-study-walkthrough.md` shows one invented trial from request to
   tool trace to automatic score.
 - `docs/glossary.md` defines the recurring vocabulary briefly.
@@ -51,18 +57,20 @@ model snapshot, agent loop, task bank, and decoding setting. A promising pilot
 is a reason to lock a new confirmation cohort, never evidence to merge a prompt
 into Assist.
 
+Reports separately retain the test-fixture, model, and harness-architecture
+axes. A single generic JSON settings object captures reasoning and other
+behavior-affecting configuration, so the same test can be compared across a
+new model or architecture without combining those bundles as one cohort.
+
 ## Verification and review
 
-The first local harness checks pass with `python -m unittest discover -s tests
--v`: fourteen tests cover study-bundle tampering, seed policy, block scheduling,
-undeclared condition differences, label leakage, record integrity, a finalized
-record seal, missing records, incorrect infrastructure-invalid classification,
-admission retries/restart recovery that would change registered order,
-collision-safe trial accounting, and unbalanced manual schedules. `compileall`
-and `git diff --check` also pass.
+The local harness checks cover study-bundle tampering, scheduling, declared
+condition differences, label leakage, record integrity, finalized seals,
+admission recovery and ordering, collision-safe trial accounting, and malformed
+manual schedules. `compileall` and `git diff --check` also pass.
 The four required design lenses found material issues in the initial design;
 every one was incorporated before this report.
 
 No deferred product defect exists. The intentionally deferred work is the
-real-model runner and analysis/report UI, because those must be built against a
+real-model runner and richer analysis UI, because those must be built against a
 specific registered study and obey the same sealed interfaces.

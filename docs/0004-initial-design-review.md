@@ -12,8 +12,8 @@ and a neither-rule control. The review also required an explicit whole-policy
 definition for Study B, a complete task bank before piloting, real blinding
 limits, sealed preregistration bundles, a study registry, and guard self-tests.
 All are now specified in Design 0001; the starter harness already enforces the
-bundle, schedule, and record-chain parts. Its remaining guard self-tests ship
-with the real-model runner. Conclusions are restricted to the pinned model,
+bundle, schedule, record-chain, and deliberate contamination self-test parts.
+The real-model runner still needs to apply them to provider requests. Conclusions are restricted to the pinned model,
 loop, task bank, and decoding regime.
 
 ## Statistical rigor
@@ -36,6 +36,17 @@ system-context message before the first decision and treats the contrast as a
 whole policy. The first harness code is deliberately a small purpose-built
 loop, not DeepAgents: its job is control, while a future compatibility fixture
 can verify the declared affordance shape against Assist.
+
+## Minimum adequate setup
+
+The review treats the smallest setup that can answer the registered question as
+a design constraint, not an invitation to weaken the experiment. Each proposed
+model, harness feature, setting, task, replicate, metric, and external
+dependency needs a necessity argument. The reviewer removes or holds fixed
+components that do not improve the inference, while retaining the controls,
+sample plan, safety containment, and fidelity requirements that make the
+comparison valid. This prevents an experiment from accumulating a convenient
+but confounded “full Assist” setup before the simple causal contrast works.
 
 ## Preconditions before a real model run
 

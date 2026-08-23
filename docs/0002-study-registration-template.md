@@ -11,11 +11,34 @@ a dated amendment that names the prior registration and the reason for change.
 - Authors/reviewers:
 - Date and model-run start time:
 
+## Comparison axes and settings
+
+- Test fixture/task IDs and exact digests: (the reusable test axis)
+- Model ID, revision/weights digest, and configuration digest:
+- Harness architecture ID, revision, and configuration digest:
+- One generic JSON settings object: (include reasoning controls, decoding,
+  provider payload, graph/middleware configuration, limits, and every other
+  behavior-affecting setting; secrets must be redacted or referenced by a
+  non-secret identifier)
+- Cross-run comparison rule: (name which one axis changes and prove the other
+  two remain identical; do not combine distinct bundles into one cohort)
+
 ## Question and hypothesis
 
 - Natural-language question:
 - Confirmatory hypothesis:
 - Exploratory questions, if any:
+
+## Minimum adequate setup review
+
+- Registered causal question and the smallest setup capable of answering it:
+- Component ledger: for each model, harness feature, setting, task, replicate,
+  metric, and external dependency, state the necessity or why it is held fixed:
+- Rejected additions and why they would add a confound, cost, or researcher
+  discretion without improving the inference:
+- Required controls, sample size/power, safety containment, and fidelity
+  features that cannot be removed:
+- Reviewer and resolution:
 
 ## Experimental units and conditions
 

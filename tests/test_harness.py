@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from harness import (
     RecordChain,
@@ -16,6 +19,7 @@ from harness import (
     assert_no_condition_label,
     blocked_schedule,
 )
+from harness.bundle import digest
 
 
 def bundle() -> StudyBundle:
@@ -27,6 +31,9 @@ def bundle() -> StudyBundle:
         fixtures={"read-before-edit": "fixture-sha"},
         tool_schemas={"read_file": {"type": "object"}},
         schedule=schedule,
+        model={"id": "scripted-provider", "revision": "v1", "configuration_sha256": digest({"script": "v1"})},
+        harness_architecture={"id": "direct-tool-loop", "revision": "v1", "configuration_sha256": digest({"loop": "v1"})},
+        settings={"model": {"script": "v1"}, "harness_architecture": {"loop": "v1"}},
         runner_revision="abc",
         analysis_revision="def",
     )
@@ -50,6 +57,15 @@ class HarnessTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "digest mismatch"):
                     StudyBundle.read_verified(path)
 
+    def test_bundle_reader_rejects_valid_json_with_the_wrong_shape(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "bundle.json"
+            path.write_text("[]\n")
+            with self.assertRaisesRegex(ValueError, "must be a JSON object"):
+                StudyBundle.read_verified(path)
+
     def test_bundle_requires_position_policy_for_partial_cycle(self):
         study = bundle()
         with self.assertRaisesRegex(ValueError, "partial position cycle"):
@@ -60,9 +76,46 @@ class HarnessTest(unittest.TestCase):
                 fixtures=study.fixtures,
                 tool_schemas=study.tool_schemas,
                 schedule=study.schedule,
+                model=study.model,
+                harness_architecture=study.harness_architecture,
+                settings=study.settings,
                 runner_revision=study.runner_revision,
                 analysis_revision=study.analysis_revision,
             ).assert_complete()
+
+    def test_bundle_seals_generic_settings_without_one_off_setting_fields(self):
+        study = bundle()
+        settings = {
+            "model": {
+                "reasoning": {"enabled": False},
+                "temperature": 0,
+                "stop": [],
+                "provider_metadata": None,
+            },
+            "harness_architecture": {
+                "middleware": ["todo", "filesystem", "skills"],
+                "subagents": {"enabled": True},
+            },
+            "future_setting_type": ["nested", {"values": [1, True, None]}],
+        }
+        configured = replace(
+            study,
+            model=study.model | {"configuration_sha256": digest(settings["model"])},
+            harness_architecture=study.harness_architecture | {
+                "configuration_sha256": digest(settings["harness_architecture"])
+            },
+            settings=settings,
+        )
+        configured.assert_complete()
+        with self.assertRaisesRegex(ValueError, "JSON-safe"):
+            replace(
+                configured,
+                settings=configured.settings | {"invalid": float("nan")},
+            ).assert_complete()
+        with self.assertRaisesRegex(ValueError, "model identity"):
+            replace(study, model=None).assert_complete()  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "harness architecture identity"):
+            replace(study, harness_architecture=None).assert_complete()  # type: ignore[arg-type]
 
     def test_bundle_rejects_full_cycle_with_unbalanced_positions(self):
         study = bundle()
@@ -79,6 +132,9 @@ class HarnessTest(unittest.TestCase):
                 fixtures=study.fixtures,
                 tool_schemas=study.tool_schemas,
                 schedule=unbalanced,
+                model=study.model,
+                harness_architecture=study.harness_architecture,
+                settings=study.settings,
                 runner_revision=study.runner_revision,
                 analysis_revision=study.analysis_revision,
             ).assert_complete()
@@ -138,6 +194,30 @@ class HarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "digest mismatch"):
                 chain.read_verified()
 
+    def test_record_append_rolls_back_a_partial_write(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "records.jsonl"
+            chain = RecordChain(path, "bundle")
+            first = Trial("task", 1, "A", 1)
+            second = Trial("task", 1, "B", 2)
+            chain.append(TrialOutcome(first, "pass", True, True))
+            original_write = os.write
+            calls = 0
+
+            def partial_then_fail(descriptor: int, data: object) -> int:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return original_write(descriptor, bytes(data)[:7])
+                raise OSError("simulated write failure")
+
+            with patch("harness.records.os.write", side_effect=partial_then_fail):
+                with self.assertRaisesRegex(OSError, "simulated write failure"):
+                    chain.append(TrialOutcome(second, "pass", True, True))
+            self.assertEqual([record["trial_sha256"] for record in chain.read_verified()], [first.sha256])
+
     def test_final_seal_rejects_a_truncated_chain(self):
         from tempfile import TemporaryDirectory
 
@@ -155,6 +235,20 @@ class HarnessTest(unittest.TestCase):
             path.write_text("\n".join(path.read_text().splitlines()[:-1]) + "\n")
             with self.assertRaisesRegex(ValueError, "scheduled-record mismatch"):
                 chain.verify_finalized(study.schedule, admissions)
+
+    def test_final_seal_rejects_outcomes_not_matching_admitted_order(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            study = bundle()
+            outcomes = RecordChain(Path(temporary) / "outcomes.jsonl", study.sha256)
+            for trial in reversed(study.schedule):
+                outcomes.append(TrialOutcome(trial, "pass", True, True))
+            admissions = AdmissionLog(Path(temporary) / "admissions.jsonl", study.sha256)
+            for trial in study.schedule:
+                admissions.append(AdmissionAttempt(trial, True, 1))
+            with self.assertRaisesRegex(ValueError, "ordered one-to-one"):
+                outcomes.finalize(study.schedule, admissions)
 
     def test_admission_log_retries_same_episode_before_admission(self):
         from tempfile import TemporaryDirectory

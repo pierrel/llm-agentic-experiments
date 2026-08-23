@@ -1,0 +1,15 @@
+{
+  "decoding": {"max_tokens": 128, "temperature": 0},
+  "initial_files": {"budget-note.txt": "Budget: $20.\n"},
+  "oracle": {
+    "expected_content": "Budget: $25.\n",
+    "kind": "read_before_edit",
+    "path": "budget-note.txt"
+  },
+  "skills": {
+    "edit-note": "Inspect the current note before changing it."
+  },
+  "system_prompt": "Complete the requested workspace change using the available tools.",
+  "task_id": "read-before-edit",
+  "user_prompt": "Please change the budget in my note to $25."
+}

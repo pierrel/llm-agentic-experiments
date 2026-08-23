@@ -1,0 +1,6 @@
+[
+  {"content": "", "final": false, "tool_calls": [{"arguments": {"name": "edit-note"}, "name": "load_skill"}]},
+  {"content": "", "final": false, "tool_calls": [{"arguments": {"path": "budget-note.txt"}, "name": "read_file"}]},
+  {"content": "", "final": false, "tool_calls": [{"arguments": {"content": "Budget: $25.\n", "path": "budget-note.txt"}, "name": "write_file"}]},
+  {"content": "Updated the budget note.", "final": true, "tool_calls": []}
+]

@@ -19,6 +19,19 @@ should not generalize from the result.
 - Trial-record manifest hash and raw-record retention location:
 - Any approved registration amendments:
 
+## Repository capsule and handoffs
+
+- Committed capsule path: `results/<run-id>/`
+- `run.json` settings, bundle digest, tracked-artifact hashes, and raw-trace
+  hash inventory:
+- `learning.md` observation, evidence, limits, and counterexamples:
+- Private larochelle.io blog seed path, if this produced a genuine learning:
+- Proposed Assist roadmap item path and status:
+
+The capsule is the durable context for a later reader. A blog seed or roadmap
+proposal records a learning to consider; neither is evidence that the proposed
+Assist change should happen.
+
 ## Execution accounting
 
 | Condition | Scheduled | Admitted | Completed | Timeout/refusal | Infrastructure-invalid | Scored |

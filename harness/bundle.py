@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
+import threading
 from typing import Any
 
 
 def canonical_json(value: Any) -> bytes:
     """Return the one serialization used for manifests and chain records."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode()
 
 
 def digest(value: Any) -> str:
@@ -39,7 +43,7 @@ class Trial:
 
 @dataclass(frozen=True)
 class StudyBundle:
-    """The complete registered inputs for an immutable study version."""
+    """The complete inputs for one sealed test, model, and architecture run."""
 
     study_id: str
     registration: dict[str, Any]
@@ -47,6 +51,9 @@ class StudyBundle:
     fixtures: dict[str, str]
     tool_schemas: dict[str, Any]
     schedule: tuple[Trial, ...]
+    model: dict[str, str]
+    harness_architecture: dict[str, str]
+    settings: dict[str, Any]
     runner_revision: str
     analysis_revision: str
 
@@ -58,6 +65,9 @@ class StudyBundle:
             "fixtures": self.fixtures,
             "tool_schemas": self.tool_schemas,
             "schedule": [trial.__dict__ for trial in self.schedule],
+            "model": self.model,
+            "harness_architecture": self.harness_architecture,
+            "settings": self.settings,
             "runner_revision": self.runner_revision,
             "analysis_revision": self.analysis_revision,
         }
@@ -70,30 +80,45 @@ class StudyBundle:
         """Write a self-verifying bundle; callers must not hand-edit it later."""
         self.assert_complete()
         contents = {"sha256": self.sha256, "bundle": self.payload()}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(canonical_json(contents) + b"\n")
+        atomic_write(path, canonical_json(contents) + b"\n")
 
     @classmethod
     def read_verified(cls, path: Path) -> "StudyBundle":
         """Load only a byte-valid bundle with a matching recorded digest."""
-        stored = json.loads(path.read_text())
-        payload = stored["bundle"]
+        try:
+            stored = json.loads(path.read_text())
+        except json.JSONDecodeError as error:
+            raise ValueError(f"bundle is not valid JSON: {path}") from error
+        if not isinstance(stored, dict):
+            raise ValueError(f"bundle must be a JSON object: {path}")
+        payload = stored.get("bundle")
+        if not isinstance(payload, dict):
+            raise ValueError(f"bundle payload must be a JSON object: {path}")
         if stored.get("sha256") != digest(payload):
             raise ValueError(f"bundle digest mismatch: {path}")
-        schedule = tuple(Trial(**trial) for trial in payload["schedule"])
-        bundle = cls(
-            study_id=payload["study_id"],
-            registration=payload["registration"],
-            conditions=payload["conditions"],
-            fixtures=payload["fixtures"],
-            tool_schemas=payload["tool_schemas"],
-            schedule=schedule,
-            runner_revision=payload["runner_revision"],
-            analysis_revision=payload["analysis_revision"],
-        )
+        try:
+            schedule = tuple(Trial(**trial) for trial in payload["schedule"])
+            bundle = cls(
+                study_id=payload["study_id"],
+                registration=payload["registration"],
+                conditions=payload["conditions"],
+                fixtures=payload["fixtures"],
+                tool_schemas=payload["tool_schemas"],
+                schedule=schedule,
+                model=payload["model"],
+                harness_architecture=payload["harness_architecture"],
+                settings=payload["settings"],
+                runner_revision=payload["runner_revision"],
+                analysis_revision=payload["analysis_revision"],
+            )
+        except (KeyError, TypeError) as error:
+            raise ValueError(f"bundle payload has an invalid shape: {path}") from error
         if bundle.sha256 != stored["sha256"]:
             raise ValueError(f"bundle normalization mismatch: {path}")
-        bundle.assert_complete()
+        try:
+            bundle.assert_complete()
+        except (AttributeError, KeyError, TypeError) as error:
+            raise ValueError(f"bundle payload has an invalid shape: {path}") from error
         return bundle
 
     def assert_complete(self) -> None:
@@ -104,6 +129,9 @@ class StudyBundle:
             raise ValueError("conditions, fixtures, schemas, and scheduled trials are required")
         if not self.runner_revision or not self.analysis_revision:
             raise ValueError("runner and analysis revisions are required")
+        _assert_axis(self.model, "model")
+        _assert_axis(self.harness_architecture, "harness architecture")
+        _assert_settings(self.settings, self.model, self.harness_architecture)
         seen: set[str] = set()
         blocks: dict[tuple[str, int], set[str]] = {}
         positions: dict[tuple[str, int], dict[str, int]] = {}
@@ -140,3 +168,78 @@ class StudyBundle:
                             counts[block_positions[condition]] += 1
                     if counts != [expected_per_position] * condition_count:
                         raise ValueError(f"unbalanced condition positions: {task}:{condition}")
+
+
+def _assert_axis(value: object, name: str) -> None:
+    """Require one precise, reusable identity for a between-run axis."""
+    if not isinstance(value, dict) or set(value) != {"id", "revision", "configuration_sha256"}:
+        raise ValueError(f"{name} identity must name id, revision, and configuration digest")
+    if not all(isinstance(item, str) and item for item in value.values()):
+        raise ValueError(f"{name} identity values must be non-empty text")
+    digest_value = value["configuration_sha256"]
+    if len(digest_value) != 64 or any(character not in "0123456789abcdef" for character in digest_value):
+        raise ValueError(f"{name} configuration digest must be lowercase SHA-256")
+
+
+def _assert_settings(
+    settings: dict[str, Any], model: dict[str, str], harness_architecture: dict[str, str]
+) -> None:
+    """Seal arbitrary runtime settings while binding each axis to its subtree."""
+    if not isinstance(settings, dict):
+        raise ValueError("settings must be an object")
+    try:
+        canonical_json(settings)
+    except (TypeError, ValueError) as error:
+        raise ValueError("settings must contain JSON-safe values") from error
+    for key, axis in (("model", model), ("harness_architecture", harness_architecture)):
+        if key not in settings:
+            raise ValueError(f"settings must include {key}")
+        if digest(settings[key]) != axis["configuration_sha256"]:
+            raise ValueError(f"{key} settings do not match its configuration digest")
+
+
+_ATOMIC_WRITE_LOCK = threading.Lock()
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    """Durably replace one local artifact only after its complete bytes exist."""
+    with _ATOMIC_WRITE_LOCK:
+        _atomic_write(path, data)
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write under the process-local temporary-name lock."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        if temporary.is_symlink() or not temporary.is_file():
+            raise ValueError("atomic artifact temporary must be a regular file")
+        temporary.unlink()
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        remaining = memoryview(data)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("atomic artifact write made no progress")
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        descriptor = -1
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
