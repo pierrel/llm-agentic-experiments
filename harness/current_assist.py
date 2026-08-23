@@ -51,8 +51,20 @@ def run_current_assist_episode(
             path = root / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
+        model = model_factory(float(task.decoding.get("temperature", 0)))
+        max_tokens = task.decoding.get("max_tokens")
+        if max_tokens is not None:
+            if not isinstance(max_tokens, int) or max_tokens < 1:
+                raise ValueError("current Assist max_tokens must be a positive integer")
+            # ``bind`` produces a generic Runnable that Deep Agents cannot
+            # resolve as a chat model. Assist's selected ChatOpenAI model has
+            # this native field, so retain the actual model object.
+            try:
+                model.max_tokens = max_tokens
+            except (AttributeError, ValueError) as error:
+                raise ValueError("current Assist model cannot apply max_tokens") from error
         agent = create_deep_agent(
-            model=model_factory(float(task.decoding.get("temperature", 0))),
+            model=model,
             backend=FilesystemBackend(root_dir=str(root), virtual_mode=True),
             tools=[],
             subagents=[],

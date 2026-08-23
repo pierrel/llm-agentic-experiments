@@ -246,11 +246,11 @@ def _run_command(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _is_admission_denial(result: subprocess.CompletedProcess[str]) -> bool:
-    return "production is busy" in (result.stderr + result.stdout)
+    return "production is busy" in ((result.stderr or "") + (result.stdout or ""))
 
 
 def _command_detail(result: subprocess.CompletedProcess[str]) -> str:
-    text = (result.stderr or result.stdout).strip().replace("\n", " ")
+    text = (result.stderr or result.stdout or "").strip().replace("\n", " ")
     return text[:500] or f"worker exited {result.returncode}"
 
 

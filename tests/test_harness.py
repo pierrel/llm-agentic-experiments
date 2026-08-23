@@ -112,6 +112,17 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(outcome["outcome"], "timeout")
             self.assertTrue(outcome["model_request_made"])
 
+    def test_current_pilot_accepts_uncaptured_command_streams(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            progress = run_current_assist_pilot(
+                root, Path(temporary) / "run", workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=lambda command: subprocess.CompletedProcess(command, 1),
+            )
+            self.assertEqual(progress.status, "complete")
+
     def test_current_assist_result_serialization_is_stable(self):
         result = CurrentAssistResult(
             final_response="done",
