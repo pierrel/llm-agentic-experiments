@@ -58,6 +58,12 @@ docs/              study designs, decisions, and research log
 
 The first implementation milestone is the harness, not a prompt rewrite.
 
+Each sealed run records three independent axes: test fixture, model, and
+harness architecture. A generic JSON `settings` object records every
+behavior-affecting option, including reasoning controls. This keeps an exact
+test reusable across a new model or an alternative architecture without
+mislabeling the resulting bundles as one cohort.
+
 ## Local checks
 
 The integrity kernel intentionally needs no third-party package:

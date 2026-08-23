@@ -12,7 +12,9 @@ from typing import Any
 
 def canonical_json(value: Any) -> bytes:
     """Return the one serialization used for manifests and chain records."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode()
 
 
 def digest(value: Any) -> str:
@@ -40,7 +42,7 @@ class Trial:
 
 @dataclass(frozen=True)
 class StudyBundle:
-    """The complete registered inputs for an immutable study version."""
+    """The complete inputs for one sealed test, model, and architecture run."""
 
     study_id: str
     registration: dict[str, Any]
@@ -48,6 +50,9 @@ class StudyBundle:
     fixtures: dict[str, str]
     tool_schemas: dict[str, Any]
     schedule: tuple[Trial, ...]
+    model: dict[str, str]
+    harness_architecture: dict[str, str]
+    settings: dict[str, Any]
     runner_revision: str
     analysis_revision: str
 
@@ -59,6 +64,9 @@ class StudyBundle:
             "fixtures": self.fixtures,
             "tool_schemas": self.tool_schemas,
             "schedule": [trial.__dict__ for trial in self.schedule],
+            "model": self.model,
+            "harness_architecture": self.harness_architecture,
+            "settings": self.settings,
             "runner_revision": self.runner_revision,
             "analysis_revision": self.analysis_revision,
         }
@@ -88,6 +96,9 @@ class StudyBundle:
             fixtures=payload["fixtures"],
             tool_schemas=payload["tool_schemas"],
             schedule=schedule,
+            model=payload["model"],
+            harness_architecture=payload["harness_architecture"],
+            settings=payload["settings"],
             runner_revision=payload["runner_revision"],
             analysis_revision=payload["analysis_revision"],
         )
@@ -104,6 +115,9 @@ class StudyBundle:
             raise ValueError("conditions, fixtures, schemas, and scheduled trials are required")
         if not self.runner_revision or not self.analysis_revision:
             raise ValueError("runner and analysis revisions are required")
+        _assert_axis(self.model, "model")
+        _assert_axis(self.harness_architecture, "harness architecture")
+        _assert_settings(self.settings, self.model, self.harness_architecture)
         seen: set[str] = set()
         blocks: dict[tuple[str, int], set[str]] = {}
         positions: dict[tuple[str, int], dict[str, int]] = {}
@@ -140,6 +154,34 @@ class StudyBundle:
                             counts[block_positions[condition]] += 1
                     if counts != [expected_per_position] * condition_count:
                         raise ValueError(f"unbalanced condition positions: {task}:{condition}")
+
+
+def _assert_axis(value: dict[str, str], name: str) -> None:
+    """Require one precise, reusable identity for a between-run axis."""
+    if set(value) != {"id", "revision", "configuration_sha256"}:
+        raise ValueError(f"{name} identity must name id, revision, and configuration digest")
+    if not all(isinstance(item, str) and item for item in value.values()):
+        raise ValueError(f"{name} identity values must be non-empty text")
+    digest_value = value["configuration_sha256"]
+    if len(digest_value) != 64 or any(character not in "0123456789abcdef" for character in digest_value):
+        raise ValueError(f"{name} configuration digest must be lowercase SHA-256")
+
+
+def _assert_settings(
+    settings: dict[str, Any], model: dict[str, str], harness_architecture: dict[str, str]
+) -> None:
+    """Seal arbitrary runtime settings while binding each axis to its subtree."""
+    if not isinstance(settings, dict):
+        raise ValueError("settings must be an object")
+    try:
+        canonical_json(settings)
+    except (TypeError, ValueError) as error:
+        raise ValueError("settings must contain JSON-safe values") from error
+    for key, axis in (("model", model), ("harness_architecture", harness_architecture)):
+        if key not in settings:
+            raise ValueError(f"settings must include {key}")
+        if digest(settings[key]) != axis["configuration_sha256"]:
+            raise ValueError(f"{key} settings do not match its configuration digest")
 
 
 def atomic_write(path: Path, data: bytes) -> None:

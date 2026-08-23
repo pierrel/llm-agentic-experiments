@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import unittest
@@ -16,6 +17,7 @@ from harness import (
     assert_no_condition_label,
     blocked_schedule,
 )
+from harness.bundle import digest
 
 
 def bundle() -> StudyBundle:
@@ -27,6 +29,9 @@ def bundle() -> StudyBundle:
         fixtures={"read-before-edit": "fixture-sha"},
         tool_schemas={"read_file": {"type": "object"}},
         schedule=schedule,
+        model={"id": "scripted-provider", "revision": "v1", "configuration_sha256": digest({"script": "v1"})},
+        harness_architecture={"id": "direct-tool-loop", "revision": "v1", "configuration_sha256": digest({"loop": "v1"})},
+        settings={"model": {"script": "v1"}, "harness_architecture": {"loop": "v1"}},
         runner_revision="abc",
         analysis_revision="def",
     )
@@ -60,8 +65,41 @@ class HarnessTest(unittest.TestCase):
                 fixtures=study.fixtures,
                 tool_schemas=study.tool_schemas,
                 schedule=study.schedule,
+                model=study.model,
+                harness_architecture=study.harness_architecture,
+                settings=study.settings,
                 runner_revision=study.runner_revision,
                 analysis_revision=study.analysis_revision,
+            ).assert_complete()
+
+    def test_bundle_seals_generic_settings_without_one_off_setting_fields(self):
+        study = bundle()
+        settings = {
+            "model": {
+                "reasoning": {"enabled": False},
+                "temperature": 0,
+                "stop": [],
+                "provider_metadata": None,
+            },
+            "harness_architecture": {
+                "middleware": ["todo", "filesystem", "skills"],
+                "subagents": {"enabled": True},
+            },
+            "future_setting_type": ["nested", {"values": [1, True, None]}],
+        }
+        configured = replace(
+            study,
+            model=study.model | {"configuration_sha256": digest(settings["model"])},
+            harness_architecture=study.harness_architecture | {
+                "configuration_sha256": digest(settings["harness_architecture"])
+            },
+            settings=settings,
+        )
+        configured.assert_complete()
+        with self.assertRaisesRegex(ValueError, "JSON-safe"):
+            replace(
+                configured,
+                settings=configured.settings | {"invalid": float("nan")},
             ).assert_complete()
 
     def test_bundle_rejects_full_cycle_with_unbalanced_positions(self):
@@ -79,6 +117,9 @@ class HarnessTest(unittest.TestCase):
                 fixtures=study.fixtures,
                 tool_schemas=study.tool_schemas,
                 schedule=unbalanced,
+                model=study.model,
+                harness_architecture=study.harness_architecture,
+                settings=study.settings,
                 runner_revision=study.runner_revision,
                 analysis_revision=study.analysis_revision,
             ).assert_complete()

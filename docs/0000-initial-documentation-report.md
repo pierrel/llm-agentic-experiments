@@ -37,6 +37,9 @@ historical archive.
   primary-versus-secondary outcomes, prompt audits, and limits visible.
 - `docs/0004-initial-design-review.md` records the scientific-integrity,
   statistical, agentic-harness, and plain-English reviews and their resolutions.
+- `docs/0005-current-assist-baseline.md` records the confirmed Deep Agents
+  tool-loop architecture, current Qwen model identity, and reasoning setting
+  that the first real-run profile must pin.
 - `docs/example-study-walkthrough.md` shows one invented trial from request to
   tool trace to automatic score.
 - `docs/glossary.md` defines the recurring vocabulary briefly.
@@ -50,6 +53,11 @@ an excluded timeout. A confirmation result applies only to the preregistered
 model snapshot, agent loop, task bank, and decoding setting. A promising pilot
 is a reason to lock a new confirmation cohort, never evidence to merge a prompt
 into Assist.
+
+Reports separately retain the test-fixture, model, and harness-architecture
+axes. A single generic JSON settings object captures reasoning and other
+behavior-affecting configuration, so the same test can be compared across a
+new model or architecture without combining those bundles as one cohort.
 
 ## Verification and review
 

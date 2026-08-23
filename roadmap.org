@@ -16,7 +16,27 @@ exchange, score a deterministic artifact, and account for every scheduled
 episode in sealed records.
 
 This milestone validates the measurement apparatus.  It produces no claim
-about prompting and must not be used to change Assist.
+about prompting and must not be used to change Assist. The first real profile
+will be the current Assist baseline: Qwen3.6-27B Q4_K_M through Deep Agents'
+LangChain tool loop, with its present reasoning setting pinned in the generic
+settings object. It is not a plan-and-execute controller.
+
+** Comparison identity
+
+Every run has three independently sealed axes:
+
+- Test: the fixture/task digest, natural user request, oracle, tools, and
+  condition manifests. Reuse its exact digest to compare the same test.
+- Model: immutable model identity and revision.
+- Harness architecture: the graph/loop identity and revision, such as the
+  current Deep Agents tool loop or a future plan-and-execute design.
+
+One generic JSON =settings= field stores all behavior-affecting details of
+those axes: reasoning controls, decoding, provider payload, middleware and
+graph settings, limits, and future setting types. The model and architecture
+identities each hash their corresponding =settings= subtree. A comparison that
+changes either model or architecture creates a new sealed bundle while keeping
+the test digest untouched; it never silently mixes cohorts.
 
 ** Delivered scope
 
@@ -24,6 +44,9 @@ about prompting and must not be used to change Assist.
   checked against a committed content-addressed StudyBundle. The bundle fixes
   the script digest, harness implementation digest, and loop limit as well as
   fixtures, schemas, and schedule.
+- Sealed model and harness-architecture identities plus a generic settings
+  object in each bundle and static report, so reports can be joined across the
+  same test without losing provenance.
 - A small agent loop over virtual list, read, write, and load-skill tools.
   The loop has no shell, network, host-filesystem, or Assist dependency.
 - Exact rendered provider requests, replies, tool calls, tool results,
@@ -58,7 +81,8 @@ harness definitions.
 ** Explicitly deferred
 
 - A real-model provider client and the coordinator that invokes one bounded
-  trial through =tools/agentic resource run llm=.
+  trial through =tools/agentic resource run llm=. Its first profile must use
+  the current Assist model and Deep Agents architecture described above.
 - Git-tag binding for a real-model bundle, seed-support calibration, and any
   model trial.
 - Registered Study A task-bank authoring, pilot, confirmation analysis, and
@@ -69,11 +93,15 @@ statistical-rigor, and agentic-harness-fit reviews before any model result.
 
 * Next milestones
 
-** Real-model admission coordinator
+** Current Assist baseline admission coordinator
 
 Add a coordinator that can advance only the sealed schedule prefix, records a
 denied admission against the current episode, and starts exactly one bounded
-episode through the workspace LLM resource.  It has no direct-model mode.
+episode through the workspace LLM resource. It has no direct-model mode. Bind
+the first registration to the observed Qwen3.6-27B Q4_K_M model and the current
+Deep Agents 0.6.1 / LangChain 1.3.1 / LangGraph 1.2 tool-loop architecture,
+including reasoning disabled. Require a model-weights digest before it admits
+any real trial.
 
 ** Study A development registration
 

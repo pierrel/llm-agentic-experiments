@@ -218,7 +218,7 @@ def _finalize_or_verify(
         outcomes.verify_finalized(bundle.schedule, admissions, _artifact_digests(bundle, trace_dir, report))
         return RunArtifacts(bundle_path, admissions.path, outcomes.path, report, trace_dir)
     # Condition IDs are deliberately opaque and are not human treatment labels.
-    write_static_report(outcomes, report)
+    write_static_report(bundle, outcomes, report)
     artifacts = _artifact_digests(bundle, trace_dir, report)
     outcomes.finalize(bundle.schedule, admissions, artifacts)
     outcomes.verify_finalized(bundle.schedule, admissions, artifacts)

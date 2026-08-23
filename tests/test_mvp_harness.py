@@ -65,6 +65,16 @@ class MvpHarnessTest(unittest.TestCase):
         )
         StudyDefinition(declared_bundle, self.definition.tasks, changed_conditions).validate()
 
+        changed_architecture = replace(
+            self.definition.bundle,
+            harness_architecture=self.definition.bundle.harness_architecture | {"id": "plan-and-execute"},
+        )
+        self.assertNotEqual(changed_architecture.sha256, self.definition.bundle.sha256)
+        with self.assertRaisesRegex(ValueError, "model identity"):
+            replace(self.definition.bundle, model={"id": "other"}).assert_complete()
+        with self.assertRaisesRegex(ValueError, "settings do not match"):
+            replace(self.definition.bundle, settings={"model": {}, "harness_architecture": {}}).assert_complete()
+
     def test_oracle_rejects_write_without_prior_read(self) -> None:
         task = self.definition.tasks["read-before-edit"]
         result = Episode(
@@ -181,6 +191,10 @@ class MvpHarnessTest(unittest.TestCase):
             self.assertTrue(trace[0]["request"]["request_id"].endswith(":t1"))
             report = json.loads(artifacts.report.read_text())
             self.assertEqual(report["conditions"], {"C01": {"pass": 2}, "C02": {"pass": 2}})
+            self.assertEqual(report["tests"], bundle.fixtures)
+            self.assertEqual(report["model"], bundle.model)
+            self.assertEqual(report["harness_architecture"], bundle.harness_architecture)
+            self.assertEqual(report["settings"], bundle.settings)
             resumed = run_scripted_study(self.definition, Path(temporary), mvp_script(ROOT), admission)
             self.assertEqual(resumed, artifacts)
 
