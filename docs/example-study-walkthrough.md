@@ -11,7 +11,8 @@ write one file, and load a skill. In the operational-skill conditions, the
 relevant skill says to read the current file before editing it; the other
 conditions receive equal-length non-operational text instead.
 
-The automatic checker passes only when the final file says “Budget: $25” and
+The automatic checker passes only when the final file is exactly
+`Budget: $25.\n` and
 the trace shows a successful read before the write. This final file is the
 observable **artifact**: a file or state change the checker can inspect.
 

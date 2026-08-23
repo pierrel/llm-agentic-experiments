@@ -1,6 +1,7 @@
 # Current Assist execution-path pilot, registration v1
 
-Status: design only. No model result exists.
+Status at v1 registration: design only; no model result had run yet. Subsequent
+sealed execution records are listed in `docs/study-registry.md`.
 
 ## Identity
 

@@ -115,8 +115,8 @@ class HarnessTest(unittest.TestCase):
                         "final_response": "done",
                         "files": {"budget-note.txt": "Budget: $25.\n"},
                         "messages": [
-                            {"type": "ai", "tool_calls": [{"name": "read_file", "args": {"path": "budget-note.txt"}}]},
-                            {"type": "ai", "tool_calls": [{"name": "write_file", "args": {"path": "budget-note.txt", "content": "Budget: $25.\n"}}]},
+                            {"type": "ai", "tool_calls": [{"name": "read_file", "args": {"file_path": "/budget-note.txt"}}]},
+                            {"type": "ai", "tool_calls": [{"name": "edit_file", "args": {"file_path": "/budget-note.txt", "old_string": "Budget: $20.", "new_string": "Budget: $25."}}]},
                         ],
                     },
                 }

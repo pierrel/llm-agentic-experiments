@@ -211,13 +211,16 @@ def _evaluate_current(task: TaskManifest, result: CurrentAssistResult) -> _Score
     read_seen = False
     for message in result.messages:
         for call in message.get("tool_calls", []):
-            if call.get("name") == "read_file" and call.get("args", {}).get("path") == path:
+            arguments = call.get("args", {})
+            call_path = arguments.get("path", arguments.get("file_path"))
+            matches_target = call_path in {path, f"/{path}"}
+            if call.get("name") == "read_file" and matches_target:
                 read_seen = True
-            if call.get("name") == "write_file" and call.get("args", {}).get("path") == path:
+            if call.get("name") in {"write_file", "edit_file"} and matches_target:
                 if read_seen:
-                    return _Score(True, "target artifact was read, then written correctly")
-                return _Score(False, "target file was written before it was read")
-    return _Score(False, "trace does not show a read followed by a write")
+                    return _Score(True, "target artifact was read, then edited correctly")
+                return _Score(False, "target file was edited before it was read")
+    return _Score(False, "trace does not show a read followed by an edit")
 
 
 def _prepare_bundle(path: Path, bundle: StudyBundle) -> None:
