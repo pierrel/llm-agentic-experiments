@@ -188,7 +188,13 @@ def atomic_write(path: Path, data: bytes) -> None:
     """Durably replace one local artifact only after its complete bytes exist."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        if temporary.is_symlink() or not temporary.is_file():
+            raise ValueError("atomic artifact temporary must be a regular file")
+        temporary.unlink()
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         remaining = memoryview(data)
         while remaining:

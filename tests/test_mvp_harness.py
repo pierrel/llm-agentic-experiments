@@ -332,6 +332,15 @@ class MvpHarnessTest(unittest.TestCase):
                     atomic_write(target.with_name("failed.json"), b"incomplete")
             self.assertFalse((target.parent / f".failed.json.{os.getpid()}.tmp").exists())
 
+    def test_atomic_write_recovers_its_own_stale_regular_temp(self) -> None:
+        with TemporaryDirectory() as temporary:
+            target = Path(temporary) / "artifact.json"
+            stale = target.parent / f".{target.name}.{os.getpid()}.tmp"
+            stale.write_bytes(b"interrupted")
+            atomic_write(target, b"complete")
+            self.assertEqual(target.read_bytes(), b"complete")
+            self.assertFalse(stale.exists())
+
     def test_runner_records_provider_failures_without_dropping_episodes(self) -> None:
         sealed_empty_script = replace(
             self.definition.bundle,

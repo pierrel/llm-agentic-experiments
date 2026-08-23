@@ -4,7 +4,7 @@ Every completed experiment run receives a new committed directory:
 
 ```text
 results/<run-id>/
-  bundle.json                 sealed setting, schedule, fixtures, model, architecture
+  bundle.json                 sealed settings, schedule, fixtures, model, architecture
   admissions.jsonl[.seal]     admission history
   outcomes.jsonl[.seal]       scored results and the final evidence seal
   report.json                 aggregate result summary
