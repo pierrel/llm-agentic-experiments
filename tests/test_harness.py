@@ -85,6 +85,19 @@ class HarnessTest(unittest.TestCase):
             self.assertFalse(json.loads(admissions[0])["admitted"])
             self.assertFalse((output / "outcomes.jsonl").exists())
 
+    def test_current_pilot_retries_a_busy_shared_llm_resource(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=lambda command: subprocess.CompletedProcess(command, 1, "", "agentic: resource is busy: resource-llm"),
+            )
+            self.assertEqual(progress.status, "retry_in_10_minutes")
+            self.assertFalse((output / "outcomes.jsonl").exists())
+
     def test_current_pilot_seals_an_admitted_result_and_uses_the_gpu_gate(self):
         from tempfile import TemporaryDirectory
 

@@ -276,7 +276,8 @@ def _run_command(command: Sequence[str], timeout_seconds: int) -> subprocess.Com
 
 
 def _is_admission_denial(result: subprocess.CompletedProcess[str]) -> bool:
-    return "production is busy" in ((result.stderr or "") + (result.stdout or ""))
+    detail = (result.stderr or "") + (result.stdout or "")
+    return "production is busy" in detail or "resource is busy: resource-llm" in detail
 
 
 def _command_detail(result: subprocess.CompletedProcess[str]) -> str:
