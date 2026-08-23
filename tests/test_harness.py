@@ -23,6 +23,7 @@ from harness import (
 from harness.bundle import digest
 from harness.current_assist import CurrentAssistResult, result_bytes, result_payload
 from harness.current_pilot import current_worker_command, run_current_assist_pilot
+from harness.current_pilot import current_pilot_definition
 
 
 def bundle() -> StudyBundle:
@@ -43,6 +44,15 @@ def bundle() -> StudyBundle:
 
 
 class HarnessTest(unittest.TestCase):
+    def test_current_pilot_refuses_invalid_weights_and_missing_tag(self):
+        root = Path(__file__).resolve().parents[1]
+        definition = current_pilot_definition(root)
+        bad_model = definition.bundle.settings["model"] | {"weights_sha256": "bad"}
+        with self.assertRaisesRegex(ValueError, "weights SHA-256"):
+            replace(definition, bundle=replace(definition.bundle, model=definition.bundle.model | {"configuration_sha256": digest(bad_model)}, settings=definition.bundle.settings | {"model": bad_model})).validate(root)
+        with patch("harness.current_pilot.subprocess.run", return_value=subprocess.CompletedProcess([], 1)):
+            with self.assertRaisesRegex(ValueError, "tag is not available"):
+                __import__("harness.current_pilot", fromlist=["_verify_git_tag"])._verify_git_tag(root, "missing", root / "experiments/current-assist-pilot/bundle.json")
     def test_current_pilot_records_denial_without_advancing_the_episode(self):
         from tempfile import TemporaryDirectory
 

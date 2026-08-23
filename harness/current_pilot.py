@@ -56,6 +56,8 @@ class CurrentPilotDefinition:
             raise ValueError("current Assist bundle requires a model weights SHA-256")
         if model_settings.get("reasoning") != {"enabled": False}:
             raise ValueError("current Assist pilot must pin reasoning off")
+        if not isinstance(model_settings.get("timeout_seconds"), int) or model_settings["timeout_seconds"] < 1:
+            raise ValueError("current Assist pilot requires a positive sealed timeout")
         if registration.get("implementation_sha256") != current_pilot_implementation_sha256(root):
             raise ValueError("current Assist bundle does not match the committed pilot implementation")
 
@@ -94,7 +96,8 @@ def run_current_assist_pilot(
     _prepare_output(output)
     with _exclusive_output_lock(output):
         return _run_current_assist_pilot(
-            definition, root, output, workspace_root, assist_python, command_runner or _run_command
+            definition, root, output, workspace_root, assist_python,
+            command_runner or (lambda command: _run_command(command, definition.bundle.settings["model"]["timeout_seconds"])),
         )
 
 
@@ -241,8 +244,8 @@ def _verify_git_tag(root: Path, tag: str, bundle_path: Path) -> None:
         raise ValueError("current Assist pilot tag does not contain this sealed bundle")
 
 
-def _run_command(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, text=True, capture_output=True, timeout=720)
+def _run_command(command: Sequence[str], timeout_seconds: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, text=True, capture_output=True, timeout=timeout_seconds)
 
 
 def _is_admission_denial(result: subprocess.CompletedProcess[str]) -> bool:
