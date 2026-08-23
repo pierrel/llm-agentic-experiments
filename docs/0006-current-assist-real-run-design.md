@@ -34,7 +34,7 @@ The coordinator will reject a real run unless a committed registration names:
   context limit, middleware/tool/subagent configuration, and loop bound inside
   generic sealed `settings`;
 - the natural fixture prompt, virtual tool schemas, oracle, one scheduled
-  trial, and a no-network/cache-disabled policy; and
+  trial, and a no-network/no-client-replay policy; and
 - the immutable Git commit/tag which contains its content-addressed bundle.
 
 The coordinator checks that immutable reference before recording an admission.
@@ -48,9 +48,8 @@ through `tools/agentic resource run llm -- ...`. The worker is not a public
 "direct model" command: it receives only a sealed trial descriptor and returns
 one result record. It imports Assist's pinned production model selector and
 constructs the current Deep Agents ReAct loop against a hermetic virtual
-filesystem backend. Deep Agents still exposes its standard `execute` tool, but
-that tool has no executable sandbox backend and returns an error by
-construction. The pilot supplies no network/navigation/travel tools or
+filesystem backend. The pinned graph exposes Deep Agents' filesystem/TODO tools
+and task tool only. The pilot supplies no network/navigation/travel tools or
 subagents, and it exposes no user thread or production state to the agent.
 
 If the workspace admission wrapper denies the pilot because production owns the
@@ -59,10 +58,12 @@ non-model waiting cycle for at most sixty minutes, without polling or holding a
 resource lock. Only then report continuing production demand as a blocker; do
 not recast it as a failed or skipped model episode.
 
-The worker captures the assembled system/user messages, tool schemas, exact
-provider request and reply payloads, tool events, package/source identities,
-and timeout status. Before the provider request it compares those captures to
-the bundle's declared invariants. Any mismatch is a reason-coded invalid
+The worker captures the assembled agent message and tool-event trace plus the
+package/source identities and timeout status. The underlying production model
+selector intentionally hides raw transport request payloads, so the first
+pilot does not claim to preserve them. Before the provider request the
+coordinator compares the declared fixture, settings, architecture profile, and
+worker identity to the sealed bundle. Any mismatch is a reason-coded invalid
 outcome and is not retried as a model sample. A refused resource admission is
 an administrative admission record only and retries the same scheduled trial
 later. A timeout or provider failure after request is a scored, reason-coded

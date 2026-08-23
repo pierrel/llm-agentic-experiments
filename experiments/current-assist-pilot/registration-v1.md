@@ -12,8 +12,9 @@ Status: design only. No model result exists.
 
 ## Exact comparison identity
 
-- Test: `fixtures/read-before-edit.json`, its natural request “Please change
-  the budget in my note to $25.”, and its deterministic read-before-edit oracle.
+- Test: `fixtures/current-assist-read-before-edit.json`, its natural request
+  “Please change the budget in my note to $25.”, and its deterministic
+  read-before-edit oracle.
 - Model: `Qwen_Qwen3.6-27B-Q4_K_M.gguf`; the trial refuses admission until a
   non-secret operator-recorded model-weights SHA-256 is in the bundle.
 - Harness: Assist's `select_assistant_model` plus Deep Agents
@@ -23,14 +24,14 @@ Status: design only. No model result exists.
   model ID, weights digest, `{ "enabled": false }` reasoning setting,
   decoding, context limit, Assist source commit, package versions, graph
   profile, tool/middleware/subagent set, timeout, recursion/turn limit, and
-  cache policy.
+  no-client-replay policy.
 
 The test's virtual file/skill fixture is materialized into a private temporary
 directory for one episode. The adapter mounts it through Deep Agents' normal
-virtual filesystem backend. It supplies no network-capable navigation/travel
-tools or subagents; its standard `execute` tool has no executable sandbox
-backend and fails closed. That confinement is a declared fidelity limitation,
-not an unrecorded substitution for production.
+virtual filesystem backend. It supplies only Deep Agents' filesystem/TODO tools
+and task tool, with no network-capable navigation/travel tools or subagents.
+That confinement is a declared fidelity limitation, not an unrecorded
+substitution for production.
 
 ## Outcome and sampling
 

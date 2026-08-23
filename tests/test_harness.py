@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from harness import (
 )
 from harness.bundle import digest
 from harness.current_assist import CurrentAssistResult, result_bytes, result_payload
+from harness.current_pilot import current_worker_command, run_current_assist_pilot
 
 
 def bundle() -> StudyBundle:
@@ -41,6 +43,60 @@ def bundle() -> StudyBundle:
 
 
 class HarnessTest(unittest.TestCase):
+    def test_current_pilot_records_denial_without_advancing_the_episode(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            progress = run_current_assist_pilot(
+                root, output,
+                workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=lambda command: subprocess.CompletedProcess(command, 1, "", "production is busy"),
+            )
+            self.assertEqual(progress.status, "retry_in_10_minutes")
+            admissions = (output / "admissions.jsonl").read_text().splitlines()
+            self.assertEqual(len(admissions), 1)
+            self.assertFalse(json.loads(admissions[0])["admitted"])
+            self.assertFalse((output / "outcomes.jsonl").exists())
+
+    def test_current_pilot_seals_an_admitted_result_and_uses_the_gpu_gate(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+
+            def worker(command):
+                result_path = Path(command[command.index("--result") + 1])
+                descriptor = json.loads(Path(command[command.index("--descriptor") + 1]).read_text())
+                payload = {
+                    "bundle_sha256": descriptor["bundle_sha256"],
+                    "trial_sha256": descriptor["trial_sha256"],
+                    "result": {
+                        "final_response": "done",
+                        "files": {"budget-note.txt": "Budget: $25.\n"},
+                        "messages": [
+                            {"type": "ai", "tool_calls": [{"name": "read_file", "args": {"path": "budget-note.txt"}}]},
+                            {"type": "ai", "tool_calls": [{"name": "write_file", "args": {"path": "budget-note.txt", "content": "Budget: $25.\n"}}]},
+                        ],
+                    },
+                }
+                result_path.write_text(json.dumps(payload))
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                command_runner=worker,
+            )
+            self.assertEqual(progress.status, "complete")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "pass")
+            self.assertTrue(outcome["model_request_made"])
+            command = current_worker_command(root, Path("/workspace"), Path("/venv/python"), Path("/d"), Path("/r"))
+            self.assertEqual(command[:5], ["/workspace/tools/agentic", "resource", "run", "llm", "--"])
+            self.assertNotIn("8000", " ".join(command))
+
     def test_current_assist_result_serialization_is_stable(self):
         result = CurrentAssistResult(
             final_response="done",
