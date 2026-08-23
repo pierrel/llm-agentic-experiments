@@ -255,6 +255,21 @@ class MvpHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "trace artifacts"):
                 run_scripted_study(self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit"))
 
+    def test_runner_discards_only_stale_atomic_trace_temps_on_resume(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            trace = next(artifacts.traces.glob("*.json"))
+            stale = artifacts.traces / f".{trace.name}.123.tmp"
+            stale.write_text("incomplete trace")
+            self.assertEqual(
+                run_scripted_study(self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")),
+                artifacts,
+            )
+            self.assertFalse(stale.exists())
+
     def test_runner_records_provider_failures_without_dropping_episodes(self) -> None:
         sealed_empty_script = replace(
             self.definition.bundle,

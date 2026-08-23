@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -299,14 +300,25 @@ def recover_torn_record_tail(path: Path) -> None:
 
 
 def _append_record(path: Path, data: bytes) -> None:
+    """Append one complete record or roll the file back to its prior size."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    import os
-
-    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    descriptor = os.open(
+        path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600
+    )
+    offset = 0
     try:
-        if os.write(descriptor, data) != len(data):
-            raise OSError("short JSONL append")
+        offset = os.lseek(descriptor, 0, os.SEEK_END)
+        view = memoryview(data)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short JSONL append")
+            view = view[written:]
         os.fsync(descriptor)
+    except BaseException:
+        os.ftruncate(descriptor, offset)
+        os.fsync(descriptor)
+        raise
     finally:
         os.close(descriptor)
     directory = os.open(path.parent, os.O_RDONLY)

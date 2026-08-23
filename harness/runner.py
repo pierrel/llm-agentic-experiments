@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import os
 from pathlib import Path
+import re
 from typing import Callable
 
 from .bundle import StudyBundle, canonical_json
@@ -103,26 +104,29 @@ def _run_scripted_study(
     admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
     gate = ScheduledAdmission(bundle.schedule, admissions)
     outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256)
-    completed = outcomes.read_verified()
     trace_dir = output / "traces"
     if trace_dir.is_symlink():
         raise ValueError("trace directory cannot be a symlink")
+    _discard_stale_trace_temps(trace_dir)
     _recover_interrupted_admission(bundle, outcomes, gate, trace_dir)
     completed = outcomes.read_verified()
     _assert_completed_prefix(bundle, completed, gate.index)
     if gate.current is None:
         return _finalize_or_verify(bundle_path, outcomes, admissions, trace_dir)
+    admission_attempts = {
+        trial_sha256: sum(record["trial_sha256"] == trial_sha256 for record in admissions.read_verified())
+        for trial_sha256 in (trial.sha256 for trial in bundle.schedule)
+    }
     while gate.current is not None:
         trial = gate.current
         admitted = False
-        previous_attempts = sum(
-            record["trial_sha256"] == trial.sha256 for record in admissions.read_verified()
-        )
+        previous_attempts = admission_attempts[trial.sha256]
         for attempt in range(previous_attempts + 1, previous_attempts + max_admission_attempts + 1):
             allowed, detail = admission_policy(trial.sha256, attempt)
             if not isinstance(allowed, bool) or not isinstance(detail, str):
                 raise ValueError("admission policy must return a boolean and text detail")
             gate.record(AdmissionAttempt(trial, allowed, attempt, detail))
+            admission_attempts[trial.sha256] += 1
             if allowed:
                 admitted = True
                 break
@@ -242,6 +246,21 @@ def _artifact_digests(bundle: StudyBundle, trace_dir: Path, report: Path) -> dic
         return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in sorted(paths.items())}
     except FileNotFoundError as error:
         raise ValueError("sealed artifact is missing") from error
+
+
+_TRACE_TEMP_PATTERN = re.compile(r"\.[0-9a-f]{64}\.json\.[0-9]+\.tmp")
+
+
+def _discard_stale_trace_temps(trace_dir: Path) -> None:
+    """Discard only interrupted atomic-write temps from the private trace directory."""
+    if not trace_dir.exists():
+        return
+    for path in trace_dir.iterdir():
+        if not _TRACE_TEMP_PATTERN.fullmatch(path.name):
+            continue
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("trace temporary artifact must be a regular file")
+        path.unlink()
 
 
 @contextmanager

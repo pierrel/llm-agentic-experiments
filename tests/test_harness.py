@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from harness import (
     RecordChain,
@@ -178,6 +180,30 @@ class HarnessTest(unittest.TestCase):
             path.write_text(json.dumps(record) + "\n")
             with self.assertRaisesRegex(ValueError, "digest mismatch"):
                 chain.read_verified()
+
+    def test_record_append_rolls_back_a_partial_write(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "records.jsonl"
+            chain = RecordChain(path, "bundle")
+            first = Trial("task", 1, "A", 1)
+            second = Trial("task", 1, "B", 2)
+            chain.append(TrialOutcome(first, "pass", True, True))
+            original_write = os.write
+            calls = 0
+
+            def partial_then_fail(descriptor: int, data: object) -> int:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return original_write(descriptor, bytes(data)[:7])
+                raise OSError("simulated write failure")
+
+            with patch("harness.records.os.write", side_effect=partial_then_fail):
+                with self.assertRaisesRegex(OSError, "simulated write failure"):
+                    chain.append(TrialOutcome(second, "pass", True, True))
+            self.assertEqual([record["trial_sha256"] for record in chain.read_verified()], [first.sha256])
 
     def test_final_seal_rejects_a_truncated_chain(self):
         from tempfile import TemporaryDirectory
