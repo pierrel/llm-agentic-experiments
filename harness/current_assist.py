@@ -124,8 +124,8 @@ def _validate_initial_files(files: dict[str, str]) -> None:
     if not isinstance(files, dict):
         raise ValueError("current Assist initial files must be an object")
     for relative_path, content in files.items():
-        path = Path(relative_path)
         if not isinstance(relative_path, str) or not isinstance(content, str):
             raise ValueError("current Assist initial files must map text paths to text")
+        path = Path(relative_path)
         if path.is_absolute() or ".." in path.parts or not relative_path:
             raise ValueError("current Assist initial file path escapes the virtual root")

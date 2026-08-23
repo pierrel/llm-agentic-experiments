@@ -133,12 +133,12 @@ def _run_current_assist_pilot(
     trace_dir = output / "traces"
     trial = bundle.schedule[0]
     gate = ScheduledAdmission(bundle.schedule, admissions)
-    if gate.current is None:
-        return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     completed = outcomes.read_verified()
     if gate.index == 1 and not completed:
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "interrupted": True})
         outcomes.append(TrialOutcome(trial, "provider_error", True, False, "worker interrupted after model admission"))
+        return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
+    if gate.current is None:
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     if completed:
         raise ValueError("current Assist pilot outcomes do not match its admission prefix")
@@ -165,9 +165,14 @@ def _run_current_assist_pilot(
         outcomes.append(TrialOutcome(trial, "provider_error", True, False, _command_detail(completed_process)))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
-    worker = _read_worker_result(result, bundle.sha256, trial.sha256)
-    current_result = CurrentAssistResult(**worker["result"])
-    score = _evaluate_current(definition.task, current_result)
+    try:
+        worker = _read_worker_result(result, bundle.sha256, trial.sha256)
+        current_result = CurrentAssistResult(**worker["result"])
+        score = _evaluate_current(definition.task, current_result)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "worker_error": str(error)[:500]})
+        outcomes.append(TrialOutcome(trial, "provider_error", True, False, "worker result was malformed"))
+        return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     _write_trace(trace_dir / f"{trial.sha256}.json", {
         "trial_sha256": trial.sha256, "trace": current_result.messages, "result": result_payload(current_result),
     })
