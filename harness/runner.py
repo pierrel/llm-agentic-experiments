@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 from typing import Callable
 
-from .bundle import StudyBundle, canonical_json
+from .bundle import StudyBundle, atomic_write, canonical_json
 from .episode import Episode, EpisodeResult, ProviderReply, ScriptedProvider, ToolCall, script_sha256
 from .manifests import StudyDefinition
 from .oracles import evaluate
@@ -291,13 +291,7 @@ def _prepare_output(output: Path) -> None:
 
 def _write_trace(path: Path, payload: dict[str, object]) -> None:
     """Atomically publish one complete trace inside the private output directory."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    with temporary.open("wb") as handle:
-        handle.write(canonical_json(payload) + b"\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary.replace(path)
+    atomic_write(path, canonical_json(payload) + b"\n")
 
 
 def _valid_trace(path: Path, trial_sha256: str) -> bool:

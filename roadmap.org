@@ -85,6 +85,10 @@ harness definitions.
    interprets it. A genuine learning records its evidence and limits, creates a
    private larochelle.io blog seed, and proposes an Assist roadmap item; none of
    those handoffs changes Assist automatically.
+7. Before model use, the experimental-design review identifies the minimum
+   adequate setup for the registered question and records why every retained
+   model, harness feature, setting, task, replicate, metric, and dependency is
+   necessary. It may not remove validity, power, safety, or fidelity needs.
 
 ** Explicitly deferred
 

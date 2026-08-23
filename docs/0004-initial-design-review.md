@@ -37,6 +37,17 @@ whole policy. The first harness code is deliberately a small purpose-built
 loop, not DeepAgents: its job is control, while a future compatibility fixture
 can verify the declared affordance shape against Assist.
 
+## Minimum adequate setup
+
+The review treats the smallest setup that can answer the registered question as
+a design constraint, not an invitation to weaken the experiment. Each proposed
+model, harness feature, setting, task, replicate, metric, and external
+dependency needs a necessity argument. The reviewer removes or holds fixed
+components that do not improve the inference, while retaining the controls,
+sample plan, safety containment, and fidelity requirements that make the
+comparison valid. This prevents an experiment from accumulating a convenient
+but confounded “full Assist” setup before the simple causal contrast works.
+
 ## Preconditions before a real model run
 
 The starter harness is not yet a real-model runner. Before one is added, it

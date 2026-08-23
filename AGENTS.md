@@ -79,6 +79,12 @@ reviews through at least these lenses:
    missingness, multiplicity, and interpretation.
 3. **Agentic harness fit:** agent loop, tool semantics, prompt assembly,
    fixture isolation, and trace/oracle validity.
+4. **Minimum adequate setup:** start from the registered causal question and
+   justify every model, harness feature, setting, task, replicate, metric, and
+   external dependency as necessary. Remove or hold fixed anything that does
+   not affect the inference. “Minimum” never permits an underpowered sample or
+   omission of a control, measurement, safety containment, or fidelity feature
+   required by the question.
 
 Each review identifies verified findings. Fixes and declined findings live in
 the study's design record before the first trial. Re-review after any material
