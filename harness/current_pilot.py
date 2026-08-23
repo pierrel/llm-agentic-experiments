@@ -113,8 +113,12 @@ def current_worker_command(
 
 
 def current_pilot_implementation_sha256(root: Path) -> str:
-    """Bind the pilot bundle to exactly the files that can issue its model request."""
-    modules = ("bundle.py", "current_assist.py", "current_pilot.py", "current_worker.py", "manifests.py", "records.py", "report.py", "runner.py")
+    """Bind the complete imported harness package to the worker's sealed execution path."""
+    modules = (
+        "__init__.py", "archive.py", "bundle.py", "current_assist.py", "current_pilot.py",
+        "current_worker.py", "episode.py", "invariants.py", "manifests.py", "oracles.py",
+        "records.py", "report.py", "runner.py", "schedule.py",
+    )
     return digest({
         f"harness/{name}": hashlib.sha256((root / "harness" / name).read_bytes()).hexdigest()
         for name in modules

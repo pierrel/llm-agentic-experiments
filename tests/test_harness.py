@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -22,7 +23,7 @@ from harness import (
 )
 from harness.bundle import digest
 from harness.current_assist import CurrentAssistResult, result_bytes, result_payload
-from harness.current_pilot import current_worker_command, run_current_assist_pilot
+from harness.current_pilot import current_pilot_implementation_sha256, current_worker_command, run_current_assist_pilot
 from harness.current_pilot import current_pilot_definition
 
 
@@ -53,6 +54,20 @@ class HarnessTest(unittest.TestCase):
         with patch("harness.current_pilot.subprocess.run", return_value=subprocess.CompletedProcess([], 1)):
             with self.assertRaisesRegex(ValueError, "tag is not available"):
                 __import__("harness.current_pilot", fromlist=["_verify_git_tag"])._verify_git_tag(root, "missing", root / "experiments/current-assist-pilot/bundle.json")
+
+    def test_current_pilot_digest_covers_package_initialization_imports(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary:
+            copied_root = Path(temporary)
+            shutil.copytree(root / "harness", copied_root / "harness")
+            original = current_pilot_implementation_sha256(copied_root)
+            (copied_root / "harness" / "demo.py").write_text("unrelated demo\n")
+            self.assertEqual(current_pilot_implementation_sha256(copied_root), original)
+            (copied_root / "harness" / "archive.py").write_text("changed package initialization import\n")
+            self.assertNotEqual(current_pilot_implementation_sha256(copied_root), original)
+
     def test_current_pilot_records_denial_without_advancing_the_episode(self):
         from tempfile import TemporaryDirectory
 
