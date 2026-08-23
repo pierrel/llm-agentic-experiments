@@ -20,6 +20,7 @@ from harness import (
     blocked_schedule,
 )
 from harness.bundle import digest
+from harness.current_assist import CurrentAssistResult, result_bytes, result_payload
 
 
 def bundle() -> StudyBundle:
@@ -40,6 +41,15 @@ def bundle() -> StudyBundle:
 
 
 class HarnessTest(unittest.TestCase):
+    def test_current_assist_result_serialization_is_stable(self):
+        result = CurrentAssistResult(
+            final_response="done",
+            files={"budget-note.txt": "Budget: $25.\n"},
+            messages=[{"type": "ai", "content": "done"}],
+        )
+        self.assertEqual(result_payload(result)["files"], {"budget-note.txt": "Budget: $25.\n"})
+        self.assertEqual(json.loads(result_bytes(result)), result_payload(result))
+
     def test_bundle_fails_closed_after_edit(self):
         with self.subTest("initial bundle"):
             original = bundle()

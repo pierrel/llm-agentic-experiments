@@ -2,6 +2,7 @@
 
 from .bundle import StudyBundle, Trial
 from .archive import ResultCapsule, archive_scripted_run
+from .current_assist import CurrentAssistResult, result_bytes, result_payload, run_current_assist_episode
 from .episode import Episode, ProviderReply, ScriptedProvider, ToolCall, VirtualWorkspace, read_script, script_sha256
 from .invariants import assert_equal_except, assert_no_condition_label
 from .manifests import (
@@ -27,6 +28,7 @@ __all__ = [
     "Trial",
     "TrialOutcome",
     "ConditionManifest",
+    "CurrentAssistResult",
     "Episode",
     "OracleResult",
     "ProviderReply",
@@ -45,6 +47,9 @@ __all__ = [
     "mvp_implementation_sha256",
     "mvp_script",
     "read_script",
+    "result_bytes",
+    "result_payload",
     "run_scripted_study",
+    "run_current_assist_episode",
     "script_sha256",
 ]

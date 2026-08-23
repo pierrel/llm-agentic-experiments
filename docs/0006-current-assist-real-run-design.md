@@ -12,8 +12,9 @@ product behavior claim.
 
 The minimum adequate setup is therefore one registered fixture, one current
 model identity, and one current Assist architecture profile. It retains the
-real Deep Agents assembly because a raw OpenAI chat completion would change the
-harness axis being established. It retains virtual fixture tools, one bounded
+real Deep Agents `create_deep_agent` assembly and Assist's production model
+selector because a raw OpenAI chat completion would change the harness axis
+being established. It retains virtual fixture tools, one bounded
 episode, complete request/response traces, and the deterministic artifact
 oracle because those are necessary to establish fidelity and measurement. It
 does not add a second model, an alternative architecture, a condition label,
@@ -45,10 +46,12 @@ A changed model, architecture, test, or setting is a new bundle, never a retry.
 admission chain. For its current trial it invokes exactly one bounded worker
 through `tools/agentic resource run llm -- ...`. The worker is not a public
 "direct model" command: it receives only a sealed trial descriptor and returns
-one result record. It imports the pinned Assist/Deep Agents profile, constructs
-that profile against the hermetic virtual-tool adapter, and makes no network,
-filesystem, shell, user-thread, or production-state capability available to the
-agent.
+one result record. It imports Assist's pinned production model selector and
+constructs the current Deep Agents ReAct loop against a hermetic virtual
+filesystem backend. Deep Agents still exposes its standard `execute` tool, but
+that tool has no executable sandbox backend and returns an error by
+construction. The pilot supplies no network/navigation/travel tools or
+subagents, and it exposes no user thread or production state to the agent.
 
 If the workspace admission wrapper denies the pilot because production owns the
 GPU, record that denial and schedule one retry ten minutes later. Continue this

@@ -187,8 +187,22 @@ def mvp_script(root: Path) -> tuple[ProviderReply, ...]:
 
 def mvp_implementation_sha256(root: Path) -> str:
     """Hash the executable MVP module set bound by the committed bundle."""
+    modules = (
+        "__init__.py",
+        "archive.py",
+        "bundle.py",
+        "demo.py",
+        "episode.py",
+        "invariants.py",
+        "manifests.py",
+        "oracles.py",
+        "records.py",
+        "report.py",
+        "runner.py",
+        "schedule.py",
+    )
     sources = {
-        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted((root / "harness").glob("*.py"))
+        f"harness/{name}": hashlib.sha256((root / "harness" / name).read_bytes()).hexdigest()
+        for name in modules
     }
     return digest(sources)
