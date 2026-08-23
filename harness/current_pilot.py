@@ -91,6 +91,10 @@ def run_current_assist_pilot(
     command_runner: CommandRunner | None = None,
 ) -> PilotProgress:
     """Make at most one admission attempt; never sleep, poll, or bypass the GPU gate."""
+    root = root.resolve()
+    output = output.resolve()
+    workspace_root = workspace_root.resolve()
+    assist_python = assist_python.resolve()
     definition = current_pilot_definition(root)
     _verify_git_tag(root, definition.bundle.registration["git_tag"], root / "experiments" / "current-assist-pilot" / "bundle.json")
     _prepare_output(output)
