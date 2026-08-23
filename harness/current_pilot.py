@@ -109,7 +109,7 @@ def current_worker_command(
     root: Path, workspace_root: Path, assist_python: Path, descriptor: Path, result: Path, request_started: Path
 ) -> list[str]:
     """Build the only model-capable command, nested under the workspace admission gate."""
-    deployment_root = assist_python.parents[2] if len(assist_python.parents) > 2 else assist_python.parent
+    deployment_root = assist_python.parents[3] if len(assist_python.parents) > 3 else assist_python.parent
     return [
         str(workspace_root / "tools" / "agentic"), "resource", "run", "llm", "--",
         "sh", "-c", 'set -a; . "$1"; shift; exec "$@"', "sh",
