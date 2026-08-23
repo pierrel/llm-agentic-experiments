@@ -133,6 +133,30 @@ class HarnessTest(unittest.TestCase):
             )
             self.assertEqual(progress.status, "complete")
 
+    def test_current_pilot_rejects_non_directory_trace_paths(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        definition = current_pilot_definition(root)
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            output.mkdir(mode=0o700)
+            definition.bundle.write(output / "bundle.json")
+            (output / "traces").write_text("not a directory")
+            with self.assertRaisesRegex(ValueError, "trace path must be a real directory"):
+                run_current_assist_pilot(
+                    root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python")
+                )
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            output.mkdir(mode=0o700)
+            definition.bundle.write(output / "bundle.json")
+            (output / "traces").symlink_to(Path(temporary) / "outside")
+            with self.assertRaisesRegex(ValueError, "trace directory cannot be a symlink"):
+                run_current_assist_pilot(
+                    root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python")
+                )
+
     def test_current_assist_result_serialization_is_stable(self):
         result = CurrentAssistResult(
             final_response="done",

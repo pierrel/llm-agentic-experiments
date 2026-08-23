@@ -131,6 +131,10 @@ def _run_current_assist_pilot(
     admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
     outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256)
     trace_dir = output / "traces"
+    if trace_dir.is_symlink():
+        raise ValueError("trace directory cannot be a symlink")
+    if trace_dir.exists() and not trace_dir.is_dir():
+        raise ValueError("trace path must be a real directory")
     trial = bundle.schedule[0]
     gate = ScheduledAdmission(bundle.schedule, admissions)
     completed = outcomes.read_verified()
