@@ -50,6 +50,12 @@ that profile against the hermetic virtual-tool adapter, and makes no network,
 filesystem, shell, user-thread, or production-state capability available to the
 agent.
 
+If the workspace admission wrapper denies the pilot because production owns the
+GPU, record that denial and schedule one retry ten minutes later. Continue this
+non-model waiting cycle for at most sixty minutes, without polling or holding a
+resource lock. Only then report continuing production demand as a blocker; do
+not recast it as a failed or skipped model episode.
+
 The worker captures the assembled system/user messages, tool schemas, exact
 provider request and reply payloads, tool events, package/source identities,
 and timeout status. Before the provider request it compares those captures to
