@@ -57,6 +57,15 @@ class HarnessTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "digest mismatch"):
                     StudyBundle.read_verified(path)
 
+    def test_bundle_reader_rejects_valid_json_with_the_wrong_shape(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "bundle.json"
+            path.write_text("[]\n")
+            with self.assertRaisesRegex(ValueError, "must be a JSON object"):
+                StudyBundle.read_verified(path)
+
     def test_bundle_requires_position_policy_for_partial_cycle(self):
         study = bundle()
         with self.assertRaisesRegex(ValueError, "partial position cycle"):

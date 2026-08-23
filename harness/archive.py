@@ -71,7 +71,13 @@ def archive_scripted_run(artifacts: RunArtifacts, destination: Path) -> ResultCa
 
 def _source_artifact_digests(artifacts: RunArtifacts) -> dict[str, str]:
     """Return the exact report and trace hash inventory bound by the final seal."""
-    seal = json.loads(artifacts.outcomes.with_suffix(".jsonl.seal").read_text())
+    seal_path = artifacts.outcomes.with_suffix(".jsonl.seal")
+    try:
+        seal = json.loads(seal_path.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError("result source final seal is not valid JSON") from error
+    if not isinstance(seal, dict):
+        raise ValueError("result source final seal must be a JSON object")
     claimed = seal.pop("seal_sha256", None)
     if claimed != digest(seal):
         raise ValueError("result source final seal digest mismatch")

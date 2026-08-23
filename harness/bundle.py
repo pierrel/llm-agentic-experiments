@@ -85,27 +85,40 @@ class StudyBundle:
     @classmethod
     def read_verified(cls, path: Path) -> "StudyBundle":
         """Load only a byte-valid bundle with a matching recorded digest."""
-        stored = json.loads(path.read_text())
-        payload = stored["bundle"]
+        try:
+            stored = json.loads(path.read_text())
+        except json.JSONDecodeError as error:
+            raise ValueError(f"bundle is not valid JSON: {path}") from error
+        if not isinstance(stored, dict):
+            raise ValueError(f"bundle must be a JSON object: {path}")
+        payload = stored.get("bundle")
+        if not isinstance(payload, dict):
+            raise ValueError(f"bundle payload must be a JSON object: {path}")
         if stored.get("sha256") != digest(payload):
             raise ValueError(f"bundle digest mismatch: {path}")
-        schedule = tuple(Trial(**trial) for trial in payload["schedule"])
-        bundle = cls(
-            study_id=payload["study_id"],
-            registration=payload["registration"],
-            conditions=payload["conditions"],
-            fixtures=payload["fixtures"],
-            tool_schemas=payload["tool_schemas"],
-            schedule=schedule,
-            model=payload["model"],
-            harness_architecture=payload["harness_architecture"],
-            settings=payload["settings"],
-            runner_revision=payload["runner_revision"],
-            analysis_revision=payload["analysis_revision"],
-        )
+        try:
+            schedule = tuple(Trial(**trial) for trial in payload["schedule"])
+            bundle = cls(
+                study_id=payload["study_id"],
+                registration=payload["registration"],
+                conditions=payload["conditions"],
+                fixtures=payload["fixtures"],
+                tool_schemas=payload["tool_schemas"],
+                schedule=schedule,
+                model=payload["model"],
+                harness_architecture=payload["harness_architecture"],
+                settings=payload["settings"],
+                runner_revision=payload["runner_revision"],
+                analysis_revision=payload["analysis_revision"],
+            )
+        except (KeyError, TypeError) as error:
+            raise ValueError(f"bundle payload has an invalid shape: {path}") from error
         if bundle.sha256 != stored["sha256"]:
             raise ValueError(f"bundle normalization mismatch: {path}")
-        bundle.assert_complete()
+        try:
+            bundle.assert_complete()
+        except (AttributeError, KeyError, TypeError) as error:
+            raise ValueError(f"bundle payload has an invalid shape: {path}") from error
         return bundle
 
     def assert_complete(self) -> None:

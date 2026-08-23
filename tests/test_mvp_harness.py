@@ -310,6 +310,16 @@ class MvpHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "artifacts do not match"):
                 archive_scripted_run(artifacts, root / "results" / "tampered")
 
+    def test_result_capsule_rejects_a_valid_json_final_seal_with_the_wrong_shape(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, root / "local-run", mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            artifacts.outcomes.with_suffix(".jsonl.seal").write_text("[]\n")
+            with self.assertRaisesRegex(ValueError, "final seal must be a JSON object"):
+                archive_scripted_run(artifacts, root / "results" / "invalid-seal")
+
     def test_atomic_write_retries_short_writes_and_removes_failed_temp(self) -> None:
         with TemporaryDirectory() as temporary:
             target = Path(temporary) / "artifact.json"
