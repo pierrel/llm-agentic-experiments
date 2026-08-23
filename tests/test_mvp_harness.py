@@ -1,0 +1,259 @@
+from __future__ import annotations
+
+from dataclasses import replace
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from harness import (
+    Episode,
+    ProviderReply,
+    RecordChain,
+    ScriptedProvider,
+    StudyDefinition,
+    ToolCall,
+    VirtualWorkspace,
+    evaluate,
+    mvp_definition,
+    mvp_script,
+    run_scripted_study,
+    script_sha256,
+)
+from harness.records import AdmissionAttempt, AdmissionLog, ScheduledAdmission
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class MvpHarnessTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.definition = mvp_definition(ROOT)
+
+    def test_mvp_definition_is_sealed_and_initial_requests_are_identical(self) -> None:
+        self.definition.validate()
+        task = self.definition.tasks["read-before-edit"]
+        requests = [self.definition.initial_request(task, condition) for condition in self.definition.conditions.values()]
+        self.assertEqual(requests[0], requests[1])
+        with TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "provider behavior differs"):
+                run_scripted_study(
+                    self.definition, Path(temporary), (), lambda *_: (True, "simulated admit")
+                )
+
+    def test_manifest_digest_schema_and_decoding_contamination_fail_closed(self) -> None:
+        task = self.definition.tasks["read-before-edit"]
+        changed_task = replace(task, initial_files={"budget-note.txt": "Budget: $99.\n"})
+        with self.assertRaisesRegex(ValueError, "fixture digest"):
+            StudyDefinition(self.definition.bundle, {task.task_id: changed_task}, self.definition.conditions).validate()
+
+        changed_schema = replace(self.definition.bundle, tool_schemas={"read_file": {"tampered": True}})
+        with self.assertRaisesRegex(ValueError, "tool schemas"):
+            StudyDefinition(changed_schema, self.definition.tasks, self.definition.conditions).validate()
+
+        changed_condition = replace(self.definition.conditions["C02"], decoding_overrides={"temperature": 1})
+        changed_conditions = self.definition.conditions | {"C02": changed_condition}
+        changed_bundle = replace(
+            self.definition.bundle,
+            conditions=self.definition.bundle.conditions | {"C02": {"sha256": changed_condition.sha256}},
+        )
+        with self.assertRaisesRegex(ValueError, "undeclared condition difference: decoding"):
+            StudyDefinition(changed_bundle, self.definition.tasks, changed_conditions).validate()
+        declared_bundle = replace(
+            changed_bundle,
+            registration=changed_bundle.registration | {"allowed_initial_request_fields": ["decoding"]},
+        )
+        StudyDefinition(declared_bundle, self.definition.tasks, changed_conditions).validate()
+
+    def test_oracle_rejects_write_without_prior_read(self) -> None:
+        task = self.definition.tasks["read-before-edit"]
+        result = Episode(
+            system_prompt=task.system_prompt,
+            user_prompt=task.user_prompt,
+            decoding=task.decoding,
+            workspace=VirtualWorkspace(task.initial_files, task.skills),
+            provider=ScriptedProvider(
+                (
+                    ProviderReply(
+                        tool_calls=(
+                            ToolCall("write_file", {"path": "budget-note.txt", "content": "Budget: $25.\n"}),
+                        )
+                    ),
+                    ProviderReply(content="Updated it.", final=True),
+                )
+            ),
+            max_turns=3,
+        ).run()
+        score = evaluate(task, result)
+        self.assertFalse(score.passed)
+        self.assertIn("not read before", score.detail)
+
+    def test_provider_and_tool_failures_remain_reason_coded_outcomes(self) -> None:
+        task = self.definition.tasks["read-before-edit"]
+        provider_error = Episode(
+            system_prompt=task.system_prompt,
+            user_prompt=task.user_prompt,
+            decoding=task.decoding,
+            workspace=VirtualWorkspace(task.initial_files, task.skills),
+            provider=ScriptedProvider(()),
+            max_turns=1,
+        ).run()
+        self.assertEqual(provider_error.provider_error, "ValueError")
+        self.assertEqual(provider_error.trace[0]["provider_error"], "ValueError")
+
+        invalid_call = Episode(
+            system_prompt=task.system_prompt,
+            user_prompt=task.user_prompt,
+            decoding=task.decoding,
+            workspace=VirtualWorkspace(task.initial_files, task.skills),
+            provider=ScriptedProvider(
+                (
+                    ProviderReply(tool_calls=(ToolCall("read_file", {"path": "missing.txt"}),)),
+                    ProviderReply(content="Done.", final=True),
+                )
+            ),
+            max_turns=2,
+        ).run()
+        self.assertTrue(invalid_call.invalid_tool_call)
+
+        malformed_call = Episode(
+            system_prompt=task.system_prompt,
+            user_prompt=task.user_prompt,
+            decoding=task.decoding,
+            workspace=VirtualWorkspace(task.initial_files, task.skills),
+            provider=ScriptedProvider(
+                (
+                    ProviderReply(tool_calls=(ToolCall("read_file", {"path": 3}),)),
+                    ProviderReply(content="Done.", final=True),
+                )
+            ),
+            max_turns=2,
+        ).run()
+        self.assertTrue(malformed_call.invalid_tool_call)
+
+    def test_virtual_workspace_rejects_host_style_paths(self) -> None:
+        workspace = VirtualWorkspace({"note.txt": "one"}, {})
+        with self.assertRaisesRegex(ValueError, "invalid virtual path"):
+            workspace.execute(ToolCall("read_file", {"path": "../note.txt"}))
+        with self.assertRaisesRegex(ValueError, "invalid virtual path"):
+            workspace.execute(ToolCall("write_file", {"path": "/tmp/note", "content": "two"}))
+        with self.assertRaisesRegex(ValueError, "invalid virtual path"):
+            workspace.execute(ToolCall("read_file", {"path": "."}))
+        with self.assertRaisesRegex(ValueError, "invalid virtual path"):
+            VirtualWorkspace({"a//note.txt": "one"}, {})
+        with self.assertRaisesRegex(ValueError, "typed"):
+            ProviderReply(content="done", final="yes").payload()  # type: ignore[arg-type]
+
+    def test_runner_rejects_a_nonprivate_output_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            output.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "private"):
+                run_scripted_study(self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit"))
+
+    def test_scripted_schedule_is_fresh_sealed_and_fully_accounted(self) -> None:
+        denied: set[str] = set()
+
+        def admission(trial_sha256: str, _: int) -> tuple[bool, str]:
+            if trial_sha256 not in denied:
+                denied.add(trial_sha256)
+                return False, "simulated busy"
+            return True, "simulated admit"
+
+        with TemporaryDirectory() as temporary:
+            artifacts = run_scripted_study(
+                self.definition, Path(temporary), mvp_script(ROOT), admission
+            )
+            bundle = self.definition.bundle.read_verified(artifacts.bundle)
+            records = RecordChain(artifacts.outcomes, bundle.sha256)
+            admissions = AdmissionLog(artifacts.admissions, bundle.sha256)
+            self.assertEqual(len(admissions.read_verified()), len(bundle.schedule) * 2)
+            outcomes = records.read_verified()
+            self.assertEqual({record["outcome"] for record in outcomes}, {"pass"})
+            self.assertTrue(all(not record["model_request_made"] for record in outcomes))
+            trace_paths = sorted(artifacts.traces.glob("*.json"))
+            self.assertEqual(len(trace_paths), len(bundle.schedule))
+            trace = json.loads(trace_paths[0].read_text())["trace"]
+            expected = self.definition.initial_request(
+                self.definition.tasks["read-before-edit"], self.definition.conditions["C01"]
+            )
+            self.assertEqual(trace[0]["request"] | {"request_id": None}, expected | {"request_id": None})
+            self.assertTrue(trace[0]["request"]["request_id"].endswith(":t1"))
+            report = json.loads(artifacts.report.read_text())
+            self.assertEqual(report["conditions"], {"C01": {"pass": 2}, "C02": {"pass": 2}})
+            resumed = run_scripted_study(self.definition, Path(temporary), mvp_script(ROOT), admission)
+            self.assertEqual(resumed, artifacts)
+
+    def test_runner_resumes_a_denied_trial_without_changing_the_bundle(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            with self.assertRaisesRegex(RuntimeError, "never allowed"):
+                run_scripted_study(
+                    self.definition,
+                    output,
+                    mvp_script(ROOT),
+                    lambda *_: (False, "simulated busy"),
+                    max_admission_attempts=1,
+                )
+            original_bundle = (output / "bundle.json").read_bytes()
+            artifacts = run_scripted_study(
+                self.definition,
+                output,
+                mvp_script(ROOT),
+                lambda *_: (True, "simulated admit"),
+            )
+            self.assertEqual((output / "bundle.json").read_bytes(), original_bundle)
+            bundle = self.definition.bundle.read_verified(artifacts.bundle)
+            records = RecordChain(artifacts.outcomes, bundle.sha256)
+            self.assertEqual(len(records.read_verified()), len(bundle.schedule))
+
+    def test_runner_recovers_an_admitted_interrupted_scripted_episode(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            bundle_path = output / "bundle.json"
+            self.definition.bundle.write(bundle_path)
+            bundle = self.definition.bundle.read_verified(bundle_path)
+            admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
+            gate = ScheduledAdmission(bundle.schedule, admissions)
+            gate.record(AdmissionAttempt(bundle.schedule[0], True, 1, "simulated admit"))
+            artifacts = run_scripted_study(
+                self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            outcomes = RecordChain(artifacts.outcomes, bundle.sha256).read_verified()
+            self.assertEqual(outcomes[0]["outcome"], "infrastructure_invalid")
+            self.assertEqual(len(outcomes), len(bundle.schedule))
+
+    def test_runner_verifies_report_and_trace_artifacts_on_resume(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            artifacts.report.write_text("{}\n")
+            with self.assertRaisesRegex(ValueError, "final seal"):
+                run_scripted_study(self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit"))
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            next(artifacts.traces.glob("*.json")).unlink()
+            with self.assertRaisesRegex(ValueError, "trace artifacts"):
+                run_scripted_study(self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit"))
+
+    def test_runner_records_provider_failures_without_dropping_episodes(self) -> None:
+        sealed_empty_script = replace(
+            self.definition.bundle,
+            registration=self.definition.bundle.registration | {"max_turns": 1, "script_sha256": script_sha256(())},
+        )
+        with TemporaryDirectory() as temporary:
+            artifacts = run_scripted_study(
+                StudyDefinition(sealed_empty_script, self.definition.tasks, self.definition.conditions),
+                Path(temporary),
+                (),
+                lambda *_: (True, "simulated admit"),
+            )
+            bundle = self.definition.bundle.read_verified(artifacts.bundle)
+            outcomes = RecordChain(artifacts.outcomes, bundle.sha256).read_verified()
+            self.assertEqual(len(outcomes), len(bundle.schedule))
+            self.assertEqual({record["outcome"] for record in outcomes}, {"provider_error"})

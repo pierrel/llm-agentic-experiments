@@ -156,6 +156,20 @@ class HarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "scheduled-record mismatch"):
                 chain.verify_finalized(study.schedule, admissions)
 
+    def test_final_seal_rejects_outcomes_not_matching_admitted_order(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            study = bundle()
+            outcomes = RecordChain(Path(temporary) / "outcomes.jsonl", study.sha256)
+            for trial in reversed(study.schedule):
+                outcomes.append(TrialOutcome(trial, "pass", True, True))
+            admissions = AdmissionLog(Path(temporary) / "admissions.jsonl", study.sha256)
+            for trial in study.schedule:
+                admissions.append(AdmissionAttempt(trial, True, 1))
+            with self.assertRaisesRegex(ValueError, "ordered one-to-one"):
+                outcomes.finalize(study.schedule, admissions)
+
     def test_admission_log_retries_same_episode_before_admission(self):
         from tempfile import TemporaryDirectory
 

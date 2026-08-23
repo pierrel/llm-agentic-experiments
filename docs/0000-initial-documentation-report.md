@@ -53,16 +53,13 @@ into Assist.
 
 ## Verification and review
 
-The first local harness checks pass with `python -m unittest discover -s tests
--v`: fourteen tests cover study-bundle tampering, seed policy, block scheduling,
-undeclared condition differences, label leakage, record integrity, a finalized
-record seal, missing records, incorrect infrastructure-invalid classification,
-admission retries/restart recovery that would change registered order,
-collision-safe trial accounting, and unbalanced manual schedules. `compileall`
-and `git diff --check` also pass.
+The local harness checks cover study-bundle tampering, scheduling, declared
+condition differences, label leakage, record integrity, finalized seals,
+admission recovery and ordering, collision-safe trial accounting, and malformed
+manual schedules. `compileall` and `git diff --check` also pass.
 The four required design lenses found material issues in the initial design;
 every one was incorporated before this report.
 
 No deferred product defect exists. The intentionally deferred work is the
-real-model runner and analysis/report UI, because those must be built against a
+real-model runner and richer analysis UI, because those must be built against a
 specific registered study and obey the same sealed interfaces.

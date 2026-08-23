@@ -22,5 +22,5 @@ translates recurring technical terms.
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
 `AGENTS.md` is the operating contract for scientific integrity, review, and GPU
-coordination. This directory records designs and reports; executable condition
-manifests will live under `experiments/` once the harness exists.
+coordination. This directory records designs and reports; the MVP's executable
+condition and scripted-provider manifests now live under `experiments/mvp-scripted/`.

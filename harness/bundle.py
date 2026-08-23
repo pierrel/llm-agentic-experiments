@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -70,8 +71,7 @@ class StudyBundle:
         """Write a self-verifying bundle; callers must not hand-edit it later."""
         self.assert_complete()
         contents = {"sha256": self.sha256, "bundle": self.payload()}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(canonical_json(contents) + b"\n")
+        atomic_write(path, canonical_json(contents) + b"\n")
 
     @classmethod
     def read_verified(cls, path: Path) -> "StudyBundle":
@@ -140,3 +140,22 @@ class StudyBundle:
                             counts[block_positions[condition]] += 1
                     if counts != [expected_per_position] * condition_count:
                         raise ValueError(f"unbalanced condition positions: {task}:{condition}")
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    """Durably replace one local artifact only after its complete bytes exist."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        if os.write(descriptor, data) != len(data):
+            raise OSError("short atomic artifact write")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)

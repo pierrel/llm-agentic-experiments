@@ -21,6 +21,10 @@ map is [docs/README.md](docs/README.md). The initial setup and review record is
 Product guidance claims first enter [seeds/](seeds/) as hypotheses, then earn a
 registered study if they are worth testing.
 
+The current [MVP roadmap](roadmap.org) covers the sealed, scripted no-model
+harness. It validates the measurement path only; real model trials remain
+deferred until a registered study and its design reviews are complete.
+
 ## Non-negotiable rules
 
 - Every real model run goes through the shared admission wrapper:
@@ -61,4 +65,13 @@ The integrity kernel intentionally needs no third-party package:
 ```sh
 python -m unittest discover -s tests -v
 python -m compileall -q harness tests
+```
+
+To prove the committed synthetic fixture end to end, use a private local
+artifact directory. It writes bundle, trace, record, seal, and aggregate-report
+artifacts and makes no model, GPU, network, or Assist request. Repeating the
+same command verifies the sealed artifacts rather than rerunning them:
+
+```sh
+python -m harness.demo /tmp/llm-agentic-experiments-mvp
 ```

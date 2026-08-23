@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from .bundle import Trial, canonical_json, digest
+from .bundle import Trial, atomic_write, canonical_json, digest
 
 OutcomeKind = Literal[
     "pass", "artifact_failure", "timeout", "refusal", "loop_exhausted", "invalid_tool_call",
@@ -84,9 +84,7 @@ class AdmissionLog:
             "previous_sha256": previous,
         }
         record = payload | {"record_sha256": digest(payload)}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("ab") as handle:
-            handle.write(canonical_json(record) + b"\n")
+        _append_record(self.path, canonical_json(record) + b"\n")
         return record["record_sha256"]
 
     def read_verified(self) -> list[dict[str, object]]:
@@ -127,7 +125,7 @@ class AdmissionLog:
             "record_tip_sha256": records[-1]["record_sha256"] if records else self.bundle_sha256,
         }
         seal_path = self.path.with_suffix(self.path.suffix + ".seal")
-        seal_path.write_bytes(canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
+        atomic_write(seal_path, canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
         return seal_path
 
     def verify_finalized(self, schedule: tuple[Trial, ...]) -> None:
@@ -194,9 +192,7 @@ class RecordChain:
             "previous_sha256": previous,
         }
         record = payload | {"record_sha256": digest(payload)}
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("ab") as handle:
-            handle.write(canonical_json(record) + b"\n")
+        _append_record(self.path, canonical_json(record) + b"\n")
         return record["record_sha256"]
 
     def read_verified(self) -> list[dict[str, object]]:
@@ -222,25 +218,37 @@ class RecordChain:
         if seen != expected:
             raise ValueError(f"scheduled-record mismatch: missing={expected - seen}, extra={seen - expected}")
 
-    def finalize(self, schedule: tuple[Trial, ...], admission_log: AdmissionLog) -> Path:
-        """Write a local seal only after every scheduled episode is accounted for."""
+    def finalize(
+        self,
+        schedule: tuple[Trial, ...],
+        admission_log: AdmissionLog,
+        artifact_digests: dict[str, str] | None = None,
+    ) -> Path:
+        """Seal fully accounted outcomes and the exact generated artifacts."""
         self.assert_schedule_accounted_for(schedule)
         records = self.read_verified()
         admission_log.finalize(schedule)
         admission_records = admission_log.read_verified()
+        self._assert_admission_order(records, admission_records)
         admission_tip = admission_records[-1]["record_sha256"] if admission_records else admission_log.bundle_sha256
         seal = {
             "bundle_sha256": self.bundle_sha256,
             "schedule_sha256": digest([trial.__dict__ for trial in schedule]),
             "record_tip_sha256": records[-1]["record_sha256"] if records else self.bundle_sha256,
             "admission_tip_sha256": admission_tip,
+            "artifacts": artifact_digests or {},
         }
         seal_path = self.path.with_suffix(self.path.suffix + ".seal")
-        seal_path.write_bytes(canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
+        atomic_write(seal_path, canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
         return seal_path
 
-    def verify_finalized(self, schedule: tuple[Trial, ...], admission_log: AdmissionLog) -> None:
-        """Verify the local final seal, schedule coverage, and record-chain tip."""
+    def verify_finalized(
+        self,
+        schedule: tuple[Trial, ...],
+        admission_log: AdmissionLog,
+        artifact_digests: dict[str, str] | None = None,
+    ) -> None:
+        """Verify the local final seal, ordered records, and generated artifacts."""
         seal_path = self.path.with_suffix(self.path.suffix + ".seal")
         seal = json.loads(seal_path.read_text())
         claimed = seal.pop("seal_sha256", None)
@@ -252,10 +260,57 @@ class RecordChain:
             seal.get("bundle_sha256") != self.bundle_sha256
             or seal.get("schedule_sha256") != digest([trial.__dict__ for trial in schedule])
             or seal.get("record_tip_sha256") != (records[-1]["record_sha256"] if records else self.bundle_sha256)
+            or seal.get("artifacts") != (artifact_digests or {})
         ):
             raise ValueError("final seal does not match record chain")
         admission_log.verify_finalized(schedule)
         admission_records = admission_log.read_verified()
+        self._assert_admission_order(records, admission_records)
         expected_tip = admission_records[-1]["record_sha256"] if admission_records else admission_log.bundle_sha256
         if seal.get("admission_tip_sha256") != expected_tip:
             raise ValueError("final seal does not match admission history")
+
+    @staticmethod
+    def _assert_admission_order(
+        outcomes: list[dict[str, object]], admissions: list[dict[str, object]]
+    ) -> None:
+        admitted = [record["trial_sha256"] for record in admissions if record["admitted"]]
+        completed = [record["trial_sha256"] for record in outcomes]
+        if completed != admitted:
+            raise ValueError("outcomes are not ordered one-to-one with admitted trials")
+
+
+def recover_torn_record_tail(path: Path) -> None:
+    """Discard only an unterminated local append that could not be committed."""
+    if not path.exists():
+        return
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return
+    prefix, tail = data.rsplit(b"\n", 1)
+    try:
+        json.loads(tail)
+    except json.JSONDecodeError:
+        pass
+    else:
+        atomic_write(path, data + b"\n")
+        return
+    atomic_write(path, prefix + (b"\n" if prefix else b""))
+
+
+def _append_record(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import os
+
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        if os.write(descriptor, data) != len(data):
+            raise OSError("short JSONL append")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)

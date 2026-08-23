@@ -12,8 +12,8 @@ and a neither-rule control. The review also required an explicit whole-policy
 definition for Study B, a complete task bank before piloting, real blinding
 limits, sealed preregistration bundles, a study registry, and guard self-tests.
 All are now specified in Design 0001; the starter harness already enforces the
-bundle, schedule, and record-chain parts. Its remaining guard self-tests ship
-with the real-model runner. Conclusions are restricted to the pinned model,
+bundle, schedule, record-chain, and deliberate contamination self-test parts.
+The real-model runner still needs to apply them to provider requests. Conclusions are restricted to the pinned model,
 loop, task bank, and decoding regime.
 
 ## Statistical rigor

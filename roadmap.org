@@ -1,0 +1,89 @@
+#+title: Agentic-guidance experiment roadmap
+
+* MVP: sealed synthetic episode harness
+
+** Status
+
+Implemented and under local review. This is a harness milestone, not a model
+study or product result.
+
+** Outcome
+
+Prove the experiment laboratory end to end without a model request.  A
+machine-readable study definition must produce fresh, hermetic agent episodes
+against an in-memory workspace, capture every provider request and tool
+exchange, score a deterministic artifact, and account for every scheduled
+episode in sealed records.
+
+This milestone validates the measurement apparatus.  It produces no claim
+about prompting and must not be used to change Assist.
+
+** Delivered scope
+
+- Machine-readable task, condition, and scripted-provider manifests,
+  checked against a committed content-addressed StudyBundle. The bundle fixes
+  the script digest, harness implementation digest, and loop limit as well as
+  fixtures, schemas, and schedule.
+- A small agent loop over virtual list, read, write, and load-skill tools.
+  The loop has no shell, network, host-filesystem, or Assist dependency.
+- Exact rendered provider requests, replies, tool calls, tool results,
+  and final response in a per-episode trace.
+- One inspect-before-edit fixture, a deterministic artifact-and-trace
+  oracle, and a scripted fake provider.
+- A complete interleaved schedule from fresh fixture and provider
+  state for every episode, including a simulated denied-then-admitted
+  administrative attempt.  Seal admission, outcome, and static aggregate
+  report artifacts.
+- Integrity tests so undeclared request/schema/fixture/decoding changes,
+  missing scheduled episodes, leaked review labels, and edited records fail
+  closed.
+
+Raw traces and generated result records remain local artifacts. Tests use
+temporary directories and commit the fixture, condition, script, bundle, and
+harness definitions.
+
+** Acceptance checks
+
+1. A committed bundle and script produce verified admission, outcome, trace,
+   and aggregate-report artifacts, with every scheduled episode scored.
+2. The fixture passes only after the expected edit and a preceding inspection;
+   a write without a read fails deterministically.
+3. Each episode starts with a new virtual workspace, tool state, provider, and
+   message history.
+4. The runner rejects a manifest whose digest, rendered request, schema,
+   fixture, or decoding diverges outside its declared condition difference.
+5. The existing and new integrity tests pass without a model, GPU, network, or
+   production Assist state.
+
+** Explicitly deferred
+
+- A real-model provider client and the coordinator that invokes one bounded
+  trial through =tools/agentic resource run llm=.
+- Git-tag binding for a real-model bundle, seed-support calibration, and any
+  model trial.
+- Registered Study A task-bank authoring, pilot, confirmation analysis, and
+  qualitative review.
+
+Those require the MVP checks and the required written scientific-integrity,
+statistical-rigor, and agentic-harness-fit reviews before any model result.
+
+* Next milestones
+
+** Real-model admission coordinator
+
+Add a coordinator that can advance only the sealed schedule prefix, records a
+denied admission against the current episode, and starts exactly one bounded
+episode through the workspace LLM resource.  It has no direct-model mode.
+
+** Study A development registration
+
+Register the frozen development task bank for the 2x2 system-guidance by
+loaded-skill-guidance study.  Pin model and decoding configuration, lock the
+primary artifact oracle, then run only after the coordinator and study reviews
+are complete.
+
+** Study A confirmation
+
+Create a new confirmation registration with a separate task cohort, fixed
+sample plan, and analysis revision.  Report every scheduled episode and retain
+the limits of inference to the pinned model, loop, and tasks.
