@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from harness import (
     Episode,
@@ -14,6 +16,7 @@ from harness import (
     StudyDefinition,
     ToolCall,
     VirtualWorkspace,
+    archive_scripted_run,
     evaluate,
     mvp_definition,
     mvp_script,
@@ -21,6 +24,7 @@ from harness import (
     script_sha256,
 )
 from harness.records import AdmissionAttempt, AdmissionLog, ScheduledAdmission
+from harness.bundle import atomic_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -269,6 +273,64 @@ class MvpHarnessTest(unittest.TestCase):
                 artifacts,
             )
             self.assertFalse(stale.exists())
+
+    def test_runner_rejects_a_regular_file_at_the_trace_directory_path(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "local-run"
+            output.mkdir(mode=0o700)
+            self.definition.bundle.write(output / "bundle.json")
+            (output / "traces").write_text("not a directory")
+            with self.assertRaisesRegex(ValueError, "trace path must be a real directory"):
+                run_scripted_study(
+                    self.definition, output, mvp_script(ROOT), lambda *_: (True, "simulated admit")
+                )
+
+    def test_result_capsule_captures_settings_results_and_raw_trace_evidence(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, root / "local-run", mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            capsule = archive_scripted_run(artifacts, root / "results" / "mvp-scripted-v1")
+            record = json.loads(capsule.record.read_text())
+            self.assertEqual(record["bundle_sha256"], self.definition.bundle.sha256)
+            self.assertEqual(record["settings"], self.definition.bundle.settings)
+            self.assertEqual(len(record["raw_trace_sha256"]), len(self.definition.bundle.schedule))
+            self.assertTrue((capsule.root / "outcomes.jsonl.seal").exists())
+            self.assertIn("No interpretation recorded yet", capsule.learning.read_text())
+            self.assertIn("No proposal recorded yet", capsule.assist_proposal.read_text())
+            with self.assertRaisesRegex(ValueError, "new real directory"):
+                archive_scripted_run(artifacts, capsule.root)
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            artifacts = run_scripted_study(
+                self.definition, root / "local-run", mvp_script(ROOT), lambda *_: (True, "simulated admit")
+            )
+            next(artifacts.traces.glob("*.json")).write_text("{}\n")
+            with self.assertRaisesRegex(ValueError, "artifacts do not match"):
+                archive_scripted_run(artifacts, root / "results" / "tampered")
+
+    def test_atomic_write_retries_short_writes_and_removes_failed_temp(self) -> None:
+        with TemporaryDirectory() as temporary:
+            target = Path(temporary) / "artifact.json"
+            original_write = os.write
+            writes = 0
+
+            def short_then_complete(descriptor: int, data: bytes | memoryview) -> int:
+                nonlocal writes
+                writes += 1
+                if writes == 1:
+                    return original_write(descriptor, data[:1])
+                return original_write(descriptor, data)
+
+            with patch("harness.bundle.os.write", side_effect=short_then_complete):
+                atomic_write(target, b"complete")
+            self.assertEqual(target.read_bytes(), b"complete")
+
+            with patch("harness.bundle.os.write", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    atomic_write(target.with_name("failed.json"), b"incomplete")
+            self.assertFalse((target.parent / f".failed.json.{os.getpid()}.tmp").exists())
 
     def test_runner_records_provider_failures_without_dropping_episodes(self) -> None:
         sealed_empty_script = replace(

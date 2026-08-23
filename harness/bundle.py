@@ -190,11 +190,24 @@ def atomic_write(path: Path, data: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        if os.write(descriptor, data) != len(data):
-            raise OSError("short atomic artifact write")
+        remaining = memoryview(data)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("atomic artifact write made no progress")
+            remaining = remaining[written:]
         os.fsync(descriptor)
-    finally:
+    except BaseException:
         os.close(descriptor)
+        descriptor = -1
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     os.replace(temporary, path)
     directory = os.open(path.parent, os.O_RDONLY)
     try:

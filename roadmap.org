@@ -60,6 +60,10 @@ the test digest untouched; it never silently mixes cohorts.
 - Integrity tests so undeclared request/schema/fixture/decoding changes,
   missing scheduled episodes, leaked review labels, and edited records fail
   closed.
+- A commit-ready result capsule that retains the sealed run settings, bundle,
+  admissions, outcomes, seals, report, raw-trace hashes, an interpretation
+  record, and a proposed Assist-roadmap handoff. Raw trace bodies stay local by
+  default, but their sealed evidence remains inspectable from the repository.
 
 Raw traces and generated result records remain local artifacts. Tests use
 temporary directories and commit the fixture, condition, script, bundle, and
@@ -77,6 +81,10 @@ harness definitions.
    fixture, or decoding diverges outside its declared condition difference.
 5. The existing and new integrity tests pass without a model, GPU, network, or
    production Assist state.
+6. Every completed run is archived under =results/<run-id>/= before anyone
+   interprets it. A genuine learning records its evidence and limits, creates a
+   private larochelle.io blog seed, and proposes an Assist roadmap item; none of
+   those handoffs changes Assist automatically.
 
 ** Explicitly deferred
 

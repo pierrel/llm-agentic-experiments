@@ -26,6 +26,12 @@ shipping a favorable prompt experiment.
   middleware, and future setting types. The model and architecture identities
   hash their respective settings subtrees. Reusing a test across a new model or
   architecture requires a new sealed bundle; never merge their records.
+- Archive each completed run under `results/<run-id>/` before interpreting it.
+  Commit its sealed non-secret settings, bundle, result chains/seals, report,
+  raw-trace hashes, evidence/limits in `learning.md`, and an Assist-roadmap
+  proposal. Raw trace bodies remain local by default. A genuine learning also
+  becomes one private `larochelle.io/seeds/` blog seed linked to that capsule;
+  neither handoff authorizes an Assist change without Pierre's decision.
 - Preserve failures, refusals, timeouts, and interrupted model episodes. They
   are outcomes, not cleanup candidates. A GPU admission denial happens before a
   model request, so it is an administrative attempt under the same scheduled

@@ -20,6 +20,7 @@ translates recurring technical terms.
 | [Study registry](study-registry.md) | Index of study versions and their status. |
 | [0004 Initial design review](0004-initial-design-review.md) | Findings and resolutions from the first review panel. |
 | [0005 Current Assist baseline](0005-current-assist-baseline.md) | Verified first real-run model and Deep Agents architecture profile. |
+| [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
 `AGENTS.md` is the operating contract for scientific integrity, review, and GPU

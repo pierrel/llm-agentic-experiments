@@ -107,6 +107,8 @@ def _run_scripted_study(
     trace_dir = output / "traces"
     if trace_dir.is_symlink():
         raise ValueError("trace directory cannot be a symlink")
+    if trace_dir.exists() and not trace_dir.is_dir():
+        raise ValueError("trace path must be a real directory")
     _discard_stale_trace_temps(trace_dir)
     _recover_interrupted_admission(bundle, outcomes, gate, trace_dir)
     completed = outcomes.read_verified()

@@ -40,6 +40,9 @@ historical archive.
 - `docs/0005-current-assist-baseline.md` records the confirmed Deep Agents
   tool-loop architecture, current Qwen model identity, and reasoning setting
   that the first real-run profile must pin.
+- `results/mvp-scripted-v1/` is the committed synthetic MVP result capsule. It
+  captures settings, sealed outcome evidence, raw-trace hashes, and explicit
+  limits; it contains no behavioral learning or product proposal.
 - `docs/example-study-walkthrough.md` shows one invented trial from request to
   tool trace to automatic score.
 - `docs/glossary.md` defines the recurring vocabulary briefly.

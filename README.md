@@ -64,6 +64,16 @@ behavior-affecting option, including reasoning controls. This keeps an exact
 test reusable across a new model or an alternative architecture without
 mislabeling the resulting bundles as one cohort.
 
+## Result history and learning handoffs
+
+Archive every completed run in `results/<run-id>/`. A result capsule commits the
+sealed bundle and settings, admission/outcome chains and seals, report, and the
+hash inventory for locally retained raw traces. It also contains `learning.md`
+for the observation, evidence, and limits, plus `assist-roadmap-proposal.md`.
+A genuine learning gets a private `larochelle.io/seeds/` blog seed linked to the
+capsule and a proposed Assist roadmap item. These are evidence-preserving
+handoffs, not authorization to change Assist.
+
 ## Local checks
 
 The integrity kernel intentionally needs no third-party package:
