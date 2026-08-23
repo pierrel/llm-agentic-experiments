@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import threading
 from typing import Any
 
 
@@ -184,8 +185,17 @@ def _assert_settings(
             raise ValueError(f"{key} settings do not match its configuration digest")
 
 
+_ATOMIC_WRITE_LOCK = threading.Lock()
+
+
 def atomic_write(path: Path, data: bytes) -> None:
     """Durably replace one local artifact only after its complete bytes exist."""
+    with _ATOMIC_WRITE_LOCK:
+        _atomic_write(path, data)
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write under the process-local temporary-name lock."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
