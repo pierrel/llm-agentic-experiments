@@ -122,6 +122,26 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(outcome["outcome"], "timeout")
             self.assertTrue(outcome["model_request_made"])
 
+    def test_current_pilot_retains_an_interrupted_admitted_worker_as_a_post_request_failure(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+            with patch("harness.current_pilot._read_worker_result", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    run_current_assist_pilot(
+                        root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"),
+                        command_runner=lambda command: subprocess.CompletedProcess(command, 0, "", ""),
+                    )
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python")
+            )
+            self.assertEqual(progress.status, "complete")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "provider_error")
+            self.assertTrue(outcome["model_request_made"])
+
     def test_current_pilot_accepts_uncaptured_command_streams(self):
         from tempfile import TemporaryDirectory
 

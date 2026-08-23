@@ -140,7 +140,7 @@ def _run_current_assist_pilot(
     completed = outcomes.read_verified()
     if gate.index == 1 and not completed:
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "interrupted": True})
-        outcomes.append(TrialOutcome(trial, "provider_error", True, False, "worker interrupted after model admission"))
+        outcomes.append(TrialOutcome(trial, "provider_error", True, False, "coordinator interrupted after worker admission"))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
     if gate.current is None:
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
