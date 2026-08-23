@@ -142,6 +142,13 @@ class HarnessTest(unittest.TestCase):
         self.assertEqual(result_payload(result)["files"], {"budget-note.txt": "Budget: $25.\n"})
         self.assertEqual(json.loads(result_bytes(result)), result_payload(result))
 
+    def test_current_assist_rejects_dot_path_segments(self):
+        from harness.current_assist import _validate_initial_files
+
+        for path in (".", "a/./b"):
+            with self.assertRaisesRegex(ValueError, "virtual root"):
+                _validate_initial_files({path: "x"})
+
     def test_bundle_fails_closed_after_edit(self):
         with self.subTest("initial bundle"):
             original = bundle()
