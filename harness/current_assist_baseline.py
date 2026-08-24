@@ -14,7 +14,7 @@ from .bundle import StudyBundle, Trial, canonical_json
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v5"
+STUDY_ID = "current-assist-baseline-v6"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
@@ -34,6 +34,20 @@ def _sha256_file(path: Path) -> str:
 
 def study_directory(repo: Path) -> Path:
     return repo / "experiments" / STUDY_ID
+
+
+def _assist_root() -> Path:
+    return Path("/home/pierre/src/agentic/assist")
+
+
+def _assist_revision() -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=_assist_root(), check=False,
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    if completed.returncode:
+        raise ValueError("cannot identify the current Assist source revision")
+    return completed.stdout.strip()
 
 
 def _runner_revision(repo: Path) -> str:
@@ -66,9 +80,10 @@ def make_bundle(repo: Path) -> StudyBundle:
             "selection": "current Assist local endpoint auto-discovery",
         },
         harness_architecture={
-            "framework": "deepagents.create_deep_agent",
+            "framework": "assist.agent.create_agent over Deep Agents",
             "loop": "ReAct-style tool loop",
             "backend": "isolated virtual FilesystemBackend",
+            "assist_revision": _assist_revision(),
         },
         settings={
             "model": {"temperature": 0.1, "reasoning": {"enabled": False}},
@@ -137,6 +152,8 @@ def _verify_tag_binding(repo: Path, bundle_path: Path, bundle: StudyBundle) -> N
         raise ValueError("bundle does not match its registered tag")
     if bundle.runner_revision != _runner_revision(repo):
         raise ValueError("runner sources differ from the sealed bundle")
+    if bundle.harness_architecture.get("assist_revision") != _assist_revision():
+        raise ValueError("current Assist source differs from the sealed bundle")
     for source in RUNNER_SOURCES:
         if _git_show(repo, tag, source) != (repo / source).read_bytes():
             raise ValueError(f"runner source differs from registered tag: {source}")
@@ -169,9 +186,9 @@ def run(repo: Path, raw_directory: Path) -> int:
     command = [
         "/home/pierre/src/agentic/tools/agentic", "resource", "run", "llm", "--",
         "/bin/sh", "-c",
-        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 PYTHONPATH=\"$1\" \"$2\" -m harness.current_assist_baseline_worker \"$3\"",
+        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 PYTHONPATH=\"$1:$2\" \"$3\" -m harness.current_assist_baseline_worker \"$4\"",
         "admitted-current-assist-baseline",
-        str(repo), "/home/pierre/deploy/assist/code/.venv/bin/python", str(descriptor),
+        str(repo), str(_assist_root()), "/home/pierre/deploy/assist/code/.venv/bin/python", str(descriptor),
     ]
     try:
         completed = subprocess.run(command, cwd=repo, text=True, capture_output=True, timeout=900, check=False)
