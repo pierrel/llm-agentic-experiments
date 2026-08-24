@@ -64,9 +64,12 @@ Every real-model run must use the shared workspace admission wrapper:
 ```
 
 Do not invoke llama.cpp, a local OpenAI-compatible endpoint, CUDA, or another
-GPU command directly. The runner must have no direct-model escape hatch. On an
-admission denial, record the attempt and continue non-model work; do not poll,
-sleep-loop, or reserve the slot.
+GPU command directly. The sole supported runner command nests each worker in
+the shared admission wrapper. A same-Unix-user Python process cannot
+cryptographically prove that it was launched by that wrapper, so this is an
+operator and code-review invariant rather than a claimed security boundary. On
+an admission denial, record the attempt and continue non-model work; do not
+poll, sleep-loop, or reserve the slot.
 
 ## Required design review
 

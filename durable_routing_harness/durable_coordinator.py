@@ -104,16 +104,16 @@ def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v1")
 
 
 def durable_implementation_sha256(root: Path) -> str:
-    """Hash every harness module imported by the coordinator and private worker."""
-    modules = (
-        "__init__.py", "durable_coordinator.py", "durable_routing.py", "durable_worker.py",
-        "run_development.py",
-    )
-    return digest({
-        f"durable_routing_harness/{name}": hashlib.sha256(
-            (root / "durable_routing_harness" / name).read_bytes()).hexdigest()
-        for name in modules
-    })
+    """Hash every local module that implements this runner's evidence contract."""
+    files: dict[str, str] = {}
+    for directory in (root / "durable_routing_harness", root / "harness"):
+        for path in directory.rglob("*.py"):
+            if path.is_symlink():
+                raise ValueError("durable-routing implementation source cannot contain a symlink")
+            files[str(path.relative_to(root))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if not files:
+        raise ValueError("durable-routing implementation source is empty")
+    return digest(dict(sorted(files.items())))
 
 
 def assist_runtime_sha256(root: Path) -> str:
@@ -335,22 +335,39 @@ def _write_pilot_report(bundle: StudyBundle, outcomes: RecordChain, traces: Path
     low_conflict = bundle.registration.get("low_conflict_tasks")
     if not isinstance(low_conflict, list) or not all(isinstance(task, str) for task in low_conflict):
         raise ValueError("durable-routing bundle lacks low-conflict pilot task ids")
+    primary_dimensions, guard_dimensions, minimum_delta = _advance_plan(bundle.registration)
     advance = (
-        counts["C1"]["routing"] >= counts["C0"]["routing"] + 2
-        and counts["C1"]["full"] >= counts["C0"]["full"] + 2
+        all(counts["C1"][dimension] >= counts["C0"][dimension] + minimum_delta
+            for dimension in primary_dimensions)
         and all(
             by_task[task]["C1"][dimension] >= by_task[task]["C0"][dimension]
-            for task in low_conflict for dimension in ("persistence", "answer_and_honesty")
+            for task in low_conflict for dimension in guard_dimensions
         )
     )
     atomic_write(report, canonical_json({
         "bundle_sha256": bundle.sha256,
-        "analysis": "durable-routing-pilot-counts-v1",
+        "analysis": bundle.analysis_revision,
         "condition_counts": counts,
         "task_condition_counts": by_task,
         "advance_to_fresh_confirmation": advance,
-        "advance_rule": "C1 has >=2 more R and F successes; no low-conflict P/A decrease",
+        "advance_rule": (
+            f"C1 has >={minimum_delta} more {'/'.join(primary_dimensions)} successes; "
+            f"no low-conflict {'/'.join(guard_dimensions)} decrease"
+        ),
     }) + b"\n")
+
+
+def _advance_plan(registration: dict[str, object]) -> tuple[tuple[str, ...], tuple[str, ...], int]:
+    """Read every quantitative advancement decision from the sealed registration."""
+    primary = registration.get("advance_primary_dimensions")
+    guards = registration.get("sentinel_non_regression_dimensions")
+    minimum_delta = registration.get("advance_minimum_delta")
+    dimensions = {"routing", "persistence", "answer_and_honesty", "full"}
+    if not (isinstance(primary, list) and primary and isinstance(guards, list)
+            and primary and all(isinstance(value, str) and value in dimensions for value in primary + guards)
+            and isinstance(minimum_delta, int) and minimum_delta > 0):
+        raise ValueError("durable-routing bundle lacks a complete advance plan")
+    return tuple(primary), tuple(guards), minimum_delta
 
 
 def _read_worker_result(path: Path, bundle_sha256: str, trial_sha256: str) -> dict[str, object]:
@@ -445,7 +462,9 @@ def _recover_interrupted_worker(
     if _request_started(started) and _worker_is_running(started):
         return DurableRoutingProgress("worker_still_running")
     if result_path.exists():
-        return _record_recovered_result(bundle_path, outcomes, admissions, traces, definition, trial, result_path)
+        return _record_recovered_result(
+            bundle_path, outcomes, admissions, traces, definition, trial, result_path, started,
+        )
     return _record_recovered_failure(
         bundle_path, outcomes, admissions, traces, trial, started,
         "provider_error" if _request_started(started) else "infrastructure_invalid",
@@ -455,9 +474,14 @@ def _recover_interrupted_worker(
 
 def _record_recovered_result(
     bundle_path: Path, outcomes: RecordChain, admissions: AdmissionLog, traces: Path,
-    definition: DurableRoutingDefinition, trial, result_path: Path,
+    definition: DurableRoutingDefinition, trial, result_path: Path, started: Path,
 ) -> DurableRoutingProgress:
     """Preserve a completed worker result discovered after coordinator restart."""
+    if not _request_started(started):
+        return _record_recovered_failure(
+            bundle_path, outcomes, admissions, traces, trial, started,
+            "infrastructure_invalid", "recovered result lacks provider-boundary evidence",
+        )
     bundle = StudyBundle.read_verified(bundle_path)
     try:
         payload = _read_worker_result(result_path, bundle.sha256, trial.sha256)
@@ -502,12 +526,26 @@ def _worker_is_running(path: Path) -> bool:
         if not isinstance(marker, dict):
             return False
         pid = marker.get("pid")
-        if not isinstance(pid, int) or pid < 1:
+        identity = marker.get("process_identity")
+        if not isinstance(pid, int) or pid < 1 or not isinstance(identity, dict):
             return False
-        os.kill(pid, 0)
+        return _process_identity(pid) == identity
     except (OSError, ValueError, json.JSONDecodeError):
         return False
-    return True
+
+
+def _process_identity(pid: int) -> dict[str, str]:
+    """Return Linux process identity strong enough to reject PID reuse on recovery."""
+    stat = Path(f"/proc/{pid}/stat").read_text()
+    closing = stat.rfind(")")
+    fields = stat[closing + 2:].split()
+    if closing < 0 or len(fields) <= 19:
+        raise ValueError("process stat lacks a start time")
+    command = Path(f"/proc/{pid}/cmdline").read_bytes()
+    return {
+        "start_time": fields[19],
+        "command_sha256": hashlib.sha256(command).hexdigest(),
+    }
 
 
 def _validate_runtime_inputs(definition: DurableRoutingDefinition, assist_root: Path, assist_env: Path) -> None:

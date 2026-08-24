@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -38,7 +39,10 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
         treatment = {"memory_guidance": condition_value}
     else:
         raise ValueError("durable-routing worker descriptor has an invalid prompt treatment")
-    result = run_episode(task, on_first_provider_request=mark_first_provider_request, **treatment)
+    result = run_episode(
+        task, model_settings=descriptor["model_settings"],
+        on_first_provider_request=mark_first_provider_request, **treatment,
+    )
     atomic_write(result_path, canonical_json({
         "bundle_sha256": descriptor["bundle_sha256"],
         "trial_sha256": descriptor["trial_sha256"],
@@ -48,7 +52,23 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
 
 def _write_lifecycle(path: Path, state: str) -> None:
     """Publish a non-sensitive pre-model checkpoint or the provider boundary."""
-    atomic_write(path, canonical_json({"state": state, "pid": os.getpid()}) + b"\n")
+    atomic_write(path, canonical_json({
+        "state": state, "pid": os.getpid(), "process_identity": _process_identity(os.getpid()),
+    }) + b"\n")
+
+
+def _process_identity(pid: int) -> dict[str, str]:
+    """Bind a recovery marker to one Linux process incarnation, not merely its PID."""
+    stat = Path(f"/proc/{pid}/stat").read_text()
+    closing = stat.rfind(")")
+    fields = stat[closing + 2:].split()
+    if closing < 0 or len(fields) <= 19:
+        raise ValueError("process stat lacks a start time")
+    command = Path(f"/proc/{pid}/cmdline").read_bytes()
+    return {
+        "start_time": fields[19],
+        "command_sha256": hashlib.sha256(command).hexdigest(),
+    }
 
 
 def _verify_model_settings(value: object) -> None:
@@ -56,12 +76,16 @@ def _verify_model_settings(value: object) -> None:
     if not isinstance(value, dict):
         raise ValueError("durable-routing worker requires sealed model settings")
     expected_id, expected_context = value.get("model_id"), value.get("context_limit")
-    if not isinstance(expected_id, str) or not isinstance(expected_context, int):
+    expected_url = value.get("provider_url_sha256")
+    if (not isinstance(expected_id, str) or not isinstance(expected_context, int)
+            or not isinstance(expected_url, str) or len(expected_url) != 64):
         raise ValueError("durable-routing worker model settings are malformed")
     from assist.model_manager import current_model_config
 
     actual = current_model_config()
-    if actual.model != expected_id or actual.context_len != expected_context:
+    actual_url = hashlib.sha256(actual.url.encode()).hexdigest()
+    if (actual.model != expected_id or actual.context_len != expected_context
+            or actual_url != expected_url):
         raise ValueError("durable-routing served model differs from sealed settings")
 
 

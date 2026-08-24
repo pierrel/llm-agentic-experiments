@@ -225,13 +225,14 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
 def run_episode(
     task: DurableRoutingTask, *, grounding_description: str | None = None,
     memory_guidance: dict[str, str] | None = None,
+    model_settings: dict[str, object],
     on_first_provider_request: Callable[[], None] | None = None,
 ) -> DurableRoutingResult:
     """Run one real model episode with one sealed prompt-only treatment.
 
-    This function intentionally has no provider URL argument and no direct model
-    invocation path.  The surrounding worker marks the request boundary and is
-    entered only through the shared LLM admission wrapper.
+    This function intentionally has no provider URL argument. The supported
+    runner invokes its worker through the workspace LLM admission wrapper;
+    same-user Python code cannot technically enforce that operator contract.
     """
     from langchain_core.callbacks import BaseCallbackHandler
     from assist.agent import AgentHarness, create_agent
@@ -256,7 +257,8 @@ def run_episode(
             self.requests.append(_json_value({"messages": messages, "kwargs": kwargs}))
 
     capture = RequestCapture()
-    model = select_assistant_model(0.1)
+    temperature, enable_thinking = _selection_settings(model_settings)
+    model = select_assistant_model(temperature, enable_thinking=enable_thinking)
     model.callbacks = [*(model.callbacks or ()), capture]
     workspace = tempfile.mkdtemp(prefix="durable_routing_workspace_")
     agent_dir = tempfile.mkdtemp(prefix="durable_routing_agent_")
@@ -339,6 +341,23 @@ def _prompt_treatment_context(memory_guidance: dict[str, str] | None):
         memory_guidance["thread_memory_prompt"],
     ))
     return stack
+
+
+def _selection_settings(model_settings: dict[str, object]) -> tuple[float, bool]:
+    """Extract the exact sealed decoding choices used for a model invocation."""
+    decoding = model_settings.get("decoding")
+    reasoning = model_settings.get("reasoning")
+    if not isinstance(decoding, dict) or set(decoding) != {"temperature"}:
+        raise ValueError("durable-routing model settings require only a temperature")
+    temperature = decoding["temperature"]
+    if not isinstance(temperature, (int, float)) or isinstance(temperature, bool):
+        raise ValueError("durable-routing temperature must be numeric")
+    if not isinstance(reasoning, dict) or set(reasoning) != {"enabled"}:
+        raise ValueError("durable-routing model settings require reasoning state")
+    enabled = reasoning["enabled"]
+    if not isinstance(enabled, bool):
+        raise ValueError("durable-routing reasoning state must be boolean")
+    return float(temperature), enabled
 
 
 def _replace_grounding_description(path: Path, description: str) -> None:
