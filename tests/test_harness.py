@@ -20,6 +20,7 @@ from harness import (
     blocked_schedule,
 )
 from harness.bundle import digest
+from harness.current_assist_baseline import _next_admission_attempt
 
 
 def bundle() -> StudyBundle:
@@ -264,6 +265,15 @@ class HarnessTest(unittest.TestCase):
             self.assertTrue(gate.record(AdmissionAttempt(trial, True, 2)))
             with self.assertRaisesRegex(ValueError, "cannot retry"):
                 log.append(AdmissionAttempt(trial, True, 3))
+
+    def test_baseline_runner_numbers_an_admitted_retry_consecutively(self):
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temporary:
+            trial = Trial("task", 1, "A", 1)
+            log = AdmissionLog(Path(temporary) / "admission.jsonl", "bundle")
+            log.append(AdmissionAttempt(trial, False, 1, "busy"))
+            self.assertEqual(_next_admission_attempt(log, trial), 2)
 
     def test_admission_gate_recovers_after_restart_and_seals_with_outcomes(self):
         from tempfile import TemporaryDirectory

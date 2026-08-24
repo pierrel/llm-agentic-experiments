@@ -43,7 +43,10 @@ def main() -> int:
         from deepagents.backends import FilesystemBackend
 
         runtime_model = current_model_config()
-        model = select_assistant_model(bundle.settings["model"]["temperature"])
+        model = select_assistant_model(
+            bundle.settings["model"]["temperature"],
+            enable_thinking=bundle.settings["model"]["reasoning"]["enabled"],
+        )
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             note = root / "notes" / "today.txt"

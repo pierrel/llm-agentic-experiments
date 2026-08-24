@@ -10,17 +10,16 @@ import subprocess
 import sys
 from typing import Any
 
-from .bundle import StudyBundle, Trial, canonical_json, digest
+from .bundle import StudyBundle, Trial, canonical_json
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v2"
+STUDY_ID = "current-assist-baseline-v3"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
 )
-FIXTURE_RELATIVE_PATH = "notes/today.txt"
-RUNNER_REVISION = "current-assist-baseline-runner-v2"
+RUNNER_REVISION = "current-assist-baseline-runner-v3"
 ANALYSIS_REVISION = "current-assist-baseline-oracle-v1"
 
 
@@ -93,6 +92,11 @@ def _read_worker_result(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _next_admission_attempt(admissions: AdmissionLog, trial: Trial) -> int:
+    """Continue the same scheduled episode with a consecutive attempt number."""
+    return 1 + sum(record["trial_sha256"] == trial.sha256 for record in admissions.read_verified())
+
+
 def run(repo: Path, raw_directory: Path) -> int:
     """Request one bounded, admitted model episode with no direct-run option."""
     bundle_path = study_directory(repo) / "bundle.json"
@@ -125,12 +129,9 @@ def run(repo: Path, raw_directory: Path) -> int:
     result = _read_worker_result(worker_result)
     if result is None:
         detail = (completed.stderr or completed.stdout or "admission command produced no worker result").strip()
-        prior_attempts = sum(
-            record["trial_sha256"] == trial.sha256 for record in admissions.read_verified()
-        )
-        gate.record(AdmissionAttempt(trial, False, prior_attempts + 1, detail[:500]))
+        gate.record(AdmissionAttempt(trial, False, _next_admission_attempt(admissions, trial), detail[:500]))
         return 3
-    gate.record(AdmissionAttempt(trial, True, 1, "admitted"))
+    gate.record(AdmissionAttempt(trial, True, _next_admission_attempt(admissions, trial), "admitted"))
     outcome = TrialOutcome(
         trial=trial,
         outcome=result["outcome"],
