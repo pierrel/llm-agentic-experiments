@@ -230,15 +230,15 @@ def _run_once(
     gate = ScheduledAdmission(bundle.schedule, admissions)
     if gate.index < len(outcomes.read_verified()):
         raise ValueError("durable-routing outcomes cannot exceed admissions")
-    if gate.current is not None and gate.index == len(outcomes.read_verified()):
+    if (gate.current is not None and gate.index == len(outcomes.read_verified())
+            and _request_started(output / f".{gate.current.sha256}.lifecycle.json")):
         started = output / f".{gate.current.sha256}.lifecycle.json"
-        if started.exists():
-            attempt = len([record for record in admissions.read_verified()
-                           if record["trial_sha256"] == gate.current.sha256]) + 1
-            gate.record(AdmissionAttempt(
-                gate.current, True, attempt, "recovered worker that crossed the provider boundary",
-            ))
-            return DurableRoutingProgress("worker_still_running" if _worker_is_running(started) else "recover_worker")
+        attempt = len([record for record in admissions.read_verified()
+                       if record["trial_sha256"] == gate.current.sha256]) + 1
+        gate.record(AdmissionAttempt(
+            gate.current, True, attempt, "recovered worker that crossed the provider boundary",
+        ))
+        return DurableRoutingProgress("worker_still_running" if _worker_is_running(started) else "recover_worker")
     if gate.current is None:
         return _progress_or_finalize(bundle_path, outcomes, admissions, traces)
     completed = outcomes.read_verified()

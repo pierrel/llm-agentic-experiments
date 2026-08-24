@@ -461,6 +461,35 @@ class DurableRoutingTest(unittest.TestCase):
             self.assertEqual(outcome["outcome"], "provider_error")
             self.assertTrue(outcome["model_request_made"])
 
+    def test_coordinator_retries_a_pre_admission_launch_intent(self) -> None:
+        from durable_routing_harness.durable_coordinator import run_durable_routing_once
+
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "run"
+            bundle = self.current_definition().bundle
+            trial = bundle.schedule[0]
+            output.mkdir(mode=0o700)
+            bundle.write(output / "bundle.json")
+            (output / f".{trial.sha256}.lifecycle.json").write_text(
+                json.dumps({"state": "launch-intent"})
+            )
+            calls = []
+
+            def denied_worker(command):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 1, "", "production is busy")
+
+            with patch("durable_routing_harness.durable_coordinator.durable_definition",
+                       return_value=self.current_definition()):
+                progress = run_durable_routing_once(
+                    ROOT, output, workspace_root=Path("/workspace"),
+                    assist_root=Path("/assist"), assist_python=Path("/venv/bin/python"), assist_env=Path("/env"),
+                    command_runner=denied_worker,
+                )
+            self.assertEqual(progress.status, "retry_in_10_minutes")
+            self.assertEqual(len(calls), 1)
+            self.assertFalse((output / "outcomes.jsonl").exists())
+
     def test_recovery_rejects_a_result_without_a_provider_boundary(self) -> None:
         from durable_routing_harness.durable_coordinator import _record_recovered_result
         from harness.records import AdmissionLog, RecordChain
