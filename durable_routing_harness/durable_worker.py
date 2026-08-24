@@ -39,6 +39,8 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
         treatment = {"memory_guidance": condition_value}
     elif condition_field == "outcome_checklist" and isinstance(condition_value, bool):
         treatment = {"outcome_checklist": condition_value}
+    elif condition_field == "async_outcome_reconciliation" and isinstance(condition_value, bool):
+        treatment = {"async_outcome_reconciliation": condition_value}
     else:
         raise ValueError("durable-routing worker descriptor has an invalid prompt treatment")
     result = run_episode(

@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 import subprocess
 from dataclasses import replace
+from types import SimpleNamespace
 
 from durable_routing_harness.durable_routing import (
     DurableRoutingResult,
@@ -284,6 +285,66 @@ class DurableRoutingTest(unittest.TestCase):
                     "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, root / "result.json", root / "started")
             self.assertTrue(run.call_args.kwargs["outcome_checklist"])
+
+    def test_worker_passes_the_sealed_async_reconciliation_flag(self) -> None:
+        from durable_routing_harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            descriptor.write_text(json.dumps({
+                "bundle_sha256": "bundle", "trial_sha256": "trial",
+                "condition_field": "async_outcome_reconciliation", "condition_value": True,
+                "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+            }))
+            episode_result = DurableRoutingResult("", "", (), "", (), ())
+            with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
+                run_descriptor(descriptor, root / "result.json", root / "started")
+            self.assertTrue(run.call_args.kwargs["async_outcome_reconciliation"])
+
+    def test_async_reconciliation_exposure_requires_exactly_one_marker_per_request(self) -> None:
+        from durable_routing_harness.durable_routing import _assert_async_outcome_reconciliation_exposure
+
+        request = {"messages": ["After checking a terminal task result"], "kwargs": {}}
+        _assert_async_outcome_reconciliation_exposure([request], True)
+        _assert_async_outcome_reconciliation_exposure([{"messages": [], "kwargs": {}}], False)
+        with self.assertRaisesRegex(ValueError, "prompt treatment exposure differs"):
+            _assert_async_outcome_reconciliation_exposure([request], False)
+        with self.assertRaisesRegex(ValueError, "made no provider request"):
+            _assert_async_outcome_reconciliation_exposure([], True)
+
+    def test_development_screen_applies_full_delta_and_guard_gates(self) -> None:
+        from durable_routing_harness.durable_coordinator import _write_development_screen_report
+
+        dimensions = (
+            "routing", "persistence", "answer_and_honesty", "full",
+            "todo_used", "todo_reconciled",
+        )
+        counts = {
+            "C0": dict.fromkeys(dimensions, 2),
+            "C1": dict.fromkeys(dimensions, 2),
+        }
+        by_task = {"row": {"C0": dict.fromkeys(dimensions, 1), "C1": dict.fromkeys(dimensions, 1)}}
+        bundle = SimpleNamespace(
+            sha256="bundle", analysis_revision="analysis", fixtures={"row": "fixture"},
+            registration={
+                "development_minimum_full_passes": 2,
+                "development_minimum_full_delta": 1,
+                "development_maximum_row_deficit": 0,
+                "development_non_regression_dimensions": ["routing", "answer_and_honesty"],
+            },
+        )
+        with TemporaryDirectory() as temporary:
+            report = Path(temporary) / "report.json"
+            _write_development_screen_report(bundle, counts, by_task, report)
+            self.assertFalse(json.loads(report.read_text())["advance_to_fresh_confirmation"])
+            counts["C1"]["full"] = 3
+            _write_development_screen_report(bundle, counts, by_task, report)
+            self.assertTrue(json.loads(report.read_text())["advance_to_fresh_confirmation"])
+            counts["C1"]["routing"] = 1
+            _write_development_screen_report(bundle, counts, by_task, report)
+            self.assertFalse(json.loads(report.read_text())["advance_to_fresh_confirmation"])
 
     def test_worker_rejects_a_descriptor_with_undeclared_fields(self) -> None:
         from durable_routing_harness.durable_worker import run_descriptor

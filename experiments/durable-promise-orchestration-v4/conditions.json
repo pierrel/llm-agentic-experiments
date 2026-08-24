@@ -1,0 +1,4 @@
+{
+  "C0": {"async_outcome_reconciliation": false},
+  "C1": {"async_outcome_reconciliation": true}
+}

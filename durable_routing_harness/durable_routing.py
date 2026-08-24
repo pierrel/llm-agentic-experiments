@@ -251,6 +251,7 @@ def run_episode(
     task: DurableRoutingTask, *, grounding_description: str | None = None,
     memory_guidance: dict[str, str] | None = None,
     outcome_checklist: bool = False,
+    async_outcome_reconciliation: bool = False,
     model_settings: dict[str, object],
     on_first_provider_request: Callable[[], None] | None = None,
 ) -> DurableRoutingResult:
@@ -299,7 +300,8 @@ def run_episode(
         if sandbox is None:
             raise RuntimeError("durable-routing episode requires the Assist sandbox")
         reset_task_fixture()
-        with _prompt_treatment_context(memory_guidance, outcome_checklist), \
+        with _prompt_treatment_context(
+                memory_guidance, outcome_checklist, async_outcome_reconciliation), \
              patch("assist.tools.requests.get", side_effect=AssertionError("durable-routing must not fetch URLs")), \
              patch("assist.tools.requests.post", side_effect=AssertionError("durable-routing must not post URLs")), \
              patch.dict(os.environ, {"ASSIST_PROMPT_REWRITE_GUIDANCE_SKILLS": "1"}, clear=False), \
@@ -325,6 +327,8 @@ def run_episode(
             state = agent.agent.get_state({
                 "configurable": {"thread_id": agent.thread_id},
             }).values
+        _assert_async_outcome_reconciliation_exposure(
+            capture.requests, async_outcome_reconciliation)
         memory_path = Path(agent_dir) / "memory.md"
         memory = read_file(str(memory_path)) if memory_path.exists() else ""
         calls = [_json_value(call) for call in agent_tool_calls(agent)]
@@ -353,6 +357,7 @@ def run_episode(
 
 def _prompt_treatment_context(
     memory_guidance: dict[str, str] | None, outcome_checklist: bool,
+    async_outcome_reconciliation: bool,
 ):
     """Patch only the sealed prompt condition for an in-process experiment."""
     from contextlib import ExitStack
@@ -375,10 +380,27 @@ def _prompt_treatment_context(
         ))
     stack.enter_context(patch.dict(
         os.environ,
-        {"ASSIST_OUTCOME_CHECKLIST_RIDER": "1" if outcome_checklist else "0"},
+        {
+            "ASSIST_OUTCOME_CHECKLIST_RIDER": "1" if outcome_checklist else "0",
+            "ASSIST_ASYNC_OUTCOME_RECONCILIATION": (
+                "1" if async_outcome_reconciliation else "0"),
+        },
         clear=False,
     ))
     return stack
+
+
+def _assert_async_outcome_reconciliation_exposure(
+        requests: list[dict[str, object]], enabled: bool,
+) -> None:
+    """Prove the sealed lifecycle rider reached every provider request once."""
+    marker = "After checking a terminal task result"
+    if not requests:
+        raise ValueError("durable-routing episode made no provider request")
+    expected = 1 if enabled else 0
+    for request in requests:
+        if json.dumps(request, sort_keys=True).count(marker) != expected:
+            raise ValueError("durable-routing prompt treatment exposure differs")
 
 
 def _selection_settings(model_settings: dict[str, object]) -> tuple[float, bool]:

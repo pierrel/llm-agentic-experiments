@@ -24,6 +24,7 @@ _STUDY_PREFIXES = (
 )
 _CONDITION_FIELDS = {
     "grounding_description", "memory_guidance", "outcome_checklist",
+    "async_outcome_reconciliation",
 }
 
 
@@ -422,20 +423,35 @@ def _write_development_screen_report(
     """Apply the sealed exploratory screen without presenting it as confirmation."""
     registration = bundle.registration
     minimum_full = registration.get("development_minimum_full_passes")
+    minimum_full_delta = registration.get("development_minimum_full_delta", 0)
     maximum_row_deficit = registration.get("development_maximum_row_deficit")
     minimum_todo_use = registration.get("development_minimum_todo_use")
+    guard_dimensions = registration.get("development_non_regression_dimensions", [])
+    dimensions = {
+        "routing", "persistence", "answer_and_honesty", "full",
+        "todo_used", "todo_reconciled",
+    }
     if not all(isinstance(value, int) and value >= 0 for value in (
-        minimum_full, maximum_row_deficit, minimum_todo_use,
-    )):
+        minimum_full, minimum_full_delta, maximum_row_deficit,
+    )) or (minimum_todo_use is not None and (
+        not isinstance(minimum_todo_use, int) or minimum_todo_use < 0
+    )) or not (isinstance(guard_dimensions, list)
+               and all(dimension in dimensions for dimension in guard_dimensions)):
         raise ValueError("durable-routing development screen is incomplete")
     no_material_row_loss = all(
         by_task[task]["C1"]["full"] >= by_task[task]["C0"]["full"] - maximum_row_deficit
         for task in bundle.fixtures
     )
+    no_guard_regression = all(
+        counts["C1"][dimension] >= counts["C0"][dimension]
+        for dimension in guard_dimensions
+    )
     advance = (
         counts["C1"]["full"] >= minimum_full
-        and counts["C1"]["todo_used"] >= minimum_todo_use
+        and counts["C1"]["full"] >= counts["C0"]["full"] + minimum_full_delta
         and no_material_row_loss
+        and no_guard_regression
+        and (minimum_todo_use is None or counts["C1"]["todo_used"] >= minimum_todo_use)
     )
     atomic_write(report, canonical_json({
         "bundle_sha256": bundle.sha256,
@@ -444,10 +460,15 @@ def _write_development_screen_report(
         "condition_counts": counts,
         "task_condition_counts": by_task,
         "advance_to_fresh_confirmation": advance,
-        "advance_rule": (
-            f"C1 full>={minimum_full}; C1 todo_used>={minimum_todo_use}; "
-            f"no task C1 full deficit>{maximum_row_deficit}"
-        ),
+        "advance_rule": "; ".join(filter(None, (
+            f"C1 full>={minimum_full}",
+            f"C1-C0 full>={minimum_full_delta}",
+            (f"C1 todo_used>={minimum_todo_use}"
+             if minimum_todo_use is not None else None),
+            f"no task C1 full deficit>{maximum_row_deficit}",
+            ("no aggregate C1 regression on " + "/".join(guard_dimensions)
+             if guard_dimensions else None),
+        ))),
     }) + b"\n")
 
 
