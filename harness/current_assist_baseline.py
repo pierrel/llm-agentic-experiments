@@ -14,13 +14,18 @@ from .bundle import StudyBundle, Trial, canonical_json
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v4"
+STUDY_ID = "current-assist-baseline-v5"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
 )
-RUNNER_REVISION = "current-assist-baseline-runner-v4"
 ANALYSIS_REVISION = "current-assist-baseline-oracle-v1"
+RUNNER_SOURCES = (
+    "harness/bundle.py",
+    "harness/records.py",
+    "harness/current_assist_baseline.py",
+    "harness/current_assist_baseline_worker.py",
+)
 
 
 def _sha256_file(path: Path) -> str:
@@ -29,6 +34,12 @@ def _sha256_file(path: Path) -> str:
 
 def study_directory(repo: Path) -> Path:
     return repo / "experiments" / STUDY_ID
+
+
+def _runner_revision(repo: Path) -> str:
+    return hashlib.sha256(canonical_json({
+        source: _sha256_file(repo / source) for source in RUNNER_SOURCES
+    })).hexdigest()
 
 
 def make_bundle(repo: Path) -> StudyBundle:
@@ -46,6 +57,7 @@ def make_bundle(repo: Path) -> StudyBundle:
             "prompt": PROMPT,
             "missingness": "admission denial retries the same trial; every post-request result is retained",
             "position_balance": "adjust_for_position",
+            "registration_tag": STUDY_ID,
         },
         conditions={"current_assist": {"change": "none"}},
         model={
@@ -68,7 +80,7 @@ def make_bundle(repo: Path) -> StudyBundle:
             "required_capabilities": ["read_file", "edit_file", "write_file"],
         },
         schedule=(Trial("note-edit", 1, "current_assist", 1),),
-        runner_revision=RUNNER_REVISION,
+        runner_revision=_runner_revision(repo),
         analysis_revision=ANALYSIS_REVISION,
     )
 
@@ -97,10 +109,44 @@ def _next_admission_attempt(admissions: AdmissionLog, trial: Trial) -> int:
     return 1 + sum(record["trial_sha256"] == trial.sha256 for record in admissions.read_verified())
 
 
+def artifact_matches(initial: str, final: str, requested_line: str) -> bool:
+    """Accept only preserved fixture text plus one exact requested line."""
+    return final.startswith(initial) and final.splitlines().count(requested_line) == 1
+
+
+def _git_show(repo: Path, revision: str, relative_path: str) -> bytes:
+    completed = subprocess.run(
+        ["git", "show", f"{revision}:{relative_path}"],
+        cwd=repo,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode:
+        raise ValueError(f"registered tag cannot provide {relative_path}")
+    return completed.stdout
+
+
+def _verify_tag_binding(repo: Path, bundle_path: Path, bundle: StudyBundle) -> None:
+    """Require the exact bundle and runner inputs from the registered tag."""
+    tag = bundle.registration.get("registration_tag")
+    if not isinstance(tag, str) or not tag:
+        raise ValueError("registered bundle lacks an immutable tag")
+    relative_bundle = bundle_path.relative_to(repo).as_posix()
+    if _git_show(repo, tag, relative_bundle) != bundle_path.read_bytes():
+        raise ValueError("bundle does not match its registered tag")
+    if bundle.runner_revision != _runner_revision(repo):
+        raise ValueError("runner sources differ from the sealed bundle")
+    for source in RUNNER_SOURCES:
+        if _git_show(repo, tag, source) != (repo / source).read_bytes():
+            raise ValueError(f"runner source differs from registered tag: {source}")
+
+
 def run(repo: Path, raw_directory: Path) -> int:
     """Request one bounded, admitted model episode with no direct-run option."""
     bundle_path = study_directory(repo) / "bundle.json"
     bundle = StudyBundle.read_verified(bundle_path)
+    _verify_tag_binding(repo, bundle_path, bundle)
     if len(bundle.schedule) != 1:
         raise ValueError("the current baseline is deliberately a one-episode study")
     raw_directory.mkdir(parents=True, exist_ok=False)
@@ -116,6 +162,7 @@ def run(repo: Path, raw_directory: Path) -> int:
         "fixture_path": str((study_directory(repo) / "fixtures" / "todays-note.txt").resolve()),
         "raw_trace_path": str((raw_directory / "trace.json").resolve()),
         "execution_input_path": str((raw_directory / "execution-input.json").resolve()),
+        "request_marker_path": str((raw_directory / "request-started.json").resolve()),
         "worker_result_path": str(worker_result.resolve()),
         "trial": trial.__dict__,
     }) + b"\n")
@@ -126,12 +173,25 @@ def run(repo: Path, raw_directory: Path) -> int:
         "admitted-current-assist-baseline",
         str(repo), "/home/pierre/deploy/assist/code/.venv/bin/python", str(descriptor),
     ]
-    completed = subprocess.run(command, cwd=repo, text=True, capture_output=True, timeout=900, check=False)
+    try:
+        completed = subprocess.run(command, cwd=repo, text=True, capture_output=True, timeout=900, check=False)
+    except subprocess.TimeoutExpired:
+        gate.record(AdmissionAttempt(trial, True, _next_admission_attempt(admissions, trial), "worker timeout"))
+        records = RecordChain(repo / "results" / STUDY_ID / "outcomes.jsonl", bundle.sha256)
+        records.append(TrialOutcome(trial, "timeout", (raw_directory / "request-started.json").exists(), False, "worker timeout"))
+        records.finalize(bundle.schedule, admissions)
+        return 1
     result = _read_worker_result(worker_result)
     if result is None:
         detail = (completed.stderr or completed.stdout or "admission command produced no worker result").strip()
-        gate.record(AdmissionAttempt(trial, False, _next_admission_attempt(admissions, trial), detail[:500]))
-        return 3
+        if "resource is busy" in detail or "production is busy" in detail:
+            gate.record(AdmissionAttempt(trial, False, _next_admission_attempt(admissions, trial), detail[:500]))
+            return 3
+        gate.record(AdmissionAttempt(trial, True, _next_admission_attempt(admissions, trial), detail[:500]))
+        records = RecordChain(repo / "results" / STUDY_ID / "outcomes.jsonl", bundle.sha256)
+        records.append(TrialOutcome(trial, "infrastructure_invalid", False, False, detail[:500]))
+        records.finalize(bundle.schedule, admissions)
+        return 1
     gate.record(AdmissionAttempt(trial, True, _next_admission_attempt(admissions, trial), "admitted"))
     outcome = TrialOutcome(
         trial=trial,
@@ -147,6 +207,7 @@ def run(repo: Path, raw_directory: Path) -> int:
         "exit_code": completed.returncode,
         "bundle_sha256": bundle.sha256,
         "trace_sha256": result.get("trace_sha256"),
+        "execution_input_sha256": result.get("execution_input_sha256"),
     }) + b"\n")
     return 0 if completed.returncode == 0 else 1
 

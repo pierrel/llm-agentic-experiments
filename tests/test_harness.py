@@ -16,7 +16,7 @@ from harness import (
     assert_no_condition_label,
     blocked_schedule,
 )
-from harness.current_assist_baseline import _next_admission_attempt
+from harness.current_assist_baseline import _next_admission_attempt, artifact_matches
 
 
 def bundle() -> StudyBundle:
@@ -189,6 +189,11 @@ class HarnessTest(unittest.TestCase):
             log = AdmissionLog(Path(temporary) / "admission.jsonl", "bundle")
             log.append(AdmissionAttempt(trial, False, 1, "busy"))
             self.assertEqual(_next_admission_attempt(log, trial), 2)
+
+    def test_baseline_oracle_requires_an_exact_requested_line(self):
+        initial = "Existing note content.\n"
+        self.assertTrue(artifact_matches(initial, initial + "Checked by the experiment.\n", "Checked by the experiment."))
+        self.assertFalse(artifact_matches(initial, initial + "Checked by the experiment. extra\n", "Checked by the experiment."))
 
     def test_admission_gate_recovers_after_restart_and_seals_with_outcomes(self):
         from tempfile import TemporaryDirectory
