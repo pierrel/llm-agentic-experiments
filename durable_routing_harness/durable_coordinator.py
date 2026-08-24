@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import signal
@@ -36,6 +37,12 @@ class DurableRoutingDefinition:
         registration = self.bundle.registration
         if registration.get("kind") != "durable_routing_web_main":
             raise ValueError("durable-routing bundle has the wrong registration kind")
+        expected_registration = registration.get("registration_markdown_sha256")
+        registration_path = root / "experiments" / self.bundle.study_id / "registration.md"
+        if (not isinstance(expected_registration, str) or registration_path.is_symlink()
+                or not registration_path.is_file()
+                or hashlib.sha256(registration_path.read_bytes()).hexdigest() != expected_registration):
+            raise ValueError("durable-routing registration prose differs from the sealed bundle")
         if set(self.tasks) != set(self.bundle.fixtures):
             raise ValueError("durable-routing fixtures do not match the task bank")
         if set(self.condition_values) != set(self.bundle.conditions):
@@ -66,7 +73,7 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v1") -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v2") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
     prefix = next((prefix for prefix in _STUDY_PREFIXES if study_id.startswith(prefix)), None)
     if prefix is None or not study_id[len(prefix):].isdigit():
@@ -84,9 +91,14 @@ def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v1")
         raise ValueError("durable-routing has an unsupported condition difference")
     condition_field = declared
     for condition_id, value in raw_conditions.items():
-        if not isinstance(condition_id, str) or not isinstance(value, dict) or set(value) != {condition_field}:
+        if not isinstance(condition_id, str) or not isinstance(value, dict):
             raise ValueError("durable-routing conditions have an invalid shape")
-        condition_value = value[condition_field]
+        if set(value) != {condition_field}:
+            if set(value) != {"memory_guidance_from"} or condition_field != "memory_guidance":
+                raise ValueError("durable-routing conditions have an invalid shape")
+            condition_value = _referenced_memory_guidance(root, value["memory_guidance_from"])
+        else:
+            condition_value = value[condition_field]
         if condition_field == "grounding_description":
             valid = isinstance(condition_value, str) and bool(condition_value)
         else:
@@ -101,6 +113,30 @@ def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v1")
     definition = DurableRoutingDefinition(bundle, tasks, condition_field, condition_values)
     definition.validate(root)
     return definition
+
+
+def _referenced_memory_guidance(root: Path, value: object) -> dict[str, str]:
+    """Reuse a hash-pinned prompt pair without copying its long immutable prose."""
+    if not isinstance(value, dict) or set(value) != {"study_id", "condition", "sha256"}:
+        raise ValueError("durable-routing memory guidance reference is malformed")
+    study_id, condition, expected_digest = value["study_id"], value["condition"], value["sha256"]
+    if (not isinstance(study_id, str) or not study_id.startswith("durable-promise-outcome-v")
+            or not study_id[len("durable-promise-outcome-v"):].isdigit()
+            or not isinstance(condition, str) or not isinstance(expected_digest, str)):
+        raise ValueError("durable-routing memory guidance reference is invalid")
+    path = root / "experiments" / study_id / "conditions.json"
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("durable-routing memory guidance source is unavailable")
+    contents = path.read_bytes()
+    if hashlib.sha256(contents).hexdigest() != expected_digest:
+        raise ValueError("durable-routing memory guidance source digest differs")
+    source = json.loads(contents)
+    candidate = source.get(condition) if isinstance(source, dict) else None
+    guidance = candidate.get("memory_guidance") if isinstance(candidate, dict) else None
+    if not (isinstance(guidance, dict) and set(guidance) == {"repository_memory_prompt", "thread_memory_prompt"}
+            and all(isinstance(text, str) and text for text in guidance.values())):
+        raise ValueError("durable-routing memory guidance source has an invalid shape")
+    return guidance
 
 
 def durable_implementation_sha256(root: Path) -> str:
@@ -154,7 +190,7 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, study_id: str = "durable-promise-outcome-v1",
+    assist_env: Path, study_id: str = "durable-promise-outcome-v2",
     command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
@@ -335,39 +371,101 @@ def _write_pilot_report(bundle: StudyBundle, outcomes: RecordChain, traces: Path
     low_conflict = bundle.registration.get("low_conflict_tasks")
     if not isinstance(low_conflict, list) or not all(isinstance(task, str) for task in low_conflict):
         raise ValueError("durable-routing bundle lacks low-conflict pilot task ids")
-    primary_dimensions, guard_dimensions, minimum_delta = _advance_plan(bundle.registration)
+    primary_dimensions, guard_dimensions, minimum_delta, max_sign_p, max_guard_drop = _advance_plan(
+        bundle.registration
+    )
+    paired = _paired_sign_tests(bundle, completed, traces, primary_dimensions)
     advance = (
         all(counts["C1"][dimension] >= counts["C0"][dimension] + minimum_delta
             for dimension in primary_dimensions)
+        and all(paired[dimension]["p_one_sided"] <= max_sign_p for dimension in primary_dimensions)
         and all(
-            by_task[task]["C1"][dimension] >= by_task[task]["C0"][dimension]
+            by_task[task]["C1"][dimension] >= by_task[task]["C0"][dimension] - max_guard_drop
             for task in low_conflict for dimension in guard_dimensions
         )
+        and all(counts["C1"][dimension] >= counts["C0"][dimension] - max_guard_drop
+                for dimension in guard_dimensions)
     )
     atomic_write(report, canonical_json({
         "bundle_sha256": bundle.sha256,
         "analysis": bundle.analysis_revision,
         "condition_counts": counts,
         "task_condition_counts": by_task,
+        "paired_sign_tests": paired,
         "advance_to_fresh_confirmation": advance,
         "advance_rule": (
             f"C1 has >={minimum_delta} more {'/'.join(primary_dimensions)} successes; "
-            f"no low-conflict {'/'.join(guard_dimensions)} decrease"
+            f"paired p<={max_sign_p}; no {'/'.join(guard_dimensions)} decrease >{max_guard_drop}"
         ),
     }) + b"\n")
 
 
-def _advance_plan(registration: dict[str, object]) -> tuple[tuple[str, ...], tuple[str, ...], int]:
+def _advance_plan(
+    registration: dict[str, object],
+) -> tuple[tuple[str, ...], tuple[str, ...], int, float, int]:
     """Read every quantitative advancement decision from the sealed registration."""
     primary = registration.get("advance_primary_dimensions")
     guards = registration.get("sentinel_non_regression_dimensions")
     minimum_delta = registration.get("advance_minimum_delta")
+    max_sign_p = registration.get("paired_sign_test_max_p")
+    max_guard_drop = registration.get("guard_maximum_decrease")
     dimensions = {"routing", "persistence", "answer_and_honesty", "full"}
     if not (isinstance(primary, list) and primary and isinstance(guards, list)
             and primary and all(isinstance(value, str) and value in dimensions for value in primary + guards)
-            and isinstance(minimum_delta, int) and minimum_delta > 0):
+            and isinstance(minimum_delta, int) and minimum_delta > 0
+            and isinstance(max_sign_p, (int, float)) and 0 < max_sign_p <= 1
+            and isinstance(max_guard_drop, int) and max_guard_drop >= 0):
         raise ValueError("durable-routing bundle lacks a complete advance plan")
-    return tuple(primary), tuple(guards), minimum_delta
+    return tuple(primary), tuple(guards), minimum_delta, float(max_sign_p), max_guard_drop
+
+
+def _paired_sign_tests(
+    bundle: StudyBundle, completed: list[dict[str, object]], traces: Path, dimensions: tuple[str, ...],
+) -> dict[str, dict[str, float | int]]:
+    """Compute preregistered one-sided paired sign tests from sealed block outcomes."""
+    scores: dict[tuple[str, int, str], dict[str, bool]] = {}
+    for record in completed:
+        trial = record["trial"]
+        if not isinstance(trial, dict):
+            raise ValueError("durable-routing outcome lacks trial metadata")
+        task, replicate, condition = trial.get("task"), trial.get("replicate"), trial.get("condition")
+        if not isinstance(task, str) or not isinstance(replicate, int) or not isinstance(condition, str):
+            raise ValueError("durable-routing outcome has malformed trial metadata")
+        trace = json.loads((traces / f"{record['trial_sha256']}.json").read_text())
+        score_data = trace.get("score") if isinstance(trace, dict) else None
+        if not isinstance(score_data, dict):
+            raise ValueError("durable-routing outcome lacks deterministic score")
+        scores[(task, replicate, condition)] = {
+            dimension: score_data.get(dimension) is True for dimension in dimensions
+        }
+    paired: dict[str, dict[str, float | int]] = {}
+    for dimension in dimensions:
+        favored = against = 0
+        blocks = {(trial.task, trial.replicate) for trial in bundle.schedule}
+        for task, replicate in blocks:
+            control = scores.get((task, replicate, "C0"))
+            treatment = scores.get((task, replicate, "C1"))
+            if control is None or treatment is None:
+                raise ValueError("durable-routing paired sign test lacks a condition outcome")
+            if treatment[dimension] and not control[dimension]:
+                favored += 1
+            elif control[dimension] and not treatment[dimension]:
+                against += 1
+        paired[dimension] = {
+            "C1_only": favored,
+            "C0_only": against,
+            "discordant": favored + against,
+            "p_one_sided": _one_sided_sign_p(favored, against),
+        }
+    return paired
+
+
+def _one_sided_sign_p(favored: int, against: int) -> float:
+    """Exact probability of at least this many C1-favored discordant blocks under no effect."""
+    trials = favored + against
+    if trials == 0:
+        return 1.0
+    return sum(math.comb(trials, count) for count in range(favored, trials + 1)) / (2 ** trials)
 
 
 def _read_worker_result(path: Path, bundle_sha256: str, trial_sha256: str) -> dict[str, object]:

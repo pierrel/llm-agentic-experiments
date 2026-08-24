@@ -47,6 +47,8 @@ class DurableRoutingTest(unittest.TestCase):
                     "advance_primary_dimensions": ["persistence", "full"],
                     "sentinel_non_regression_dimensions": ["routing", "answer_and_honesty"],
                     "advance_minimum_delta": 2,
+                    "paired_sign_test_max_p": 0.05,
+                    "guard_maximum_decrease": 2,
                 },
             ),
             read_tasks(ROOT / "experiments/durable-promise-outcome-v1/tasks.json"),
@@ -60,6 +62,25 @@ class DurableRoutingTest(unittest.TestCase):
         })
         self.assertEqual(len({task.user_prompt for task in self.tasks.values()}), 4)
         self.assertTrue(all(task.initial_files for task in self.tasks.values()))
+
+    def test_registered_v2_confirmation_is_fresh_and_fully_position_balanced(self) -> None:
+        from durable_routing_harness.durable_coordinator import durable_definition
+
+        definition = durable_definition(ROOT)
+        self.assertEqual(definition.bundle.study_id, "durable-promise-outcome-v2")
+        self.assertEqual(set(definition.tasks), {
+            "orchard-volunteer", "passport-form", "choir-rehearsal", "vet-followup",
+        })
+        self.assertEqual(len(definition.bundle.schedule), 48)
+        for task in definition.tasks:
+            positions = {"C0": [], "C1": []}
+            for replicate in range(1, 7):
+                block = [trial.condition for trial in definition.bundle.schedule
+                         if trial.task == task and trial.replicate == replicate]
+                for condition in positions:
+                    positions[condition].append(block.index(condition))
+            self.assertEqual(positions["C0"].count(0), 3)
+            self.assertEqual(positions["C1"].count(0), 3)
 
     def test_task_manifest_rejects_unexpected_or_duplicate_entries(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -222,6 +243,13 @@ class DurableRoutingTest(unittest.TestCase):
             _selection_settings({"decoding": {}, "reasoning": {"enabled": False}})
         with self.assertRaisesRegex(ValueError, "reasoning"):
             _selection_settings({"decoding": {"temperature": 0.1}, "reasoning": {}})
+
+    def test_paired_sign_test_has_a_directional_exact_tail(self) -> None:
+        from durable_routing_harness.durable_coordinator import _one_sided_sign_p
+
+        self.assertEqual(_one_sided_sign_p(0, 0), 1.0)
+        self.assertEqual(_one_sided_sign_p(6, 0), 1 / 64)
+        self.assertEqual(_one_sided_sign_p(3, 3), 42 / 64)
 
     def test_worker_binds_the_nonsecret_provider_endpoint_identity(self) -> None:
         from assist.model_manager import OpenAIConfig

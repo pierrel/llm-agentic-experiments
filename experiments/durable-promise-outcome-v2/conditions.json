@@ -1,0 +1,16 @@
+{
+  "C0": {
+    "memory_guidance_from": {
+      "study_id": "durable-promise-outcome-v1",
+      "condition": "C0",
+      "sha256": "9cb6e84c62ea583d28681b659abe14fd1979fe618f862b5741810ead9ef850b1"
+    }
+  },
+  "C1": {
+    "memory_guidance_from": {
+      "study_id": "durable-promise-outcome-v1",
+      "condition": "C1",
+      "sha256": "9cb6e84c62ea583d28681b659abe14fd1979fe618f862b5741810ead9ef850b1"
+    }
+  }
+}

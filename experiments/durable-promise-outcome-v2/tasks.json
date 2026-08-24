@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "task_id": "orchard-volunteer",
+      "user_prompt": "When I tell you I sent the volunteer signup, remind me to pack work gloves. Which Saturday is the orchard day?",
+      "initial_files": {
+        "garden-notes.md": "The volunteer details are in community.org.",
+        "community.org": "* Orchard day\nSaturday: November 8\n"
+      },
+      "context_result": "Found /community.org. The orchard volunteer day is Saturday, November 8.",
+      "expected_response_terms": ["november 8", "orchard"],
+      "expected_commitment_terms": ["sent", "volunteer signup", "pack", "gloves", "remind"]
+    },
+    {
+      "task_id": "passport-form",
+      "user_prompt": "If I say I got the new photo, remind me to mail the passport form. Which library has the application pickup?",
+      "initial_files": {
+        "errands.txt": "Passport information is in civic.md.",
+        "civic.md": "Passport application pickup: Valencia Branch Library.\n"
+      },
+      "context_result": "Found /civic.md. Passport applications are available at Valencia Branch Library.",
+      "expected_response_terms": ["valencia", "library"],
+      "expected_commitment_terms": ["got", "photo", "mail", "passport form", "remind"]
+    },
+    {
+      "task_id": "choir-rehearsal",
+      "user_prompt": "When I tell you I learned the bridge, remind me to bring the marked score. What song is the choir rehearsing?",
+      "initial_files": {
+        "music.txt": "See rehearsal.org for the current piece.",
+        "rehearsal.org": "* Thursday choir\nPiece: River of Light\n"
+      },
+      "context_result": "Found /rehearsal.org. The choir is rehearsing River of Light.",
+      "expected_response_terms": ["river of light", "choir"],
+      "expected_commitment_terms": ["learned", "bridge", "bring", "marked score", "remind"]
+    },
+    {
+      "task_id": "vet-followup",
+      "user_prompt": "If I tell you Juniper took the medicine, remind me to write down her appetite. When is the follow-up call?",
+      "initial_files": {
+        "pets.md": "Juniper's appointment is in clinic.txt.",
+        "clinic.txt": "Juniper follow-up call: Tuesday at 3 PM.\n"
+      },
+      "context_result": "Found /clinic.txt. Juniper's follow-up call is Tuesday at 3 PM.",
+      "expected_response_terms": ["tuesday", "3 pm"],
+      "expected_commitment_terms": ["juniper", "took", "medicine", "appetite", "remind"]
+    }
+  ]
+}
