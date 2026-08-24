@@ -64,6 +64,12 @@ class DurableRoutingDefinition:
         declared = registration.get("allowed_condition_difference")
         if declared != self.condition_field:
             raise ValueError("durable-routing must declare its sole condition difference")
+        _validate_development_registration(registration)
+        harness_settings = self.bundle.settings.get("harness_architecture")
+        if not (isinstance(harness_settings, dict)
+                and isinstance(harness_settings.get("prompt_treatment_preflight"), dict)
+                and isinstance(harness_settings.get("memory_guidance_provenance"), dict)):
+            raise ValueError("durable-routing bundle lacks prompt-treatment preflight")
         if registration.get("implementation_sha256") != durable_implementation_sha256(root):
             raise ValueError("durable-routing bundle does not match committed implementation")
 
@@ -74,6 +80,24 @@ class DurableRoutingProgress:
 
     status: str
     artifacts: RunArtifacts | None = None
+
+
+def _validate_development_registration(registration: dict[str, object]) -> None:
+    """Reject an incomplete exploratory decision rule before any admission."""
+    if registration.get("analysis_phase") != "development_screen":
+        return
+    required_counts = (
+        "development_minimum_full_passes",
+        "development_minimum_full_delta",
+        "development_maximum_row_deficit",
+    )
+    if not all(isinstance(registration.get(key), int) and registration[key] >= 0
+               for key in required_counts):
+        raise ValueError("durable-routing development screen lacks numeric gates")
+    dimensions = registration.get("development_non_regression_dimensions")
+    if not (isinstance(dimensions, list)
+            and set(dimensions) == {"routing", "answer_and_honesty"}):
+        raise ValueError("durable-routing development screen lacks required guards")
 
 
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
@@ -258,6 +282,8 @@ def _run_once(
         "condition_field": definition.condition_field,
         "condition_value": definition.condition_values[trial.condition],
         "model_settings": bundle.settings["model"],
+        "prompt_treatment_preflight": bundle.settings["harness_architecture"]["prompt_treatment_preflight"],
+        "memory_guidance_provenance": bundle.settings["harness_architecture"]["memory_guidance_provenance"],
     }) + b"\n")
     attempt = len([record for record in admissions.read_verified() if record["trial_sha256"] == trial.sha256]) + 1
     command = durable_worker_command(

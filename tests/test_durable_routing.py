@@ -29,7 +29,7 @@ class DurableRoutingTest(unittest.TestCase):
 
     def current_definition(self):
         """Build a test-only definition whose closure matches this checkout."""
-        from harness.bundle import StudyBundle
+        from harness.bundle import StudyBundle, digest
         from durable_routing_harness.durable_coordinator import (
             DurableRoutingDefinition, durable_implementation_sha256,
         )
@@ -40,6 +40,12 @@ class DurableRoutingTest(unittest.TestCase):
         conditions = json.loads(
             (ROOT / "experiments/durable-promise-outcome-v1/conditions.json").read_text()
         )
+        settings = bundle.settings | {
+            "harness_architecture": bundle.settings["harness_architecture"] | {
+                "prompt_treatment_preflight": {},
+                "memory_guidance_provenance": {},
+            },
+        }
         return DurableRoutingDefinition(
             replace(
                 bundle,
@@ -50,6 +56,10 @@ class DurableRoutingTest(unittest.TestCase):
                     "advance_minimum_delta": 2,
                     "paired_sign_test_max_p": 0.05,
                     "guard_maximum_decrease": 2,
+                },
+                settings=settings,
+                harness_architecture=bundle.harness_architecture | {
+                    "configuration_sha256": digest(settings["harness_architecture"]),
                 },
             ),
             read_tasks(ROOT / "experiments/durable-promise-outcome-v1/tasks.json"),
@@ -229,12 +239,14 @@ class DurableRoutingTest(unittest.TestCase):
                 "condition_field": "grounding_description", "condition_value": "control description",
                 "task": self.task.payload(),
                 "model_settings": {"model_id": "test-model", "context_limit": 1},
+                "prompt_treatment_preflight": {}, "memory_guidance_provenance": {},
             }))
             episode_result = DurableRoutingResult(
                 initial_response="", completion_response="basil", calls=(), memory="",
                 messages=(), provider_requests=(),
             )
             with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                     "durable_routing_harness.durable_worker.preflight_web_main_treatment") as preflight, patch(
                      "durable_routing_harness.durable_worker.run_episode",
                      side_effect=lambda *_args, **kwargs: (
                          kwargs["on_first_provider_request"](), episode_result
@@ -250,6 +262,7 @@ class DurableRoutingTest(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["model_settings"], {
                 "model_id": "test-model", "context_limit": 1,
             })
+            preflight.assert_called_once_with({}, {})
 
     def test_worker_passes_a_sealed_memory_guidance_pair(self) -> None:
         from durable_routing_harness.durable_worker import run_descriptor
@@ -262,9 +275,11 @@ class DurableRoutingTest(unittest.TestCase):
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
                 "condition_field": "memory_guidance", "condition_value": guidance,
                 "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+                "prompt_treatment_preflight": {}, "memory_guidance_provenance": {},
             }))
             episode_result = DurableRoutingResult("", "", (), "", (), (), "", "")
             with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.preflight_web_main_treatment"), patch(
                     "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, root / "result.json", root / "started")
             self.assertEqual(run.call_args.kwargs["memory_guidance"], guidance)
@@ -279,9 +294,11 @@ class DurableRoutingTest(unittest.TestCase):
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
                 "condition_field": "outcome_checklist", "condition_value": True,
                 "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+                "prompt_treatment_preflight": {}, "memory_guidance_provenance": {},
             }))
             episode_result = DurableRoutingResult("", "", (), "", (), ())
             with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.preflight_web_main_treatment"), patch(
                     "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, root / "result.json", root / "started")
             self.assertTrue(run.call_args.kwargs["outcome_checklist"])
@@ -296,17 +313,20 @@ class DurableRoutingTest(unittest.TestCase):
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
                 "condition_field": "async_outcome_reconciliation", "condition_value": True,
                 "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+                "prompt_treatment_preflight": {}, "memory_guidance_provenance": {},
             }))
             episode_result = DurableRoutingResult("", "", (), "", (), ())
             with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.preflight_web_main_treatment"), patch(
                     "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, root / "result.json", root / "started")
             self.assertTrue(run.call_args.kwargs["async_outcome_reconciliation"])
 
     def test_async_reconciliation_exposure_requires_exactly_one_marker_per_request(self) -> None:
+        from assist.web_main_prompt import ASYNC_OUTCOME_RECONCILIATION_PROMPT
         from durable_routing_harness.durable_routing import _assert_async_outcome_reconciliation_exposure
 
-        request = {"messages": ["After checking a terminal task result"], "kwargs": {}}
+        request = {"messages": [ASYNC_OUTCOME_RECONCILIATION_PROMPT], "kwargs": {}}
         _assert_async_outcome_reconciliation_exposure([request], True)
         _assert_async_outcome_reconciliation_exposure([{"messages": [], "kwargs": {}}], False)
         with self.assertRaisesRegex(ValueError, "prompt treatment exposure differs"):
@@ -402,6 +422,7 @@ class DurableRoutingTest(unittest.TestCase):
                 "condition_field": "grounding_description", "condition_value": "control description",
                 "task": self.task.payload(),
                 "model_settings": {"model_id": "test-model", "context_limit": 1},
+                "prompt_treatment_preflight": {}, "memory_guidance_provenance": {},
             }))
             with patch("durable_routing_harness.durable_worker._verify_model_settings",
                        side_effect=ValueError("sealed preflight failed")):

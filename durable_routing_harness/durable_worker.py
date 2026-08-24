@@ -9,13 +9,16 @@ import os
 from pathlib import Path
 
 from harness.bundle import atomic_write, canonical_json
-from .durable_routing import DurableRoutingTask, run_episode
+from .durable_routing import DurableRoutingTask, preflight_web_main_treatment, run_episode
 
 
 def run_descriptor(descriptor_path: Path, result_path: Path, request_started_path: Path) -> None:
     """Run one coordinator-built descriptor and publish its complete result."""
     descriptor = json.loads(descriptor_path.read_text())
-    required = {"bundle_sha256", "condition_field", "condition_value", "model_settings", "task", "trial_sha256"}
+    required = {
+        "bundle_sha256", "condition_field", "condition_value", "memory_guidance_provenance",
+        "model_settings", "prompt_treatment_preflight", "task", "trial_sha256",
+    }
     if not isinstance(descriptor, dict) or set(descriptor) != required:
         raise ValueError("durable-routing worker received an invalid descriptor")
     if not all(isinstance(descriptor[key], str) for key in (
@@ -27,6 +30,9 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
     _write_lifecycle(request_started_path, "task-validated")
     _verify_model_settings(descriptor["model_settings"])
     _write_lifecycle(request_started_path, "model-verified")
+    preflight_web_main_treatment(
+        descriptor["prompt_treatment_preflight"], descriptor["memory_guidance_provenance"])
+    _write_lifecycle(request_started_path, "prompt-treatment-verified")
 
     def mark_first_provider_request() -> None:
         """Record the actual model boundary, after setup and immediately before send."""

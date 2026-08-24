@@ -327,8 +327,7 @@ def run_episode(
             state = agent.agent.get_state({
                 "configurable": {"thread_id": agent.thread_id},
             }).values
-        _assert_async_outcome_reconciliation_exposure(
-            capture.requests, async_outcome_reconciliation)
+        _assert_async_outcome_reconciliation_exposure(capture.requests, async_outcome_reconciliation)
         memory_path = Path(agent_dir) / "memory.md"
         memory = read_file(str(memory_path)) if memory_path.exists() else ""
         calls = [_json_value(call) for call in agent_tool_calls(agent)]
@@ -394,13 +393,86 @@ def _assert_async_outcome_reconciliation_exposure(
         requests: list[dict[str, object]], enabled: bool,
 ) -> None:
     """Prove the sealed lifecycle rider reached every provider request once."""
-    marker = "After checking a terminal task result"
+    from assist.web_main_prompt import ASYNC_OUTCOME_RECONCILIATION_PROMPT
+
     if not requests:
         raise ValueError("durable-routing episode made no provider request")
     expected = 1 if enabled else 0
     for request in requests:
-        if json.dumps(request, sort_keys=True).count(marker) != expected:
+        if _text_occurrences(request, ASYNC_OUTCOME_RECONCILIATION_PROMPT) != expected:
             raise ValueError("durable-routing prompt treatment exposure differs")
+
+
+def preflight_web_main_treatment(
+        expected: object, memory_guidance_provenance: object,
+) -> None:
+    """Verify the sealed C0/C1 static contrast and initial schema set pre-provider."""
+    import hashlib
+
+    from assist.middleware.memory_middleware import SMALL_MODEL_MEMORY_PROMPT, THREAD_MEMORY_PROMPT
+    from assist.tools import directions, map_data, read_url, travel
+    from assist.web_main_prompt import (
+        ASYNC_OUTCOME_RECONCILIATION_PROMPT, render_deep_web_main_prompt,
+    )
+    from edd.eval.utils import prompt_rewrite_web_main_spec
+
+    if not isinstance(expected, dict) or not isinstance(memory_guidance_provenance, dict):
+        raise ValueError("durable-routing prompt treatment preflight is malformed")
+    required_memory_provenance = {
+        "confirmed_study", "condition", "outcome_v2_conditions_sha256",
+        "outcome_v1_conditions_sha256", "memory_guidance_sha256",
+    }
+    if set(memory_guidance_provenance) != required_memory_provenance:
+        raise ValueError("durable-routing memory baseline provenance is malformed")
+    control = render_deep_web_main_prompt(guidance_skills=True).text
+    treatment = render_deep_web_main_prompt(
+        guidance_skills=True, async_outcome_reconciliation=True).text
+    if (control.count(ASYNC_OUTCOME_RECONCILIATION_PROMPT) != 0
+            or treatment.count(ASYNC_OUTCOME_RECONCILIATION_PROMPT) != 1
+            or treatment.replace(ASYNC_OUTCOME_RECONCILIATION_PROMPT + "\n\n", "") != control):
+        raise ValueError("durable-routing static prompt contrast differs")
+    spec = prompt_rewrite_web_main_spec()
+    schemas = [_tool_schema(tool) for tool in (
+        *spec.async_subagent_tools, *spec.tools, travel, directions, map_data, read_url,
+    )]
+    observed = {
+        "c0_static_prompt_sha256": hashlib.sha256(control.encode()).hexdigest(),
+        "c1_static_prompt_sha256": hashlib.sha256(treatment.encode()).hexdigest(),
+        "rider_sha256": hashlib.sha256(ASYNC_OUTCOME_RECONCILIATION_PROMPT.encode()).hexdigest(),
+        "initial_tool_schemas_sha256": hashlib.sha256(
+            json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+    }
+    if observed != expected:
+        raise ValueError("durable-routing sealed prompt treatment differs")
+    expected_memory = memory_guidance_provenance.get("memory_guidance_sha256")
+    actual_memory = hashlib.sha256(json.dumps({
+        "repository_memory_prompt": SMALL_MODEL_MEMORY_PROMPT,
+        "thread_memory_prompt": THREAD_MEMORY_PROMPT,
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if not isinstance(expected_memory, str) or actual_memory != expected_memory:
+        raise ValueError("durable-routing durable-memory baseline differs")
+
+
+def _tool_schema(tool: object) -> dict[str, object]:
+    """Use LangChain's provider conversion without creating a model request."""
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    try:
+        converted = convert_to_openai_tool(tool)
+    except (TypeError, ValueError) as error:
+        raise ValueError("durable-routing initial tool schema is malformed") from error
+    return _json_value(converted)
+
+
+def _text_occurrences(value: object, needle: str) -> int:
+    """Count literal prompt text without JSON escaping its line breaks."""
+    if isinstance(value, str):
+        return value.count(needle)
+    if isinstance(value, dict):
+        return sum(_text_occurrences(item, needle) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_text_occurrences(item, needle) for item in value)
+    return 0
 
 
 def _selection_settings(model_settings: dict[str, object]) -> tuple[float, bool]:
