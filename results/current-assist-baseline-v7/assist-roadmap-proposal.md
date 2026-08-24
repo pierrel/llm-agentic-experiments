@@ -3,7 +3,8 @@
 ## Evidence
 
 This proposal is grounded only in `results/current-assist-baseline-v7/`, one
-sealed real episode that exhausted its recursion limit after a provider request.
+sealed real episode that exhausted its recursion limit after a captured
+pre-provider request.
 
 ## Proposed work
 

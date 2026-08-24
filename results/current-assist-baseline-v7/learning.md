@@ -3,8 +3,9 @@
 ## Evidence
 
 - Sealed settings, fixture, model, architecture, and schedule: `bundle.json`,
-  verified with the immutable `current-assist-baseline-v7` tag because this
-  recorded run predates the current shared bundle schema.
+  verified with source commit `a86178599a2d2ac2da76c24a645dcfa2ed47acbc`
+  because this recorded run predates the current shared bundle schema. The
+  original registration sealed the tag name, not this resolved commit ID.
 - Admitted one-episode record and outcome seal: `admissions.jsonl[.seal]` and
   `outcomes.jsonl[.seal]`.
 - Aggregate summary and raw-evidence hashes: `report.json` and `run.json`.
@@ -12,14 +13,16 @@
 
 ## Observation
 
-The isolated current-Assist Deep Agents episode made one provider request but
-hit its sealed recursion limit of 12 before returning the requested edit.
+The isolated current-Assist Deep Agents episode captured one pre-provider
+request but hit its sealed recursion limit of 12 before returning the requested
+edit.
 
 ## Limits and counterexample
 
-This is one reason-coded failure, not a comparison or a reliability estimate.
-It does not show whether a different loop limit, model, reasoning setting,
-prompt, or architecture would succeed.
+This is one historical-pilot failure, not a comparison or a reliability
+estimate. Its minimum-adequate-setup review was post-run. It does not show
+whether a different loop limit, model, reasoning setting, prompt, or
+architecture would succeed.
 
 ## Handoffs
 

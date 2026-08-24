@@ -53,3 +53,18 @@ returned message trace. The oracle reads only the temporary fixture and accepts
 either ordinary edit mechanism, provided the requested final artifact is exact.
 The worker records the runtime-selected model identifier and tool names before
 invoking the agent.
+
+### Minimum adequate setup audit
+
+This review was missing before v7's model request. This post-run audit does not
+retroactively satisfy that gate. It records the limitation so the sealed result
+is interpreted as a historical pilot, not a compliant confirmation run.
+
+For the narrow question, an isolated note, one natural edit request, the actual
+current Assist construction, and one bounded episode were the minimum needed to
+observe whether this exact setup could complete the edit. One episode is not
+adequate for a success-rate claim, transfer claim, or product decision. The
+missing preflight comparison of complete provider schemas, exact model weights,
+and a clean Assist source tree also makes it inadequate for a controlled
+between-setting comparison. Future real runs must complete this review before
+admission and record each of those inputs in their sealed bundle.

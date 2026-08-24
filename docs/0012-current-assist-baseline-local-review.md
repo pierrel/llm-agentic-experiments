@@ -1,6 +1,7 @@
 # Current Assist baseline final local review
 
-The final local review verified the sealed v7 bundle, one admitted model request,
+The final local review verified the sealed v7 bundle, one admitted pre-provider
+request capture,
 raw request-capture hash, reason-coded recursion-limit outcome, record seals,
 and result report. The deterministic suite passed (16 tests).
 
@@ -40,14 +41,19 @@ After the baseline branch was rebased onto the merged scripted-MVP harness, it
 became clear that the MVP seals every top-level `harness/*.py`. Keeping an
 unrelated real-model runner in that module set would make its already sealed
 static fixture fail closed. The final branch therefore stores the self-contained
-v7 result capsule; its executable source remains at the immutable v7 tag. This
-leaves the MVP bundle, the v7 bundle, the captured Assist revision, and all v7
-result records unchanged.
+v7 result capsule; its executable source remains at recorded commit
+`a86178599a2d2ac2da76c24a645dcfa2ed47acbc`, the commit named by the v7 tag at
+archive time. This leaves the MVP bundle and the sealed v7 admission/outcome
+chains unchanged. The result report and inventory are post-run archival
+annotations added by this branch.
 
-The archived v7 episode remains reproducible from its own tag. It must not be
-rerun from this integrated branch: the registration's source-binding guard
-correctly rejects a changed runner, and any future real episode needs a new
+The archived runner and bundle are recoverable from that recorded source commit,
+but the executed episode is not reproducible: its model weights, complete
+provider schemas, and clean Assist source tree were not sealed. It must not be
+rerun from this integrated branch, and any future real episode needs a new
 registered study version. Its bundle predates the current shared bundle schema,
-so the capsule preserves its original bytes and verifies them through that tag,
-rather than rewriting the executed registration. The integrated deterministic
-suite passed 35 tests, with `compileall` and `git diff --check` also clean.
+so the capsule preserves its original bytes and verifies them through that
+commit, rather than rewriting the executed registration. This records provenance
+for the archive; it does not retroactively strengthen the original tag-only
+seal. The integrated deterministic suite passed 35 tests, with `compileall` and
+`git diff --check` also clean.

@@ -24,20 +24,21 @@ of a plan-and-execute architecture. See the [Deep Agents architecture
 document](https://github.com/langchain-ai/deepagents/blob/main/libs/ARCHITECTURE.md)
 and [customization guide](https://docs.langchain.com/oss/python/deepagents/customization).
 
-## Required first real-run profile
+## First real-run record
 
-The first registered real bundle will use:
+The first registered real bundle, `current-assist-baseline-v7`, ran one
+isolated episode. It sealed the fixture digest, natural prompt, current model
+selection, ReAct-style architecture, generic settings including reasoning
+disabled, and a recursion limit of 12. The runtime reported
+`Qwen_Qwen3.6-27B-Q4_K_M.gguf`; its model-weights digest was not captured.
 
-- the exact test fixture digest and natural user prompt from the test axis;
-- model identity `Qwen_Qwen3.6-27B-Q4_K_M.gguf`, with the model-weights digest
-  captured before admission;
-- architecture identity `deepagents-langchain-tool-loop`, with the pinned
-  package versions and Assist graph configuration; and
-- one generic `settings` object. At minimum it records the OpenAI-compatible
-  provider shape, reasoning `{ "enabled": false }`, decoding, context limit,
-  tool/middleware/subagent configuration, loop bounds, and cache policy.
+The episode captured one pre-provider request and then exhausted the sealed
+recursion limit before returning the requested edit. Its sealed record keeps the original
+`provider_error` reason code and exact `GraphRecursionError` detail. The capsule
+adds the non-mutating observation that this was loop exhaustion, not a provider
+availability failure. See `results/current-assist-baseline-v7/`.
 
-No real model trial has run. The endpoint's model ID is not a substitute for a
-weights digest, so the coordinator must fail closed until that digest is
-provided. A future model or plan-and-execute comparison keeps the test digest
-unchanged, changes exactly one declared axis, and writes a new sealed bundle.
+The missing weights digest is a limitation of this historical run, not a reason
+to rewrite it. A future model or plan-and-execute comparison must keep the test
+digest unchanged, change exactly one declared axis, and write a new sealed
+bundle with its own model identity and settings.

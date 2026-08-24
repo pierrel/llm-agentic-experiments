@@ -2,14 +2,16 @@
 
 ## Result
 
-The one registered current-Assist episode was admitted and made a model request.
+The one registered current-Assist episode was admitted and captured one
+pre-provider request.
 It did not produce the requested artifact: the graph raised `GraphRecursionError`
 at the sealed recursion limit of 12. The append-only outcome record therefore
 records an artifact failure (`provider_error` with the exact recursion-limit
 detail); it is not retried.
 
-This is a single baseline observation, not a model, architecture, or prompt
-comparison. It shows only that this exact isolated current-Assist construction,
+This is a single historical pilot observation, not a model, architecture, or
+prompt comparison. Its minimum-adequate-setup review was completed post-run, so
+it cannot serve as a compliant confirmation. It shows only that this exact isolated current-Assist construction,
 with the sealed model selector, reasoning disabled, and 12-step cap, did not
 finish this edit episode.
 
