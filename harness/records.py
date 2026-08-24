@@ -11,13 +11,14 @@ from typing import Literal
 from .bundle import Trial, atomic_write, canonical_json, digest
 
 OutcomeKind = Literal[
-    "pass", "artifact_failure", "timeout", "refusal", "loop_exhausted", "invalid_tool_call",
+    "pass", "artifact_failure", "behavioral_failure", "timeout", "refusal", "loop_exhausted", "invalid_tool_call",
     "provider_error", "infrastructure_invalid",
 ]
 OUTCOME_KINDS = frozenset(
     {
         "pass",
         "artifact_failure",
+        "behavioral_failure",
         "timeout",
         "refusal",
         "loop_exhausted",

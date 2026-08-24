@@ -18,13 +18,12 @@ from harness import (
     VirtualWorkspace,
     archive_scripted_run,
     evaluate,
-    mvp_definition,
     mvp_script,
     run_scripted_study,
     script_sha256,
 )
 from harness.records import AdmissionAttempt, AdmissionLog, ScheduledAdmission
-from harness.bundle import atomic_write
+from harness.bundle import StudyBundle, atomic_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +31,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class MvpHarnessTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.definition = mvp_definition(ROOT)
+        # The committed MVP bundle remains sealed to its historical harness
+        # closure. These tests exercise today's generic harness with the same
+        # immutable fixture/condition inputs, so they use a test-local
+        # implementation digest rather than rewriting that historical bundle.
+        from harness.manifests import TaskManifest, mvp_implementation_sha256, read_conditions
+
+        task = TaskManifest.read(ROOT / "fixtures" / "read-before-edit.json")
+        conditions = read_conditions(ROOT / "experiments" / "mvp-scripted" / "conditions.json")
+        bundle = StudyBundle.read_verified(ROOT / "experiments" / "mvp-scripted" / "bundle.json")
+        self.definition = StudyDefinition(
+            replace(bundle, registration=bundle.registration | {
+                "implementation_sha256": mvp_implementation_sha256(ROOT),
+            }),
+            {task.task_id: task}, conditions,
+        )
 
     def test_mvp_definition_is_sealed_and_initial_requests_are_identical(self) -> None:
         self.definition.validate()

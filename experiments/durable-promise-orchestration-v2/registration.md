@@ -1,6 +1,6 @@
 # Durable-promise orchestration v2
 
-Status: registered design. No model episode may run until the task bank,
+Status: registered development screen. No model episode may run until the task bank,
 conditions, schedule, analysis program, rendered-request seal, and integrity
 self-tests named here are committed and tagged.
 
@@ -54,30 +54,24 @@ The outcome-capture oracle accepts semantically equivalent numeric forms such as
 and post-result ordering. Todo use is a secondary manipulation measure, never a
 substitute for private persistence.
 
-## Phases and decisions
+## Development decision
 
 The prior v1 rows and the 2026-08-24 integration probe are exposed development
 evidence only. They are never confirmation holdouts.
 
-| phase | rows | independent repetitions | use |
-| --- | --- | --- | --- |
-| Development | three exposed mixed-turn rows | 3 per condition per row | select at most one literal rider; exploratory only |
-| Confirmation | three new natural rows sealed before selection | 5 per condition per row | release-supporting comparison |
-| Stability | full frozen mixed-turn panel | 10 per condition per row | product confidence and route stability |
-| General regression | predeclared unrelated families | 3 per condition per row | safety screen |
+V2 runs three exposed rows at three independent repetitions per condition per
+row, solely to select this already-frozen literal rider. A candidate advances
+only if it has at least 7/9 C1 primary passes, no row has a C1 deficit of two or
+more passes versus C0, and it does not replace thread memory with a todo. It
+must use the temporary checklist in at least 7/9 C1 rows. This is a selection
+rule, not statistical evidence. Each adaptation is a new dated amendment and
+uses development rows only.
 
-For development, a candidate advances only if it has at least 7/9 C1 primary
-passes, no row has a C1 deficit of two or more passes versus C0, and it does not
-replace thread memory with a todo. This is a selection rule, not statistical
-evidence. Each adaptation is a new dated amendment and uses development rows
-only.
-
-For confirmation, require C1 at least 11/15, at least three more aggregate
-passes than C0, no row deficit of two or more, and a one-sided row-stratified
-permutation p-value at most .05. Stability requires C1 no worse in aggregate
-and no priority-row deficit of two or more. The general panel may not show an
-aggregate or high-priority-family deficit of two or more. These are release
-gates, not a claim of universal non-regression.
+If it advances, a new v3 registration will seal previously unseen natural
+confirmation rows at five independent repetitions per condition per row, then
+the full frozen mixed-turn panel at ten and unrelated regression families at
+three. Confirmation, stability, and general-regression gates are specified in
+that new registration, after no further rider changes are permitted.
 
 ## Randomization, failures, and analysis
 

@@ -37,6 +37,8 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
         treatment = {"grounding_description": condition_value}
     elif condition_field == "memory_guidance" and isinstance(condition_value, dict):
         treatment = {"memory_guidance": condition_value}
+    elif condition_field == "outcome_checklist" and isinstance(condition_value, bool):
+        treatment = {"outcome_checklist": condition_value}
     else:
         raise ValueError("durable-routing worker descriptor has an invalid prompt treatment")
     result = run_episode(

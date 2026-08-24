@@ -18,8 +18,13 @@ from harness.records import AdmissionAttempt, AdmissionLog, RecordChain, Schedul
 from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _write_trace
 
 
-_STUDY_PREFIXES = ("durable-promise-routing-v", "durable-promise-outcome-v")
-_CONDITION_FIELDS = {"grounding_description", "memory_guidance"}
+_STUDY_PREFIXES = (
+    "durable-promise-routing-v", "durable-promise-outcome-v",
+    "durable-promise-orchestration-v",
+)
+_CONDITION_FIELDS = {
+    "grounding_description", "memory_guidance", "outcome_checklist",
+}
 
 
 @dataclass(frozen=True)
@@ -101,10 +106,12 @@ def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v2")
             condition_value = value[condition_field]
         if condition_field == "grounding_description":
             valid = isinstance(condition_value, str) and bool(condition_value)
-        else:
+        elif condition_field == "memory_guidance":
             valid = (isinstance(condition_value, dict)
                      and set(condition_value) == {"repository_memory_prompt", "thread_memory_prompt"}
                      and all(isinstance(text, str) and text for text in condition_value.values()))
+        else:
+            valid = isinstance(condition_value, bool)
         if not valid:
             raise ValueError("durable-routing condition value is invalid")
         condition_values[condition_id] = condition_value
@@ -278,6 +285,7 @@ def _run_once(
             initial_response=payload["initial_response"], completion_response=payload["completion_response"],
             calls=tuple(payload["calls"]), memory=payload["memory"],
             messages=tuple(payload["messages"]), provider_requests=tuple(payload["provider_requests"]),
+            todos=tuple(payload["todos"]),
             workspace_sha256=payload["workspace_sha256"], memory_sha256=payload["memory_sha256"],
         )
         scored = score(task, result)
@@ -292,11 +300,12 @@ def _run_once(
         "score": {
             "routing": scored.routing, "persistence": scored.persistence,
             "answer_and_honesty": scored.answer_and_honesty, "full": scored.full,
+            "todo_used": scored.todo_used, "todo_reconciled": scored.todo_reconciled,
             "failed_predicates": list(scored.failed_predicates),
         },
     })
     outcomes.append(TrialOutcome(
-        trial, "pass" if scored.full else "artifact_failure", _request_started(started),
+        trial, "pass" if scored.full else "behavioral_failure", _request_started(started),
         scored.full, "; ".join(scored.failed_predicates) or "all durable-routing predicates passed",
     ))
     return _progress_or_finalize(bundle_path, outcomes, admissions, traces)
@@ -347,7 +356,10 @@ def _finalize(bundle_path: Path, outcomes: RecordChain, admissions: AdmissionLog
 
 def _write_pilot_report(bundle: StudyBundle, outcomes: RecordChain, traces: Path, report: Path) -> None:
     """Write the preregistered count-only pilot analysis from sealed trace predicates."""
-    dimensions = ("routing", "persistence", "answer_and_honesty", "full")
+    dimensions = (
+        "routing", "persistence", "answer_and_honesty", "full",
+        "todo_used", "todo_reconciled",
+    )
     counts = {condition: {dimension: 0 for dimension in dimensions} for condition in bundle.conditions}
     by_task = {
         task: {condition: {dimension: 0 for dimension in dimensions} for condition in bundle.conditions}
@@ -368,6 +380,9 @@ def _write_pilot_report(bundle: StudyBundle, outcomes: RecordChain, traces: Path
             if passed:
                 counts[condition][dimension] += 1
                 by_task[task][condition][dimension] += 1
+    if bundle.registration.get("analysis_phase") == "development_screen":
+        _write_development_screen_report(bundle, counts, by_task, report)
+        return
     low_conflict = bundle.registration.get("low_conflict_tasks")
     if not isinstance(low_conflict, list) or not all(isinstance(task, str) for task in low_conflict):
         raise ValueError("durable-routing bundle lacks low-conflict pilot task ids")
@@ -400,6 +415,42 @@ def _write_pilot_report(bundle: StudyBundle, outcomes: RecordChain, traces: Path
     }) + b"\n")
 
 
+def _write_development_screen_report(
+    bundle: StudyBundle, counts: dict[str, dict[str, int]],
+    by_task: dict[str, dict[str, dict[str, int]]], report: Path,
+) -> None:
+    """Apply the sealed exploratory screen without presenting it as confirmation."""
+    registration = bundle.registration
+    minimum_full = registration.get("development_minimum_full_passes")
+    maximum_row_deficit = registration.get("development_maximum_row_deficit")
+    minimum_todo_use = registration.get("development_minimum_todo_use")
+    if not all(isinstance(value, int) and value >= 0 for value in (
+        minimum_full, maximum_row_deficit, minimum_todo_use,
+    )):
+        raise ValueError("durable-routing development screen is incomplete")
+    no_material_row_loss = all(
+        by_task[task]["C1"]["full"] >= by_task[task]["C0"]["full"] - maximum_row_deficit
+        for task in bundle.fixtures
+    )
+    advance = (
+        counts["C1"]["full"] >= minimum_full
+        and counts["C1"]["todo_used"] >= minimum_todo_use
+        and no_material_row_loss
+    )
+    atomic_write(report, canonical_json({
+        "bundle_sha256": bundle.sha256,
+        "analysis": bundle.analysis_revision,
+        "phase": "exploratory_development_screen",
+        "condition_counts": counts,
+        "task_condition_counts": by_task,
+        "advance_to_fresh_confirmation": advance,
+        "advance_rule": (
+            f"C1 full>={minimum_full}; C1 todo_used>={minimum_todo_use}; "
+            f"no task C1 full deficit>{maximum_row_deficit}"
+        ),
+    }) + b"\n")
+
+
 def _advance_plan(
     registration: dict[str, object],
 ) -> tuple[tuple[str, ...], tuple[str, ...], int, float, int]:
@@ -409,7 +460,10 @@ def _advance_plan(
     minimum_delta = registration.get("advance_minimum_delta")
     max_sign_p = registration.get("paired_sign_test_max_p")
     max_guard_drop = registration.get("guard_maximum_decrease")
-    dimensions = {"routing", "persistence", "answer_and_honesty", "full"}
+    dimensions = {
+        "routing", "persistence", "answer_and_honesty", "full",
+        "todo_used", "todo_reconciled",
+    }
     if not (isinstance(primary, list) and primary and isinstance(guards, list)
             and primary and all(isinstance(value, str) and value in dimensions for value in primary + guards)
             and isinstance(minimum_delta, int) and minimum_delta > 0
@@ -480,7 +534,7 @@ def _read_worker_result(path: Path, bundle_sha256: str, trial_sha256: str) -> di
     if not isinstance(result, dict):
         raise ValueError("durable-routing worker result is malformed")
     required = {
-        "initial_response", "completion_response", "calls", "memory", "messages", "provider_requests",
+        "initial_response", "completion_response", "calls", "memory", "messages", "provider_requests", "todos",
         "workspace_sha256", "memory_sha256",
     }
     if set(result) != required:
@@ -489,11 +543,11 @@ def _read_worker_result(path: Path, bundle_sha256: str, trial_sha256: str) -> di
         "initial_response", "completion_response", "memory", "workspace_sha256", "memory_sha256",
     )):
         raise ValueError("durable-routing worker result has invalid text evidence")
-    if not all(isinstance(result[key], list) for key in ("calls", "messages", "provider_requests")):
+    if not all(isinstance(result[key], list) for key in ("calls", "messages", "provider_requests", "todos")):
         raise ValueError("durable-routing worker result has invalid list evidence")
     if not all(
         isinstance(item, dict)
-        for key in ("calls", "messages", "provider_requests") for item in result[key]
+        for key in ("calls", "messages", "provider_requests", "todos") for item in result[key]
     ):
         raise ValueError("durable-routing worker result has non-object trace evidence")
     if not result["provider_requests"]:
@@ -587,6 +641,7 @@ def _record_recovered_result(
             initial_response=payload["initial_response"], completion_response=payload["completion_response"],
             calls=tuple(payload["calls"]), memory=payload["memory"],
             messages=tuple(payload["messages"]), provider_requests=tuple(payload["provider_requests"]),
+            todos=tuple(payload["todos"]),
             workspace_sha256=payload["workspace_sha256"], memory_sha256=payload["memory_sha256"],
         )
         scored = score(definition.tasks[trial.task], result)
@@ -598,9 +653,10 @@ def _record_recovered_result(
         "trial_sha256": trial.sha256, "trace": [], "result": result.payload(),
         "score": {"routing": scored.routing, "persistence": scored.persistence,
                   "answer_and_honesty": scored.answer_and_honesty, "full": scored.full,
+                  "todo_used": scored.todo_used, "todo_reconciled": scored.todo_reconciled,
                   "failed_predicates": list(scored.failed_predicates)},
     })
-    outcomes.append(TrialOutcome(trial, "pass" if scored.full else "artifact_failure", True, scored.full,
+    outcomes.append(TrialOutcome(trial, "pass" if scored.full else "behavioral_failure", True, scored.full,
                                  "; ".join(scored.failed_predicates) or "all durable-routing predicates passed"))
     return _progress_or_finalize(bundle_path, outcomes, admissions, traces)
 

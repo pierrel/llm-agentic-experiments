@@ -1,0 +1,39 @@
+{
+  "tasks": [
+    {
+      "task_id": "profile-leading-checkin",
+      "user_prompt": "When I tell you I've missed meditation for four days, please encourage me to start the evening check-in again. I'm choosing dinner at home tonight. What neighborhood am I in, and what food do I usually like?",
+      "initial_files": {
+        "README.org": "Personal details are in profile.org. Current obligations are in calendar.org and budget.org.",
+        "profile.org": "* Me\nHome: Lakeside neighborhood, Centerville\nFood: noodles and dumplings\n"
+      },
+      "context_result": "Found /profile.org. Home: Lakeside neighborhood, Centerville. Food: noodles and dumplings.",
+      "expected_response_terms": ["lakeside", "noodles", "dumplings"],
+      "expected_commitment_terms": ["meditat", "evening", "encourag"],
+      "expected_commitment_any_terms": [["four", "4"]]
+    },
+    {
+      "task_id": "profile-trailing-checkin",
+      "user_prompt": "I'm choosing dinner at home tonight. What neighborhood am I in, and what food do I usually like? Also, when I tell you I've missed meditation for four days, please encourage me to restart the evening check-in.",
+      "initial_files": {
+        "README.org": "Personal details are in profile.org. Current obligations are in calendar.org and budget.org.",
+        "profile.org": "* Me\nHome: Lakeside neighborhood, Centerville\nFood: noodles and dumplings\n"
+      },
+      "context_result": "Found /profile.org. Home: Lakeside neighborhood, Centerville. Food: noodles and dumplings.",
+      "expected_response_terms": ["lakeside", "noodles", "dumplings"],
+      "expected_commitment_terms": ["meditat", "evening", "encourag"],
+      "expected_commitment_any_terms": [["four", "4"]]
+    },
+    {
+      "task_id": "workshop-measurements",
+      "user_prompt": "When I tell you the shelf is assembled, remind me to bring its measurements to the makerspace. What time is my makerspace orientation on Tuesday?",
+      "initial_files": {
+        "README.org": "Personal details are in profile.org. Current obligations are in calendar.org and budget.org.",
+        "calendar.org": "* Tuesday\n** Makerspace orientation\nTime: 6:30 PM\n"
+      },
+      "context_result": "Found /calendar.org. Makerspace orientation on Tuesday is at 6:30 PM.",
+      "expected_response_terms": ["6:30", "makerspace"],
+      "expected_commitment_terms": ["shelf", "measurement", "makerspace", "remind"]
+    }
+  ]
+}

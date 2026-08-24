@@ -64,18 +64,24 @@ class DurableRoutingTest(unittest.TestCase):
         self.assertTrue(all(task.initial_files for task in self.tasks.values()))
 
     def test_registered_v2_confirmation_is_fresh_and_fully_position_balanced(self) -> None:
-        from durable_routing_harness.durable_coordinator import durable_definition
+        from harness.bundle import StudyBundle
 
-        definition = durable_definition(ROOT)
-        self.assertEqual(definition.bundle.study_id, "durable-promise-outcome-v2")
-        self.assertEqual(set(definition.tasks), {
+        # The historical confirmation is sealed to the runner closure that
+        # executed it. Current harness work must not silently rewrite that
+        # closure merely to keep this structural history assertion runnable.
+        bundle = StudyBundle.read_verified(
+            ROOT / "experiments/durable-promise-outcome-v2/bundle.json"
+        )
+        tasks = read_tasks(ROOT / "experiments/durable-promise-outcome-v2/tasks.json")
+        self.assertEqual(bundle.study_id, "durable-promise-outcome-v2")
+        self.assertEqual(set(tasks), {
             "orchard-volunteer", "passport-form", "choir-rehearsal", "vet-followup",
         })
-        self.assertEqual(len(definition.bundle.schedule), 48)
-        for task in definition.tasks:
+        self.assertEqual(len(bundle.schedule), 48)
+        for task in tasks:
             positions = {"C0": [], "C1": []}
             for replicate in range(1, 7):
-                block = [trial.condition for trial in definition.bundle.schedule
+                block = [trial.condition for trial in bundle.schedule
                          if trial.task == task and trial.replicate == replicate]
                 for condition in positions:
                     positions[condition].append(block.index(condition))
@@ -91,6 +97,26 @@ class DurableRoutingTest(unittest.TestCase):
                 read_tasks(path)
         with self.assertRaisesRegex(ValueError, "unexpected fields"):
             DurableRoutingTask.from_payload(self.task.payload() | {"treatment": "bad"})
+
+    def test_score_accepts_only_predeclared_equivalent_commitment_terms(self) -> None:
+        task = replace(
+            self.task,
+            expected_commitment_terms=("meditat", "evening", "encourag"),
+            expected_commitment_any_terms=(("four", "4"),),
+        )
+        result = DurableRoutingResult(
+            initial_response="", completion_response="You planned basil for this season.",
+            calls=(
+                {"name": "load_skill", "args": {"name": "grounding"}},
+                {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find garden", "subagent_type": "context-agent"}},
+                {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
+                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "Meditation missed 4 days; encourage the evening check-in."}},
+            ),
+            memory="Meditation missed 4 days; encourage the evening check-in.",
+            messages=({"content": task.context_result},), provider_requests=(),
+        )
+        self.assertTrue(score(task, result).persistence)
+        self.assertIn("expected_commitment_any_terms", task.payload())
 
     def test_score_separates_full_success_from_the_three_dimensions(self) -> None:
         result = DurableRoutingResult(
@@ -153,6 +179,26 @@ class DurableRoutingTest(unittest.TestCase):
         self.assertFalse(score_result.persistence)
         self.assertIn("dependent work ran before checked context result", score_result.failed_predicates)
         self.assertIn("private state was written before checked context result", score_result.failed_predicates)
+
+    def test_score_allows_a_temporary_todo_while_context_work_is_pending(self) -> None:
+        result = DurableRoutingResult(
+            initial_response="", completion_response="You planned basil for this season.",
+            calls=(
+                {"name": "load_skill", "args": {"name": "grounding"}},
+                {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find garden", "subagent_type": "context-agent"}},
+                {"name": "write_todos", "args": {"todos": [{"content": "Answer about basil", "status": "in_progress"}]}},
+                {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
+                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When basil is planted, remind user to label pots."}},
+            ),
+            memory="When basil is planted, remind user to label pots.",
+            messages=({"content": self.task.context_result},), provider_requests=(),
+            todos=({"content": "Answer about basil", "status": "completed"},),
+        )
+        score_result = score(self.task, result)
+        self.assertTrue(score_result.routing)
+        self.assertTrue(score_result.full)
+        self.assertTrue(score_result.todo_used)
+        self.assertTrue(score_result.todo_reconciled)
 
     def test_score_rejects_a_saved_claim_without_this_commitment(self) -> None:
         result = DurableRoutingResult(
@@ -221,6 +267,23 @@ class DurableRoutingTest(unittest.TestCase):
                     "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, root / "result.json", root / "started")
             self.assertEqual(run.call_args.kwargs["memory_guidance"], guidance)
+
+    def test_worker_passes_the_sealed_outcome_checklist_flag(self) -> None:
+        from durable_routing_harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            descriptor.write_text(json.dumps({
+                "bundle_sha256": "bundle", "trial_sha256": "trial",
+                "condition_field": "outcome_checklist", "condition_value": True,
+                "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+            }))
+            episode_result = DurableRoutingResult("", "", (), "", (), ())
+            with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
+                run_descriptor(descriptor, root / "result.json", root / "started")
+            self.assertTrue(run.call_args.kwargs["outcome_checklist"])
 
     def test_worker_rejects_a_descriptor_with_undeclared_fields(self) -> None:
         from durable_routing_harness.durable_worker import run_descriptor
@@ -361,7 +424,8 @@ class DurableRoutingTest(unittest.TestCase):
             trace = json.loads(next((output / "traces").glob("*.json")).read_text())
             self.assertEqual(trace["score"], {
                 "routing": True, "persistence": True, "answer_and_honesty": True,
-                "full": True, "failed_predicates": [],
+                "full": True, "todo_used": False, "todo_reconciled": False,
+                "failed_predicates": [],
             })
 
     def test_coordinator_never_replays_an_interrupted_provider_request(self) -> None:

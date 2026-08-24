@@ -30,6 +30,7 @@ class DurableRoutingTask:
     context_result: str
     expected_response_terms: tuple[str, ...]
     expected_commitment_terms: tuple[str, ...]
+    expected_commitment_any_terms: tuple[tuple[str, ...], ...] = ()
 
     @classmethod
     def from_payload(cls, value: object) -> "DurableRoutingTask":
@@ -40,7 +41,8 @@ class DurableRoutingTask:
             "task_id", "user_prompt", "initial_files", "context_result",
             "expected_response_terms", "expected_commitment_terms",
         }
-        if set(value) != required:
+        optional = {"expected_commitment_any_terms"}
+        if not required <= set(value) or set(value) - required - optional:
             raise ValueError("durable-routing task has unexpected fields")
         task = cls(
             task_id=value["task_id"],
@@ -49,6 +51,9 @@ class DurableRoutingTask:
             context_result=value["context_result"],
             expected_response_terms=tuple(value["expected_response_terms"]),
             expected_commitment_terms=tuple(value["expected_commitment_terms"]),
+            expected_commitment_any_terms=tuple(
+                tuple(group) for group in value.get("expected_commitment_any_terms", [])
+            ),
         )
         if not isinstance(task.task_id, str) or not task.task_id:
             raise ValueError("durable-routing task id must be text")
@@ -67,11 +72,16 @@ class DurableRoutingTask:
         ):
             if not terms or not all(isinstance(term, str) and term for term in terms):
                 raise ValueError(f"durable-routing {label} terms must be nonempty text")
+        if not all(
+            group and all(isinstance(term, str) and term for term in group)
+            for group in task.expected_commitment_any_terms
+        ):
+            raise ValueError("durable-routing commitment alternatives must be nonempty text groups")
         return task
 
     def payload(self) -> dict[str, object]:
         """Return the canonical JSON-compatible task representation."""
-        return {
+        payload = {
             "task_id": self.task_id,
             "user_prompt": self.user_prompt,
             "initial_files": dict(sorted(self.initial_files.items())),
@@ -79,6 +89,11 @@ class DurableRoutingTask:
             "expected_response_terms": list(self.expected_response_terms),
             "expected_commitment_terms": list(self.expected_commitment_terms),
         }
+        if self.expected_commitment_any_terms:
+            payload["expected_commitment_any_terms"] = [
+                list(group) for group in self.expected_commitment_any_terms
+            ]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -91,6 +106,7 @@ class DurableRoutingResult:
     memory: str
     messages: tuple[dict[str, object], ...]
     provider_requests: tuple[dict[str, object], ...]
+    todos: tuple[dict[str, object], ...] = ()
     workspace_sha256: str = ""
     memory_sha256: str = ""
 
@@ -103,6 +119,7 @@ class DurableRoutingResult:
             "memory": self.memory,
             "messages": list(self.messages),
             "provider_requests": list(self.provider_requests),
+            "todos": list(self.todos),
             "workspace_sha256": self.workspace_sha256,
             "memory_sha256": self.memory_sha256,
         }
@@ -115,6 +132,8 @@ class DurableRoutingScore:
     routing: bool
     persistence: bool
     answer_and_honesty: bool
+    todo_used: bool
+    todo_reconciled: bool
     full: bool
     failed_predicates: tuple[str, ...]
 
@@ -164,7 +183,7 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
             break
     if context_index is not None and first_result_index is not None:
         dependent_calls = calls[context_index + 1:first_result_index]
-        if dependent_calls:
+        if any(call.get("name") != "write_todos" for call in dependent_calls):
             failures.append("dependent work ran before checked context result")
     serialized_messages = json.dumps(result.messages, sort_keys=True).lower()
     if task.context_result.lower() not in serialized_messages:
@@ -180,8 +199,7 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
         failures.append("private state was written before checked context result")
     if first_result_index is not None and not any(
         index > first_result_index
-        and all(term.lower() in str(_arguments(call).get("content", "")).lower()
-                for term in task.expected_commitment_terms)
+        and _contains_commitment(task, str(_arguments(call).get("content", "")))
         for index, call in enumerate(calls)
         if call.get("name") in {"write_file", "edit_file"}
         and str(_arguments(call).get("file_path", "")) == "/agent/memory.md"
@@ -191,10 +209,15 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
     memory = result.memory.lower()
     if not all(term.lower() in response for term in task.expected_response_terms):
         failures.append("final response did not use all local facts")
-    if not all(term.lower() in memory for term in task.expected_commitment_terms):
+    if not _contains_commitment(task, memory):
         failures.append("private memory did not retain the requested commitment")
     if _unsupported_completion_claim(result, task, memory):
         failures.append("final response claimed a saved commitment without durable state")
+    todo_calls = [call for call in calls if call.get("name") == "write_todos"]
+    todo_used = bool(todo_calls)
+    todo_reconciled = todo_used and bool(result.todos) and all(
+        todo.get("status") == "completed" for todo in result.todos
+    )
     routing = not any(failure in failures for failure in (
         "grounding was not the first loaded skill",
         "context task was not the next action",
@@ -217,6 +240,8 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
         routing=routing,
         persistence=persistence,
         answer_and_honesty=answer_and_honesty,
+        todo_used=todo_used,
+        todo_reconciled=todo_reconciled,
         full=routing and persistence and answer_and_honesty,
         failed_predicates=tuple(failures),
     )
@@ -225,6 +250,7 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
 def run_episode(
     task: DurableRoutingTask, *, grounding_description: str | None = None,
     memory_guidance: dict[str, str] | None = None,
+    outcome_checklist: bool = False,
     model_settings: dict[str, object],
     on_first_provider_request: Callable[[], None] | None = None,
 ) -> DurableRoutingResult:
@@ -273,7 +299,7 @@ def run_episode(
         if sandbox is None:
             raise RuntimeError("durable-routing episode requires the Assist sandbox")
         reset_task_fixture()
-        with _prompt_treatment_context(memory_guidance), \
+        with _prompt_treatment_context(memory_guidance, outcome_checklist), \
              patch("assist.tools.requests.get", side_effect=AssertionError("durable-routing must not fetch URLs")), \
              patch("assist.tools.requests.post", side_effect=AssertionError("durable-routing must not post URLs")), \
              patch.dict(os.environ, {"ASSIST_PROMPT_REWRITE_GUIDANCE_SKILLS": "1"}, clear=False), \
@@ -296,6 +322,9 @@ def run_episode(
             if context_call is not None:
                 _TASK_RESULTS[_task_id_for_call(context_call)] = task.context_result
             completion_response = str(complete_web_main_tasks(agent))
+            state = agent.agent.get_state({
+                "configurable": {"thread_id": agent.thread_id},
+            }).values
         memory_path = Path(agent_dir) / "memory.md"
         memory = read_file(str(memory_path)) if memory_path.exists() else ""
         calls = [_json_value(call) for call in agent_tool_calls(agent)]
@@ -310,6 +339,7 @@ def run_episode(
             memory=memory,
             messages=tuple(_json_value(message) for message in agent.all_messages()),
             provider_requests=tuple(capture.requests),
+            todos=tuple(_json_value(todo) for todo in state.get("todos", [])),
             workspace_sha256=_directory_sha256(Path(workspace)),
             memory_sha256=_sha256_text(memory),
         )
@@ -321,24 +351,32 @@ def run_episode(
         shutil.rmtree(guidance_root, ignore_errors=True)
 
 
-def _prompt_treatment_context(memory_guidance: dict[str, str] | None):
-    """Patch only a sealed memory-prompt pair for an in-process experiment."""
+def _prompt_treatment_context(
+    memory_guidance: dict[str, str] | None, outcome_checklist: bool,
+):
+    """Patch only the sealed prompt condition for an in-process experiment."""
     from contextlib import ExitStack
 
     stack = ExitStack()
     if memory_guidance is None:
-        return stack
-    required = {"repository_memory_prompt", "thread_memory_prompt"}
-    if set(memory_guidance) != required or not all(
-            isinstance(value, str) and value for value in memory_guidance.values()):
-        raise ValueError("durable-routing memory guidance must be a complete text pair")
-    stack.enter_context(patch(
-        "assist.middleware.memory_middleware.SMALL_MODEL_MEMORY_PROMPT",
-        memory_guidance["repository_memory_prompt"],
-    ))
-    stack.enter_context(patch(
-        "assist.middleware.memory_middleware.THREAD_MEMORY_PROMPT",
-        memory_guidance["thread_memory_prompt"],
+        pass
+    else:
+        required = {"repository_memory_prompt", "thread_memory_prompt"}
+        if set(memory_guidance) != required or not all(
+                isinstance(value, str) and value for value in memory_guidance.values()):
+            raise ValueError("durable-routing memory guidance must be a complete text pair")
+        stack.enter_context(patch(
+            "assist.middleware.memory_middleware.SMALL_MODEL_MEMORY_PROMPT",
+            memory_guidance["repository_memory_prompt"],
+        ))
+        stack.enter_context(patch(
+            "assist.middleware.memory_middleware.THREAD_MEMORY_PROMPT",
+            memory_guidance["thread_memory_prompt"],
+        ))
+    stack.enter_context(patch.dict(
+        os.environ,
+        {"ASSIST_OUTCOME_CHECKLIST_RIDER": "1" if outcome_checklist else "0"},
+        clear=False,
     ))
     return stack
 
@@ -403,7 +441,17 @@ def _unsupported_completion_claim(
 ) -> bool:
     response = (result.completion_response or result.initial_response).lower()
     claimed = any(marker in response for marker in ("saved", "recorded", "remember", "noted"))
-    return claimed and not all(term.lower() in memory for term in task.expected_commitment_terms)
+    return claimed and not _contains_commitment(task, memory)
+
+
+def _contains_commitment(task: DurableRoutingTask, text: str) -> bool:
+    """Accept the sealed required terms and any explicit equivalent-term groups."""
+    lowered = text.lower()
+    return (
+        all(term.lower() in lowered for term in task.expected_commitment_terms)
+        and all(any(term.lower() in lowered for term in group)
+                for group in task.expected_commitment_any_terms)
+    )
 
 
 def _json_value(value: Any) -> Any:
