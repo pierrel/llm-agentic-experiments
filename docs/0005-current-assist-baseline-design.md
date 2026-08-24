@@ -18,8 +18,8 @@ episode is scheduled. It is evidence for this exact pinned setup only, not a
 success-rate estimate or a comparison between models, settings, or harnesses.
 
 The sole scheduled trial is counted regardless of result. A GPU admission denial
-is recorded separately and the same trial is retried; a post-request failure is
-a reason-coded outcome. Raw trace bodies remain ignored locally. The committed
+is recorded separately and the same trial is retried; a failure after a
+pre-provider request capture is a reason-coded outcome. Raw trace bodies remain ignored locally. The committed
 capsule carries their SHA-256 hash, the sealed outcome and admission logs, and a
 compact report.
 
