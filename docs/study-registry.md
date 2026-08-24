@@ -10,4 +10,5 @@ the status or contents of an executed registration.
 | current-assist-baseline-v2 | superseded before model | `experiments/current-assist-baseline-v2/bundle.json` | Unsealed admission denial | Shared LLM resource was busy; no model request. |
 | current-assist-baseline-v3 | superseded before model | `experiments/current-assist-baseline-v3/bundle.json` | None | Retry-accounting correction registered; no admission attempted. |
 | current-assist-baseline-v4 | superseded before model | `experiments/current-assist-baseline-v4/bundle.json` | None | Request-capture design corrected before model use. |
-| current-assist-baseline-v5 | registered | `experiments/current-assist-baseline-v5/bundle.json` | Pending | Exact Assist construction and per-turn request capture. |
+| current-assist-baseline-v5 | reported infrastructure failure | `experiments/current-assist-baseline-v5/bundle.json` | Sealed outcome and admission logs | Assist template assets were unavailable before a model request. |
+| current-assist-baseline-v6 | registered | `experiments/current-assist-baseline-v6/bundle.json` | Pending | Pins the current Assist source revision and template assets. |
