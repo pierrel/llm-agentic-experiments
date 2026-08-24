@@ -12,8 +12,8 @@ from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
 
-from .bundle import StudyBundle, canonical_json
-from .current_assist_baseline import artifact_matches
+from harness.bundle import StudyBundle, canonical_json
+from runners.current_assist_baseline import artifact_matches
 
 
 def _write(path: Path, value: dict[str, Any]) -> None:

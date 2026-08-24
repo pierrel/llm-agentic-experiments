@@ -10,8 +10,8 @@ import subprocess
 import sys
 from typing import Any
 
-from .bundle import StudyBundle, Trial, canonical_json
-from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
+from harness.bundle import StudyBundle, Trial, canonical_json
+from harness.records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
 STUDY_ID = "current-assist-baseline-v7"
@@ -23,8 +23,8 @@ ANALYSIS_REVISION = "current-assist-baseline-oracle-v1"
 RUNNER_SOURCES = (
     "harness/bundle.py",
     "harness/records.py",
-    "harness/current_assist_baseline.py",
-    "harness/current_assist_baseline_worker.py",
+    "runners/current_assist_baseline.py",
+    "runners/current_assist_baseline_worker.py",
 )
 
 
@@ -186,7 +186,7 @@ def run(repo: Path, raw_directory: Path) -> int:
     command = [
         "/home/pierre/src/agentic/tools/agentic", "resource", "run", "llm", "--",
         "/bin/sh", "-c",
-        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 PYTHONPATH=\"$1:$2\" \"$3\" -m harness.current_assist_baseline_worker \"$4\"",
+        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 PYTHONPATH=\"$1:$2\" \"$3\" -m runners.current_assist_baseline_worker \"$4\"",
         "admitted-current-assist-baseline",
         str(repo), str(_assist_root()), "/home/pierre/deploy/assist/code/.venv/bin/python", str(descriptor),
     ]

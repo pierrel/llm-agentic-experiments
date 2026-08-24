@@ -20,7 +20,7 @@ from harness import (
     blocked_schedule,
 )
 from harness.bundle import digest
-from harness.current_assist_baseline import _next_admission_attempt, artifact_matches
+from runners.current_assist_baseline import _next_admission_attempt, artifact_matches
 
 
 def bundle() -> StudyBundle:
