@@ -184,7 +184,7 @@ def _run_current_assist_pilot(
         worker = _read_worker_result(result, bundle.sha256, trial.sha256)
         current_result = CurrentAssistResult(**worker["result"])
         score = _evaluate_current(definition.task, current_result)
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "trace": [], "worker_error": str(error)[:500]})
         outcomes.append(TrialOutcome(trial, "provider_error", _request_started(request_started), False, "worker result was malformed"))
         return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))

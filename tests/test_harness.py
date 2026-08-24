@@ -152,6 +152,31 @@ class HarnessTest(unittest.TestCase):
             self.assertEqual(outcome["outcome"], "provider_error")
             self.assertFalse(outcome["model_request_made"])
 
+    def test_current_pilot_finalizes_a_malformed_trace_as_a_marker_backed_provider_error(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary, patch("harness.current_pilot._verify_git_tag"):
+            output = Path(temporary) / "run"
+
+            def worker(command):
+                Path(command[command.index("--request-started") + 1]).write_text("model-invoke-started\n")
+                descriptor = json.loads(Path(command[command.index("--descriptor") + 1]).read_text())
+                Path(command[command.index("--result") + 1]).write_text(json.dumps({
+                    "bundle_sha256": descriptor["bundle_sha256"],
+                    "trial_sha256": descriptor["trial_sha256"],
+                    "result": {"final_response": "done", "files": {"budget-note.txt": "Budget: $25.\n"}, "messages": [[]]},
+                }))
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            progress = run_current_assist_pilot(
+                root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python"), command_runner=worker
+            )
+            self.assertEqual(progress.status, "complete")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "provider_error")
+            self.assertTrue(outcome["model_request_made"])
+
     def test_current_pilot_retains_an_admitted_timeout(self):
         from tempfile import TemporaryDirectory
 
