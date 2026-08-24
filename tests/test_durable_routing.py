@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from harness.durable_routing import (
     DurableRoutingResult,
@@ -79,3 +80,38 @@ class DurableRoutingTest(unittest.TestCase):
         self.assertTrue(score_result.answer_and_honesty)
         self.assertFalse(score_result.full)
         self.assertIn("grounding was not the first loaded skill", score_result.failed_predicates)
+
+    def test_worker_accepts_only_a_sealed_descriptor_and_marks_the_model_boundary(self) -> None:
+        from harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            result_path = root / "result.json"
+            started = root / "started"
+            descriptor.write_text(json.dumps({
+                "bundle_sha256": "bundle", "trial_sha256": "trial",
+                "grounding_description": "control description", "task": self.task.payload(),
+            }))
+            episode_result = DurableRoutingResult(
+                initial_response="", completion_response="basil", calls=(), memory="",
+                messages=(), provider_requests=(),
+            )
+            with patch("harness.durable_worker.run_episode", return_value=episode_result) as run:
+                run_descriptor(descriptor, result_path, started)
+            self.assertEqual(started.read_bytes(), b"model-invoke-started\n")
+            run.assert_called_once_with(self.task, grounding_description="control description")
+            stored = json.loads(result_path.read_text())
+            self.assertEqual(stored["bundle_sha256"], "bundle")
+            self.assertEqual(stored["trial_sha256"], "trial")
+            self.assertEqual(stored["result"], episode_result.payload())
+
+    def test_worker_rejects_a_descriptor_with_undeclared_fields(self) -> None:
+        from harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            descriptor.write_text(json.dumps({"task": self.task.payload(), "direct_model": True}))
+            with self.assertRaisesRegex(ValueError, "invalid descriptor"):
+                run_descriptor(descriptor, root / "result.json", root / "started")
