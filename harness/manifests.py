@@ -191,6 +191,7 @@ def mvp_implementation_sha256(root: Path) -> str:
         "__init__.py",
         "archive.py",
         "bundle.py",
+        "current_assist.py",
         "demo.py",
         "episode.py",
         "invariants.py",

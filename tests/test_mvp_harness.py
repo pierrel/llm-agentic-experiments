@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -19,6 +20,7 @@ from harness import (
     archive_scripted_run,
     evaluate,
     mvp_definition,
+    mvp_implementation_sha256,
     mvp_script,
     run_scripted_study,
     script_sha256,
@@ -31,6 +33,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MvpHarnessTest(unittest.TestCase):
+    def test_mvp_digest_covers_package_initialization_imports(self):
+        from tempfile import TemporaryDirectory
+
+        root = Path(__file__).resolve().parents[1]
+        with TemporaryDirectory() as temporary:
+            copied_root = Path(temporary)
+            shutil.copytree(root / "harness", copied_root / "harness")
+            original = mvp_implementation_sha256(copied_root)
+            (copied_root / "harness" / "current_assist.py").write_text("changed package initialization import\n")
+            self.assertNotEqual(mvp_implementation_sha256(copied_root), original)
+
     def setUp(self) -> None:
         self.definition = mvp_definition(ROOT)
 
