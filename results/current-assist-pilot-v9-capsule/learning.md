@@ -18,9 +18,8 @@ therefore scored a pass.
 
 This is one smoke-test episode, not a behavioral effect estimate. It does not
 establish reliability, transfer to other tests/models/harnesses/reasoning
-settings, or a product change. The raw trace remains untracked locally at
-`results/current-assist-pilot-v9/traces/`; its SHA-256 is retained in
-`run.json`.
+settings, or a product change. The raw trace remains untracked locally under
+`results/raw/`; its SHA-256 is retained in `run.json`.
 
 ## Handoffs
 
