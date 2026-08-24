@@ -1,0 +1,160 @@
+# Durable-promise capability routing v2
+
+Status: design registered. No model episode has run in this version.
+
+## Identity
+
+- Study and version: Durable-promise capability routing v2.
+- Lineage: `experiments/durable-promise-orchestration-v1/registration.md`,
+  `results/2026-08-24-durable-promise-orchestration-v1/report.md`, and Assist
+  eval commit `9a1e3149` are preserved exploratory inputs. They are not part of
+  this cohort.
+- V1 pre-admission failure: v1's first C0 worker was preserved as a
+  `model_request_made: false` infrastructure-invalid event in
+  `../durable-promise-routing-v1/pre-admission-events.md`. It contains no model
+  observation and is not reused or replaced by this new cohort.
+- Authors and pre-result reviewers: Pierre Larochelle; scientific-integrity,
+  statistical-rigor, agentic-harness-fit, and minimum-adequate-setup reviews
+  recorded in `design-review.md`.
+- Date and model-run start: registered 2026-08-24; model-run start remains
+  unset until the sealed adapter, bundle, and integrity tests are committed and
+  locally reviewed.
+
+## Question and hypothesis
+
+Can a general grounding description distinguish a fact in the user's records
+from a self-contained date or capability request, so the ordinary web main
+grounds before a superficially matching generic capability while preserving the
+existing completion lifecycle and honest durable response?
+
+The control is the exact current Assist source. The sole treatment changes the
+grounding skill description by adding this routing boundary:
+
+> A question about the user's own date, time, meeting, deadline, or status
+> needs this skill when the answer comes from their records.
+
+The rest of that description and every other prompt, skill, tool, schema,
+fixture, model setting, and runtime behavior remain identical. This is a
+routing-only intervention: it neither changes the private-memory procedure nor
+claims that all date language needs grounding.
+
+## Minimum adequate setup
+
+One unit is one fresh real-model ordinary-web-main agent run: fresh process,
+thread, sandbox workspace, `/agent` directory, deterministic context-task
+fixture, and no external network. The adapter must use current `create_agent`,
+`prompt_rewrite_web_main_spec()`, `SandboxManager`, the same deterministic
+async completion wake as the frozen EDD trajectory, and the production model
+selection path. A scripted tool loop, raw chat completion, or shelling out to
+pytest alone is inadequate because none captures the web-main skill catalog,
+context-agent lifecycle, private state, or actual provider requests.
+
+The adapter will capture every initial and subsequent rendered provider request,
+complete dynamic tool schemas, tool calls/results, task-state transition,
+message trace, final workspace digest, and final private-memory digest. It
+will reject a fixture, treatment, adapter, or registered Assist-source baseline
+difference before admission, and will preserve the rendered requests and
+schemas as private trace evidence for each admitted episode. Dynamic requests
+are observables, not a second hidden intervention: this study compares their
+actual effects under the two sealed descriptions. Raw traces remain private;
+the result capsule stores their hashes and compact redacted evidence.
+
+This study deliberately does not alter the active `time-skill-routing` lane's
+unmerged `time` description. If that work lands before admission, this study is
+superseded and re-registered against the new fixed baseline.
+
+## Conditions and outcomes
+
+`C0` and `C1` are neutral condition labels in the runner. Their mapping is
+visible to the study author, so this is an unblinded deterministic-score study,
+not a claim of analyst blinding. The sealed task bank, condition text, scoring,
+and advance rule limit discretion instead. `C0` is current source; `C1` is the
+one description sentence above.
+The causal primary is routing/lifecycle success (R): grounding is the first
+loaded skill, the next action starts the context task, no user-file or unrelated
+capability work precedes the trusted result, and that exact result is retrieved
+before dependent work.
+
+The product primary is full-row success (F = R and P and A):
+
+- P: after the checked result, private `/agent/memory.md` records the requested
+  future condition and response.
+- A: the final answer uses the supplied local evidence and does not claim a
+  write or completion that did not occur.
+
+P conditional on R, answer quality, honesty, each predicate, and tool traces
+are preregistered diagnostics. No qualitative judge is needed.
+
+## Task split and sampling
+
+The existing five dinner/calendar/budget compound rows are development and
+regression diagnostics only. The earlier makerspace and internet-bill rows are
+not confirmation holdouts because their results informed this registration.
+
+Before any model run, the adapter seals four new natural **pilot** rows:
+two local-record date/time or deadline requests with a separate future
+commitment, and two lower-conflict local-fact-plus-commitment sentinels. Their
+domains, files, facts, wording, and required terms must differ from the old
+family. A candidate that clears this development and confirmation evidence then
+runs the fixed regression panel: direct time/date calculation, recurring
+scheduling, inbound event subscription, grounding lifecycle, and existing
+durable-memory compaction behavior. That panel is a release gate, not an
+undeclared fifth development task family.
+
+Pilot screening is N=3 per condition and task. It selects no release candidate:
+it may only justify registering a separate unseen confirmation task bank and
+schedule. The pilot advances only when C1 has at least two more R successes and
+two more F successes than C0 across its 12 rows, with no lower P or A count on
+either low-conflict sentinel. The later confirmation, if registered, uses a new
+task bank and N=14 per condition and row. It will specify its own exact
+position-adjusted analysis before any confirmation model request. Reuse one
+generation seed within a block only after a sealed provider-seed calibration;
+otherwise episodes are independent and order is the only blocked variable.
+
+The committed development bundle is
+`experiments/durable-promise-routing-v2/bundle.json` (SHA-256
+`65a29e4d4946e86ff42098b041bb6553e0c24780e8ac1500305e4561c037f0b2`).
+It schedules three fresh C0/C1 blocks for each of the four rows, 24 total
+episodes, and pins the current source/model/harness settings. Its private
+worker is `durable_routing_harness/`, deliberately isolated from the historical
+MVP harness closure so adding this study cannot retroactively invalidate older
+sealed evidence. The confirmation extension is a new bundle, not a rewrite of
+this development schedule.
+
+The registered schedule randomizes and counterbalances trial order. The local
+OpenAI-compatible model's provider seed support has not been calibrated, so its
+per-trial `generation_seed` values are identifiers for the fixed schedule only;
+they are not sent as an unverified provider setting and do not create matched
+pairs. This limitation is recorded before admission rather than inferred from
+apparent repeatability.
+
+There is no early success or futility stop in confirmation. Pre-request
+production admission denials retry the same scheduled unit and are logged.
+Post-request timeout, refusal, provider error, invalid trace, and loop
+exhaustion are denominator failures with reason codes. To keep the small first
+cohort fully auditable, a proven pre-request harness fault is recorded as an
+infrastructure-invalid terminal row rather than being retried silently.
+
+## Analysis and release decision
+
+This pilot reports exact condition counts for R, P, A, and F and the preregistered
+advance test above. It makes no confidence-interval or release claim. A later
+confirmation registration will provide its analysis module, numerical release
+thresholds, per-task estimates, and confidence intervals before its first run.
+
+A release candidate requires a worthwhile pooled improvement in F and R, a
+nonnegative direction on every locked confirmation row, no P or A regression
+on either low-conflict sentinel, and no repeated important failure on the fixed
+regression panel. A smaller N=5/N=10 product stability panel can increase
+operational confidence but is not presented as a powered statistical result.
+Mixed or infeasible evidence rejects the treatment rather than rewriting a
+confirmation row.
+
+## Plain-language interpretation
+
+If the treatment wins, it supports a narrow claim: making the local-record
+boundary clearer in grounding's routing description helps this Qwen/Assist
+combination choose grounding before generic date-like capability language. It
+does not prove that repeated instructions are generally beneficial, that every
+date request needs local context, or that durable commitments are solved across
+all tasks.

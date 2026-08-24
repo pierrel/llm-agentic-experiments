@@ -18,6 +18,7 @@ from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lo
 
 
 _DESCRIPTION_FIELD = "grounding_description"
+_STUDY_PREFIX = "durable-promise-routing-v"
 
 
 @dataclass(frozen=True)
@@ -64,9 +65,11 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path) -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-routing-v2") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
-    study_dir = root / "experiments" / "durable-promise-routing-v1"
+    if not study_id.startswith(_STUDY_PREFIX) or not study_id[len(_STUDY_PREFIX):].isdigit():
+        raise ValueError("durable-routing study id must use the registered version form")
+    study_dir = root / "experiments" / study_id
     tasks = read_tasks(study_dir / "tasks.json")
     raw_conditions = json.loads((study_dir / "conditions.json").read_text())
     if not isinstance(raw_conditions, dict):
@@ -79,6 +82,8 @@ def durable_definition(root: Path) -> DurableRoutingDefinition:
             raise ValueError("durable-routing conditions have an invalid shape")
         descriptions[condition_id] = value[_DESCRIPTION_FIELD]
     bundle = StudyBundle.read_verified(study_dir / "bundle.json")
+    if bundle.study_id != study_id:
+        raise ValueError("durable-routing bundle identity does not match its directory")
     definition = DurableRoutingDefinition(bundle, tasks, descriptions)
     definition.validate(root)
     return definition
@@ -135,11 +140,12 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, command_runner: CommandRunner | None = None,
+    assist_env: Path, study_id: str = "durable-promise-routing-v2",
+    command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
     root, output = root.resolve(), output.resolve()
-    definition = durable_definition(root)
+    definition = durable_definition(root, study_id)
     _prepare_output(output)
     if command_runner is None:
         _validate_runtime_inputs(definition, assist_root, assist_env)

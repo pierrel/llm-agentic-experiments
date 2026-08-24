@@ -21,11 +21,14 @@ def main() -> None:
                         help="Assist evaluation virtualenv Python")
     parser.add_argument("--assist-env", type=Path, required=True,
                         help="ignored Assist model configuration file")
+    parser.add_argument("--study-id", default="durable-promise-routing-v2",
+                        help="registered study version to run; never reuse an invalidated output")
     args = parser.parse_args()
     progress = run_durable_routing_once(
         Path(__file__).resolve().parents[1], args.output,
         workspace_root=args.workspace_root, assist_root=args.assist_root,
         assist_python=args.assist_python, assist_env=args.assist_env,
+        study_id=args.study_id,
     )
     print(progress.status)
 
