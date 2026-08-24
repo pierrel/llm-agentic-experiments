@@ -44,6 +44,9 @@ class StudyBundle:
     study_id: str
     registration: dict[str, Any]
     conditions: dict[str, dict[str, Any]]
+    model: dict[str, Any]
+    harness_architecture: dict[str, Any]
+    settings: dict[str, Any]
     fixtures: dict[str, str]
     tool_schemas: dict[str, Any]
     schedule: tuple[Trial, ...]
@@ -55,6 +58,9 @@ class StudyBundle:
             "study_id": self.study_id,
             "registration": self.registration,
             "conditions": self.conditions,
+            "model": self.model,
+            "harness_architecture": self.harness_architecture,
+            "settings": self.settings,
             "fixtures": self.fixtures,
             "tool_schemas": self.tool_schemas,
             "schedule": [trial.__dict__ for trial in self.schedule],
@@ -85,6 +91,9 @@ class StudyBundle:
             study_id=payload["study_id"],
             registration=payload["registration"],
             conditions=payload["conditions"],
+            model=payload["model"],
+            harness_architecture=payload["harness_architecture"],
+            settings=payload["settings"],
             fixtures=payload["fixtures"],
             tool_schemas=payload["tool_schemas"],
             schedule=schedule,
@@ -102,6 +111,8 @@ class StudyBundle:
             raise ValueError("study_id is required")
         if not self.conditions or not self.schedule or not self.fixtures or not self.tool_schemas:
             raise ValueError("conditions, fixtures, schemas, and scheduled trials are required")
+        if not self.model or not self.harness_architecture or not self.settings:
+            raise ValueError("model, harness architecture, and settings are required")
         if not self.runner_revision or not self.analysis_revision:
             raise ValueError("runner and analysis revisions are required")
         seen: set[str] = set()
