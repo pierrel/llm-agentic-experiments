@@ -1,6 +1,6 @@
 # Durable-promise outcome completion v1
 
-Status: registered pilot. No model episode has run in this cohort.
+Status: registered pilot. Admissions began 2026-08-24; see the amendment below.
 
 ## Question
 
@@ -56,3 +56,18 @@ lifecycle eval, and relevant schedule/time evals to remain non-regressed.
 
 The sealed bundle is `bundle.json` with SHA-256
 `8acdc8acf10638111faa3e0d3e9dd41d0c75f4fa92ad8f35e8c2e2932618ac48`.
+
+## Amendment: sealed analysis discrepancy (2026-08-24)
+
+After 11 of 24 scheduled admissions, an audit found that the committed
+coordinator source sealed in `bundle.json` uses a different first advance
+predicate: it requires C1 to have at least two more **R** and F successes than
+C0, rather than the P and F predicate stated above. The coordinator source,
+not this prose, is the executable analysis registered in the immutable bundle.
+
+Nothing about the treatment, fixtures, schedule, provider requests, or scoring
+changed. This cohort will finish and report the sealed R/F decision rule
+verbatim, with P retained as a diagnostic result. It cannot by itself authorize
+a product candidate or release decision. A fresh confirmation cohort, registered
+before its first admission, must use the intended P/F rule and the stated
+non-regression gates before any candidate is considered.
