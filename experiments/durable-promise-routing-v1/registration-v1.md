@@ -48,9 +48,12 @@ context-agent lifecycle, private state, or actual provider requests.
 The adapter will capture every initial and subsequent rendered provider request,
 complete dynamic tool schemas, tool calls/results, task-state transition,
 message trace, final workspace digest, and final private-memory digest. It
-will reject any source, fixture, schema, prompt, model, decoding, or settings
-difference not declared in the sealed bundle. Raw traces remain private; the
-result capsule stores their hashes and compact redacted evidence.
+will reject a fixture, treatment, adapter, or registered Assist-source baseline
+difference before admission, and will preserve the rendered requests and
+schemas as private trace evidence for each admitted episode. Dynamic requests
+are observables, not a second hidden intervention: this study compares their
+actual effects under the two sealed descriptions. Raw traces remain private;
+the result capsule stores their hashes and compact redacted evidence.
 
 This study deliberately does not alter the active `time-skill-routing` lane's
 unmerged `time` description. If that work lands before admission, this study is
@@ -58,8 +61,11 @@ superseded and re-registered against the new fixed baseline.
 
 ## Conditions and outcomes
 
-Opaque conditions `C0` and `C1` are revealed only after the analysis artifact
-is sealed. `C0` is current source; `C1` is the one description sentence above.
+`C0` and `C1` are neutral condition labels in the runner. Their mapping is
+visible to the study author, so this is an unblinded deterministic-score study,
+not a claim of analyst blinding. The sealed task bank, condition text, scoring,
+and advance rule limit discretion instead. `C0` is current source; `C1` is the
+one description sentence above.
 The causal primary is routing/lifecycle success (R): grounding is the first
 loaded skill, the next action starts the context task, no user-file or unrelated
 capability work precedes the trusted result, and that exact result is retrieved
@@ -81,26 +87,29 @@ The existing five dinner/calendar/budget compound rows are development and
 regression diagnostics only. The earlier makerspace and internet-bill rows are
 not confirmation holdouts because their results informed this registration.
 
-Before any model run, the adapter will seal four new natural confirmation rows:
+Before any model run, the adapter seals four new natural **pilot** rows:
 two local-record date/time or deadline requests with a separate future
 commitment, and two lower-conflict local-fact-plus-commitment sentinels. Their
 domains, files, facts, wording, and required terms must differ from the old
-family. The fixed regression panel also includes direct time/date calculation,
-recurring scheduling, inbound event subscription, grounding lifecycle, and the
-existing durable-memory compaction behavior.
+family. A candidate that clears this development and confirmation evidence then
+runs the fixed regression panel: direct time/date calculation, recurring
+scheduling, inbound event subscription, grounding lifecycle, and existing
+durable-memory compaction behavior. That panel is a release gate, not an
+undeclared fifth development task family.
 
-Development screening is N=3 per condition and task. A candidate that improves
-R and F without a lifecycle or low-conflict P/A regression advances to a fixed
-confirmation of N=14 per condition and each of the four locked rows (112
-episodes). The confirmation schedule uses a registered seed and two-condition
-blocks with an even replicate count, so each condition has each within-block
-position equally often. Reuse one generation seed within a block only after a
-sealed provider-seed calibration; otherwise episodes are independent and order
-is the only blocked variable.
+Pilot screening is N=3 per condition and task. It selects no release candidate:
+it may only justify registering a separate unseen confirmation task bank and
+schedule. The pilot advances only when C1 has at least two more R successes and
+two more F successes than C0 across its 12 rows, with no lower P or A count on
+either low-conflict sentinel. The later confirmation, if registered, uses a new
+task bank and N=14 per condition and row. It will specify its own exact
+position-adjusted analysis before any confirmation model request. Reuse one
+generation seed within a block only after a sealed provider-seed calibration;
+otherwise episodes are independent and order is the only blocked variable.
 
 The committed development bundle is
 `experiments/durable-promise-routing-v1/bundle.json` (SHA-256
-`162ffa1b07caa65c5491456045a712f528311e2f3051944594d43928eda4b5a3`).
+`a19c19c6161321b2791e9fba97b334da52bbb9d8ee9fb3d3269d3525a33002d4`).
 It schedules three fresh C0/C1 blocks for each of the four rows, 24 total
 episodes, and pins the current source/model/harness settings. Its private
 worker is `durable_routing_harness/`, deliberately isolated from the historical
@@ -118,14 +127,16 @@ apparent repeatability.
 There is no early success or futility stop in confirmation. Pre-request
 production admission denials retry the same scheduled unit and are logged.
 Post-request timeout, refusal, provider error, invalid trace, and loop
-exhaustion are denominator failures with reason codes. A proven pre-request
-harness fault may retry once, never silently.
+exhaustion are denominator failures with reason codes. To keep the small first
+cohort fully auditable, a proven pre-request harness fault is recorded as an
+infrastructure-invalid terminal row rather than being retried silently.
 
 ## Analysis and release decision
 
-The confirmation primary comparison reports pooled F and R risk differences
-with two-sided 95% confidence intervals and per-task estimates. Secondary
-p-values, if reported, use Holm correction and do not determine release.
+This pilot reports exact condition counts for R, P, A, and F and the preregistered
+advance test above. It makes no confidence-interval or release claim. A later
+confirmation registration will provide its analysis module, numerical release
+thresholds, per-task estimates, and confidence intervals before its first run.
 
 A release candidate requires a worthwhile pooled improvement in F and R, a
 nonnegative direction on every locked confirmation row, no P or A regression

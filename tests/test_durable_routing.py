@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -51,7 +52,7 @@ class DurableRoutingTest(unittest.TestCase):
                 {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When basil is planted, remind user to label pots."}},
             ),
             memory="When basil is planted, remind user to label pots.",
-            messages=(),
+            messages=({"content": self.task.context_result},),
             provider_requests=(),
         )
         score_result = score(self.task, result)
@@ -72,7 +73,7 @@ class DurableRoutingTest(unittest.TestCase):
                 {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When basil is planted, remind user to label pots."}},
             ),
             memory="When basil is planted, remind user to label pots.",
-            messages=(),
+            messages=({"content": self.task.context_result},),
             provider_requests=(),
         )
         score_result = score(self.task, result)
@@ -81,6 +82,41 @@ class DurableRoutingTest(unittest.TestCase):
         self.assertTrue(score_result.answer_and_honesty)
         self.assertFalse(score_result.full)
         self.assertIn("grounding was not the first loaded skill", score_result.failed_predicates)
+
+    def test_score_rejects_dependent_work_and_memory_before_checked_context(self) -> None:
+        result = DurableRoutingResult(
+            initial_response="", completion_response="You planned basil for this season.",
+            calls=(
+                {"name": "load_skill", "args": {"name": "grounding"}},
+                {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find garden", "subagent_type": "context-agent"}},
+                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When basil is planted, remind user to label pots."}},
+                {"name": "load_skill", "args": {"name": "time"}},
+                {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
+                {"name": "write_file", "args": {"file_path": "/agent/irrelevant.md", "content": "done"}},
+            ),
+            memory="When basil is planted, remind user to label pots.",
+            messages=({"content": self.task.context_result},), provider_requests=(),
+        )
+        score_result = score(self.task, result)
+        self.assertFalse(score_result.routing)
+        self.assertFalse(score_result.persistence)
+        self.assertIn("dependent work ran before checked context result", score_result.failed_predicates)
+        self.assertIn("private state was written before checked context result", score_result.failed_predicates)
+
+    def test_score_rejects_a_saved_claim_without_this_commitment(self) -> None:
+        result = DurableRoutingResult(
+            initial_response="", completion_response="Saved that reminder. You planned basil.",
+            calls=(
+                {"name": "load_skill", "args": {"name": "grounding"}},
+                {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find garden", "subagent_type": "context-agent"}},
+                {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
+            ),
+            memory="Unrelated note from an earlier turn.",
+            messages=({"content": self.task.context_result},), provider_requests=(),
+        )
+        score_result = score(self.task, result)
+        self.assertFalse(score_result.answer_and_honesty)
+        self.assertIn("final response claimed a saved commitment without durable state", score_result.failed_predicates)
 
     def test_worker_accepts_only_a_sealed_descriptor_and_marks_the_model_boundary(self) -> None:
         from durable_routing_harness.durable_worker import run_descriptor
@@ -93,15 +129,21 @@ class DurableRoutingTest(unittest.TestCase):
             descriptor.write_text(json.dumps({
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
                 "grounding_description": "control description", "task": self.task.payload(),
+                "model_settings": {"model_id": "test-model", "context_limit": 1},
             }))
             episode_result = DurableRoutingResult(
                 initial_response="", completion_response="basil", calls=(), memory="",
                 messages=(), provider_requests=(),
             )
-            with patch("durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
+            with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                     "durable_routing_harness.durable_worker.run_episode",
+                     side_effect=lambda *_args, **kwargs: (
+                         kwargs["on_first_provider_request"](), episode_result
+                     )[1],
+                 ) as run:
                 run_descriptor(descriptor, result_path, started)
-            self.assertEqual(started.read_bytes(), b"model-invoke-started\n")
-            run.assert_called_once_with(self.task, grounding_description="control description")
+            self.assertEqual(json.loads(started.read_text())["state"], "model-invoke-started")
+            run.assert_called_once()
             stored = json.loads(result_path.read_text())
             self.assertEqual(stored["bundle_sha256"], "bundle")
             self.assertEqual(stored["trial_sha256"], "trial")
@@ -160,13 +202,14 @@ class DurableRoutingTest(unittest.TestCase):
                 {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When volunteer application is submitted, remind user to bring photo ID."}},
             ),
             memory="When volunteer application is submitted, remind user to bring photo ID.",
-            messages=(), provider_requests=(),
+            messages=({"content": task.context_result},), provider_requests=({"messages": [], "kwargs": {}},),
         )
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "run"
 
             def worker(command):
-                Path(command[command.index("--request-started") + 1]).write_text("model-invoke-started\n")
+                Path(command[command.index("--request-started") + 1]).write_text(
+                    json.dumps({"state": "model-invoke-started", "pid": os.getpid()}))
                 descriptor = json.loads(Path(command[command.index("--descriptor") + 1]).read_text())
                 Path(command[command.index("--result") + 1]).write_text(json.dumps({
                     "bundle_sha256": descriptor["bundle_sha256"],
@@ -189,3 +232,34 @@ class DurableRoutingTest(unittest.TestCase):
                 "routing": True, "persistence": True, "answer_and_honesty": True,
                 "full": True, "failed_predicates": [],
             })
+
+    def test_coordinator_never_replays_an_interrupted_provider_request(self) -> None:
+        from durable_routing_harness.durable_coordinator import run_durable_routing_once
+        from harness.bundle import StudyBundle
+
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "run"
+            bundle = StudyBundle.read_verified(
+                ROOT / "experiments/durable-promise-routing-v1/bundle.json"
+            )
+            trial = bundle.schedule[0]
+            output.mkdir(mode=0o700)
+            bundle.write(output / "bundle.json")
+            (output / f".{trial.sha256}.lifecycle.json").write_text(
+                json.dumps({"state": "model-invoke-started", "pid": 999999})
+            )
+            first = run_durable_routing_once(
+                ROOT, output, workspace_root=Path("/workspace"),
+                assist_root=Path("/assist"), assist_python=Path("/venv/bin/python"), assist_env=Path("/env"),
+                command_runner=lambda _command: self.fail("interrupted trial must not be replayed"),
+            )
+            self.assertEqual(first.status, "recover_worker")
+            second = run_durable_routing_once(
+                ROOT, output, workspace_root=Path("/workspace"),
+                assist_root=Path("/assist"), assist_python=Path("/venv/bin/python"), assist_env=Path("/env"),
+                command_runner=lambda _command: self.fail("interrupted trial must not be replayed"),
+            )
+            self.assertEqual(second.status, "next_trial")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "provider_error")
+            self.assertTrue(outcome["model_request_made"])

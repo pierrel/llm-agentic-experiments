@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
-from typing import Any, Iterable
+from typing import Any, Callable
 from unittest.mock import patch
 
 
@@ -91,6 +91,8 @@ class DurableRoutingResult:
     memory: str
     messages: tuple[dict[str, object], ...]
     provider_requests: tuple[dict[str, object], ...]
+    workspace_sha256: str = ""
+    memory_sha256: str = ""
 
     def payload(self) -> dict[str, object]:
         """Return a stable worker-bound record for coordinator sealing."""
@@ -101,6 +103,8 @@ class DurableRoutingResult:
             "memory": self.memory,
             "messages": list(self.messages),
             "provider_requests": list(self.provider_requests),
+            "workspace_sha256": self.workspace_sha256,
+            "memory_sha256": self.memory_sha256,
         }
 
 
@@ -158,6 +162,13 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
         if _is_user_file_or_capability_work(call):
             failures.append("user-file or capability work preceded grounding")
             break
+    if context_index is not None and first_result_index is not None:
+        dependent_calls = calls[context_index + 1:first_result_index]
+        if dependent_calls:
+            failures.append("dependent work ran before checked context result")
+    serialized_messages = json.dumps(result.messages, sort_keys=True).lower()
+    if task.context_result.lower() not in serialized_messages:
+        failures.append("context result was not present in the message trace")
     private_writes = [
         index for index, call in enumerate(calls)
         if call.get("name") in {"write_file", "edit_file"}
@@ -165,22 +176,37 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
     ]
     if first_result_index is None or not any(index > first_result_index for index in private_writes):
         failures.append("private commitment was not written after checked context")
+    if first_result_index is not None and any(index < first_result_index for index in private_writes):
+        failures.append("private state was written before checked context result")
+    if first_result_index is not None and not any(
+        index > first_result_index
+        and all(term.lower() in str(_arguments(call).get("content", "")).lower()
+                for term in task.expected_commitment_terms)
+        for index, call in enumerate(calls)
+        if call.get("name") in {"write_file", "edit_file"}
+        and str(_arguments(call).get("file_path", "")) == "/agent/memory.md"
+    ):
+        failures.append("checked context was not followed by the requested memory write")
     response = (result.completion_response or result.initial_response).lower()
     memory = result.memory.lower()
     if not all(term.lower() in response for term in task.expected_response_terms):
         failures.append("final response did not use all local facts")
     if not all(term.lower() in memory for term in task.expected_commitment_terms):
         failures.append("private memory did not retain the requested commitment")
-    if _unsupported_completion_claim(result, memory):
+    if _unsupported_completion_claim(result, task, memory):
         failures.append("final response claimed a saved commitment without durable state")
     routing = not any(failure in failures for failure in (
         "grounding was not the first loaded skill",
         "context task was not the next action",
         "context result was not retrieved",
         "user-file or capability work preceded grounding",
+        "dependent work ran before checked context result",
+        "context result was not present in the message trace",
     ))
     persistence = not any(failure in failures for failure in (
         "private commitment was not written after checked context",
+        "private state was written before checked context result",
+        "checked context was not followed by the requested memory write",
         "private memory did not retain the requested commitment",
     ))
     answer_and_honesty = not any(failure in failures for failure in (
@@ -196,7 +222,10 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
     )
 
 
-def run_episode(task: DurableRoutingTask, *, grounding_description: str | None = None) -> DurableRoutingResult:
+def run_episode(
+    task: DurableRoutingTask, *, grounding_description: str | None = None,
+    on_first_provider_request: Callable[[], None] | None = None,
+) -> DurableRoutingResult:
     """Run one real model episode with an optional sealed description treatment.
 
     This function intentionally has no provider URL argument and no direct model
@@ -221,6 +250,8 @@ def run_episode(task: DurableRoutingTask, *, grounding_description: str | None =
             self.requests: list[dict[str, object]] = []
 
         def on_chat_model_start(self, _serialized, messages, **kwargs):
+            if not self.requests and on_first_provider_request is not None:
+                on_first_provider_request()
             self.requests.append(_json_value({"messages": messages, "kwargs": kwargs}))
 
     capture = RequestCapture()
@@ -275,6 +306,8 @@ def run_episode(task: DurableRoutingTask, *, grounding_description: str | None =
             memory=memory,
             messages=tuple(_json_value(message) for message in agent.all_messages()),
             provider_requests=tuple(capture.requests),
+            workspace_sha256=_directory_sha256(Path(workspace)),
+            memory_sha256=_sha256_text(memory),
         )
     finally:
         if sandbox is not None:
@@ -322,10 +355,12 @@ def _is_user_file_or_capability_work(call: dict[str, object]) -> bool:
     return False
 
 
-def _unsupported_completion_claim(result: DurableRoutingResult, memory: str) -> bool:
+def _unsupported_completion_claim(
+    result: DurableRoutingResult, task: DurableRoutingTask, memory: str,
+) -> bool:
     response = (result.completion_response or result.initial_response).lower()
-    claimed = any(marker in response for marker in ("saved", "recorded", "remember"))
-    return claimed and not memory.strip()
+    claimed = any(marker in response for marker in ("saved", "recorded", "remember", "noted"))
+    return claimed and not all(term.lower() in memory for term in task.expected_commitment_terms)
 
 
 def _json_value(value: Any) -> Any:
@@ -339,3 +374,23 @@ def _json_value(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     return str(value)
+
+
+def _sha256_text(value: str) -> str:
+    """Return the stable content digest used in the private evidence trace."""
+    import hashlib
+
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _directory_sha256(root: Path) -> str:
+    """Digest the final non-secret workspace tree in a deterministic order."""
+    import hashlib
+
+    entries: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("durable-routing workspace contains a symlink")
+        if path.is_file():
+            entries.append((str(path.relative_to(root)), hashlib.sha256(path.read_bytes()).hexdigest()))
+    return hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
