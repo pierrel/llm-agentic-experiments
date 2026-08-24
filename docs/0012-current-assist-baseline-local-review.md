@@ -3,7 +3,8 @@
 The final local review verified the sealed v7 bundle, one admitted pre-provider
 request capture,
 raw request-capture hash, reason-coded recursion-limit outcome, record seals,
-and result report. The deterministic suite passed (16 tests).
+and result report. The baseline-specific deterministic suite at that review
+point passed 16 tests; the later integrated rebase check is recorded below.
 
 ## Deferred findings
 
