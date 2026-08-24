@@ -26,7 +26,7 @@ finish this edit episode.
   disabled, recursion limit 12.
 - Admission and outcome chains, with their seals, are committed under
   `results/current-assist-baseline-v7/`.
-- Raw evidence remains local under `results/raw/current-assist-baseline-v7/`.
+- Raw evidence remains local under the ignored `results/raw/` root.
   Its compact hash manifest is `results/current-assist-baseline-v7/raw-evidence.json`.
   The actual provider-request capture hash is
   `b0a0e3c26af4a0d338f12c20756b769db7ceb096353dda9bcfab7d042c81a4f4`.

@@ -29,8 +29,8 @@ and [customization guide](https://docs.langchain.com/oss/python/deepagents/custo
 The first registered real bundle, `current-assist-baseline-v7`, ran one
 isolated episode. It sealed the fixture digest, natural prompt, current model
 selection, ReAct-style architecture, generic settings including reasoning
-disabled, and a recursion limit of 12. The runtime reported
-`Qwen_Qwen3.6-27B-Q4_K_M.gguf`; its model-weights digest was not captured.
+disabled, and a recursion limit of 12. The capsule records the `Qwen3.6-27B`
+family and `Q4_K_M` quantization; its model-weights digest was not captured.
 
 The episode captured one pre-provider request and then exhausted the sealed
 recursion limit before returning the requested edit. Its sealed record keeps the original
