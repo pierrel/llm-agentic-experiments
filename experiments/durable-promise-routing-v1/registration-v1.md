@@ -13,7 +13,8 @@ Status: design registered. No model episode has run.
   statistical-rigor, agentic-harness-fit, and minimum-adequate-setup reviews
   recorded in `design-review.md`.
 - Date and model-run start: registered 2026-08-24; model-run start remains
-  unset until the sealed adapter, bundle, and integrity tests are committed.
+  unset until the sealed adapter, bundle, and integrity tests are committed and
+  locally reviewed.
 
 ## Question and hypothesis
 
@@ -96,6 +97,23 @@ blocks with an even replicate count, so each condition has each within-block
 position equally often. Reuse one generation seed within a block only after a
 sealed provider-seed calibration; otherwise episodes are independent and order
 is the only blocked variable.
+
+The committed development bundle is
+`experiments/durable-promise-routing-v1/bundle.json` (SHA-256
+`162ffa1b07caa65c5491456045a712f528311e2f3051944594d43928eda4b5a3`).
+It schedules three fresh C0/C1 blocks for each of the four rows, 24 total
+episodes, and pins the current source/model/harness settings. Its private
+worker is `durable_routing_harness/`, deliberately isolated from the historical
+MVP harness closure so adding this study cannot retroactively invalidate older
+sealed evidence. The confirmation extension is a new bundle, not a rewrite of
+this development schedule.
+
+The registered schedule randomizes and counterbalances trial order. The local
+OpenAI-compatible model's provider seed support has not been calibrated, so its
+per-trial `generation_seed` values are identifiers for the fixed schedule only;
+they are not sent as an unverified provider setting and do not create matched
+pairs. This limitation is recorded before admission rather than inferred from
+apparent repeatability.
 
 There is no early success or futility stop in confirmation. Pre-request
 production admission denials retry the same scheduled unit and are logged.

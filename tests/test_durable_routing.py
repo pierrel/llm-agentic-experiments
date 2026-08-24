@@ -5,8 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+import subprocess
 
-from harness.durable_routing import (
+from durable_routing_harness.durable_routing import (
     DurableRoutingResult,
     DurableRoutingTask,
     read_tasks,
@@ -82,7 +83,7 @@ class DurableRoutingTest(unittest.TestCase):
         self.assertIn("grounding was not the first loaded skill", score_result.failed_predicates)
 
     def test_worker_accepts_only_a_sealed_descriptor_and_marks_the_model_boundary(self) -> None:
-        from harness.durable_worker import run_descriptor
+        from durable_routing_harness.durable_worker import run_descriptor
 
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -97,7 +98,7 @@ class DurableRoutingTest(unittest.TestCase):
                 initial_response="", completion_response="basil", calls=(), memory="",
                 messages=(), provider_requests=(),
             )
-            with patch("harness.durable_worker.run_episode", return_value=episode_result) as run:
+            with patch("durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
                 run_descriptor(descriptor, result_path, started)
             self.assertEqual(started.read_bytes(), b"model-invoke-started\n")
             run.assert_called_once_with(self.task, grounding_description="control description")
@@ -107,7 +108,7 @@ class DurableRoutingTest(unittest.TestCase):
             self.assertEqual(stored["result"], episode_result.payload())
 
     def test_worker_rejects_a_descriptor_with_undeclared_fields(self) -> None:
-        from harness.durable_worker import run_descriptor
+        from durable_routing_harness.durable_worker import run_descriptor
 
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -115,3 +116,76 @@ class DurableRoutingTest(unittest.TestCase):
             descriptor.write_text(json.dumps({"task": self.task.payload(), "direct_model": True}))
             with self.assertRaisesRegex(ValueError, "invalid descriptor"):
                 run_descriptor(descriptor, root / "result.json", root / "started")
+
+    def test_sealed_definition_and_worker_command_require_the_gpu_admission_path(self) -> None:
+        from durable_routing_harness.durable_coordinator import durable_definition, durable_worker_command
+
+        definition = durable_definition(ROOT)
+        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v1")
+        self.assertEqual(len(definition.bundle.schedule), 24)
+        command = durable_worker_command(
+            ROOT, Path("/workspace"), Path("/assist"), Path("/venv/bin/python"), Path("/env"),
+            Path("/descriptor"), Path("/result"), Path("/started"),
+        )
+        self.assertEqual(command[:5], ["/workspace/tools/agentic", "resource", "run", "llm", "--"])
+        self.assertNotIn("8000", " ".join(command))
+        self.assertIn("durable_routing_harness.durable_worker", command)
+
+    def test_coordinator_records_a_denied_admission_without_advancing_schedule(self) -> None:
+        from durable_routing_harness.durable_coordinator import run_durable_routing_once
+
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "run"
+            progress = run_durable_routing_once(
+                ROOT, output, workspace_root=Path("/workspace"),
+                assist_root=Path("/assist"), assist_python=Path("/venv/bin/python"), assist_env=Path("/env"),
+                command_runner=lambda command: subprocess.CompletedProcess(
+                    command, 1, "", "production is busy"),
+            )
+            self.assertEqual(progress.status, "retry_in_10_minutes")
+            admission = json.loads((output / "admissions.jsonl").read_text())
+            self.assertFalse(admission["admitted"])
+            self.assertFalse((output / "outcomes.jsonl").exists())
+
+    def test_coordinator_keeps_one_admitted_trial_and_its_predicates(self) -> None:
+        from durable_routing_harness.durable_coordinator import run_durable_routing_once
+
+        task = self.tasks["library-shift"]
+        result = DurableRoutingResult(
+            initial_response="", completion_response="Your Thursday book-drive shift starts at 5:45 PM.",
+            calls=(
+                {"name": "load_skill", "args": {"name": "grounding"}},
+                {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find shift", "subagent_type": "context-agent"}},
+                {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
+                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When volunteer application is submitted, remind user to bring photo ID."}},
+            ),
+            memory="When volunteer application is submitted, remind user to bring photo ID.",
+            messages=(), provider_requests=(),
+        )
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "run"
+
+            def worker(command):
+                Path(command[command.index("--request-started") + 1]).write_text("model-invoke-started\n")
+                descriptor = json.loads(Path(command[command.index("--descriptor") + 1]).read_text())
+                Path(command[command.index("--result") + 1]).write_text(json.dumps({
+                    "bundle_sha256": descriptor["bundle_sha256"],
+                    "trial_sha256": descriptor["trial_sha256"],
+                    "result": result.payload(),
+                }))
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            progress = run_durable_routing_once(
+                ROOT, output, workspace_root=Path("/workspace"),
+                assist_root=Path("/assist"), assist_python=Path("/venv/bin/python"), assist_env=Path("/env"),
+                command_runner=worker,
+            )
+            self.assertEqual(progress.status, "next_trial")
+            outcome = json.loads((output / "outcomes.jsonl").read_text())
+            self.assertEqual(outcome["outcome"], "pass")
+            self.assertTrue(outcome["model_request_made"])
+            trace = json.loads(next((output / "traces").glob("*.json")).read_text())
+            self.assertEqual(trace["score"], {
+                "routing": True, "persistence": True, "answer_and_honesty": True,
+                "full": True, "failed_predicates": [],
+            })

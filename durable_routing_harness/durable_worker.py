@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .bundle import atomic_write, canonical_json
+from harness.bundle import atomic_write, canonical_json
 from .durable_routing import DurableRoutingTask, run_episode
 
 
