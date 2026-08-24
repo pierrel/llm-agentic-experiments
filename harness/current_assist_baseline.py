@@ -14,13 +14,13 @@ from .bundle import StudyBundle, Trial, canonical_json, digest
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v1"
+STUDY_ID = "current-assist-baseline-v2"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
 )
 FIXTURE_RELATIVE_PATH = "notes/today.txt"
-RUNNER_REVISION = "current-assist-baseline-runner-v1"
+RUNNER_REVISION = "current-assist-baseline-runner-v2"
 ANALYSIS_REVISION = "current-assist-baseline-oracle-v1"
 
 
@@ -117,16 +117,18 @@ def run(repo: Path, raw_directory: Path) -> int:
     command = [
         "/home/pierre/src/agentic/tools/agentic", "resource", "run", "llm", "--",
         "/bin/sh", "-c",
-        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 \"$@\"",
+        "set -a; . /home/pierre/deploy/assist/.deploy.env; exec env AGENTIC_EXPERIMENT_ADMITTED=1 PYTHONPATH=\"$1\" \"$2\" -m harness.current_assist_baseline_worker \"$3\"",
         "admitted-current-assist-baseline",
-        "/home/pierre/deploy/assist/code/.venv/bin/python", "-m",
-        "harness.current_assist_baseline_worker", str(descriptor),
+        str(repo), "/home/pierre/deploy/assist/code/.venv/bin/python", str(descriptor),
     ]
     completed = subprocess.run(command, cwd=repo, text=True, capture_output=True, timeout=900, check=False)
     result = _read_worker_result(worker_result)
     if result is None:
         detail = (completed.stderr or completed.stdout or "admission command produced no worker result").strip()
-        gate.record(AdmissionAttempt(trial, False, 1, detail[:500]))
+        prior_attempts = sum(
+            record["trial_sha256"] == trial.sha256 for record in admissions.read_verified()
+        )
+        gate.record(AdmissionAttempt(trial, False, prior_attempts + 1, detail[:500]))
         return 3
     gate.record(AdmissionAttempt(trial, True, 1, "admitted"))
     outcome = TrialOutcome(
