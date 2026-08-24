@@ -10,8 +10,8 @@ also records a generic `settings` object; this run records reasoning as
 disabled, matching `select_assistant_model`'s current default.
 
 The fixture is a harmless note in a temporary directory. The natural prompt is
-"Please add a short ‘Checked by the experiment’ line to today's note, preserving
-what is already there." The primary outcome is a deterministic artifact check:
+"Please add the exact line \"Checked by the experiment.\" to today's note,
+preserving what is already there." The primary outcome is a deterministic artifact check:
 the original text and exactly one requested line must be present. The secondary
 trace observation is whether a read of the note precedes its mutation. One
 episode is scheduled. It is evidence for this exact pinned setup only, not a

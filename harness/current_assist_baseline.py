@@ -14,12 +14,12 @@ from .bundle import StudyBundle, Trial, canonical_json
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v3"
+STUDY_ID = "current-assist-baseline-v4"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
 )
-RUNNER_REVISION = "current-assist-baseline-runner-v3"
+RUNNER_REVISION = "current-assist-baseline-runner-v4"
 ANALYSIS_REVISION = "current-assist-baseline-oracle-v1"
 
 
@@ -115,6 +115,7 @@ def run(repo: Path, raw_directory: Path) -> int:
         "bundle_path": str(bundle_path.resolve()),
         "fixture_path": str((study_directory(repo) / "fixtures" / "todays-note.txt").resolve()),
         "raw_trace_path": str((raw_directory / "trace.json").resolve()),
+        "execution_input_path": str((raw_directory / "execution-input.json").resolve()),
         "worker_result_path": str(worker_result.resolve()),
         "trial": trial.__dict__,
     }) + b"\n")
