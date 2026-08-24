@@ -159,11 +159,29 @@ class DurableRoutingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "invalid descriptor"):
                 run_descriptor(descriptor, root / "result.json", root / "started")
 
+    def test_worker_marks_the_last_safe_pre_model_checkpoint(self) -> None:
+        from durable_routing_harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            started = root / "started"
+            descriptor.write_text(json.dumps({
+                "bundle_sha256": "bundle", "trial_sha256": "trial",
+                "grounding_description": "control description", "task": self.task.payload(),
+                "model_settings": {"model_id": "test-model", "context_limit": 1},
+            }))
+            with patch("durable_routing_harness.durable_worker._verify_model_settings",
+                       side_effect=ValueError("sealed preflight failed")):
+                with self.assertRaisesRegex(ValueError, "preflight failed"):
+                    run_descriptor(descriptor, root / "result.json", started)
+            self.assertEqual(json.loads(started.read_text())["state"], "task-validated")
+
     def test_sealed_definition_and_worker_command_require_the_gpu_admission_path(self) -> None:
         from durable_routing_harness.durable_coordinator import durable_definition, durable_worker_command
 
         definition = durable_definition(ROOT)
-        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v2")
+        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v3")
         self.assertEqual(len(definition.bundle.schedule), 24)
         command = durable_worker_command(
             ROOT, Path("/workspace"), Path("/assist"), Path("/venv/bin/python"), Path("/env"),
@@ -240,7 +258,7 @@ class DurableRoutingTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "run"
             bundle = StudyBundle.read_verified(
-                ROOT / "experiments/durable-promise-routing-v2/bundle.json"
+                ROOT / "experiments/durable-promise-routing-v3/bundle.json"
             )
             trial = bundle.schedule[0]
             output.mkdir(mode=0o700)

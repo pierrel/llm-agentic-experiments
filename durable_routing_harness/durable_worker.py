@@ -18,12 +18,14 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
     if not isinstance(descriptor, dict) or set(descriptor) != required:
         raise ValueError("durable-routing worker received an invalid descriptor")
     if not all(isinstance(descriptor[key], str) for key in (
-        "bundle_sha256", "trial_sha256", "grounding_description",
+            "bundle_sha256", "trial_sha256", "grounding_description",
     )):
         raise ValueError("durable-routing worker descriptor requires text identities")
+    _write_lifecycle(request_started_path, "descriptor-validated")
     task = DurableRoutingTask.from_payload(descriptor["task"])
+    _write_lifecycle(request_started_path, "task-validated")
     _verify_model_settings(descriptor["model_settings"])
-    _write_lifecycle(request_started_path, "worker-started")
+    _write_lifecycle(request_started_path, "model-verified")
 
     def mark_first_provider_request() -> None:
         """Record the actual model boundary, after setup and immediately before send."""
@@ -41,7 +43,7 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
 
 
 def _write_lifecycle(path: Path, state: str) -> None:
-    """Publish the worker PID before setup and the precise provider boundary after it."""
+    """Publish a non-sensitive pre-model checkpoint or the provider boundary."""
     atomic_write(path, canonical_json({"state": state, "pid": os.getpid()}) + b"\n")
 
 

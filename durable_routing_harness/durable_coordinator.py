@@ -65,7 +65,7 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path, study_id: str = "durable-promise-routing-v2") -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-routing-v3") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
     if not study_id.startswith(_STUDY_PREFIX) or not study_id[len(_STUDY_PREFIX):].isdigit():
         raise ValueError("durable-routing study id must use the registered version form")
@@ -140,7 +140,7 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, study_id: str = "durable-promise-routing-v2",
+    assist_env: Path, study_id: str = "durable-promise-routing-v3",
     command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
@@ -220,7 +220,7 @@ def _run_once(
             "provider_error" if _request_started(started) else "infrastructure_invalid",
             _command_detail(completed),
         )
-    gate.record(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
+    gate.record(AdmissionAttempt(trial, True, attempt, "worker command admitted through GPU admission gate"))
     try:
         payload = _read_worker_result(result_path, bundle.sha256, trial.sha256)
         result = DurableRoutingResult(
@@ -258,7 +258,7 @@ def _record_terminal(
     _write_trace(traces / f"{trial.sha256}.json", {
         "trial_sha256": trial.sha256, "trace": [], "worker_error": detail[:500],
     })
-    admissions.append(AdmissionAttempt(trial, True, attempt, "worker started through GPU admission gate"))
+    admissions.append(AdmissionAttempt(trial, True, attempt, "worker command admitted through GPU admission gate"))
     outcomes.append(TrialOutcome(trial, outcome, _request_started(started), False, detail[:500]))
     return _progress_or_finalize(bundle_path, outcomes, admissions, traces)
 
