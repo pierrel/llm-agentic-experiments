@@ -181,7 +181,7 @@ class DurableRoutingTest(unittest.TestCase):
         from durable_routing_harness.durable_coordinator import durable_definition, durable_worker_command
 
         definition = durable_definition(ROOT)
-        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v4")
+        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v5")
         self.assertEqual(len(definition.bundle.schedule), 24)
         command = durable_worker_command(
             ROOT, Path("/workspace"), Path("/assist"), Path("/venv/bin/python"), Path("/env"),
@@ -258,7 +258,7 @@ class DurableRoutingTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "run"
             bundle = StudyBundle.read_verified(
-                ROOT / "experiments/durable-promise-routing-v4/bundle.json"
+                ROOT / "experiments/durable-promise-routing-v5/bundle.json"
             )
             trial = bundle.schedule[0]
             output.mkdir(mode=0o700)
@@ -287,3 +287,19 @@ class DurableRoutingTest(unittest.TestCase):
 
         result = subprocess.CompletedProcess(["worker"], 1, "", "prefix " * 100 + "actual cause")
         self.assertIn("actual cause", _command_detail(result))
+
+    def test_coordinator_preserves_a_virtualenv_python_symlink(self) -> None:
+        from durable_routing_harness.durable_coordinator import run_durable_routing_once
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            executable = root / "python"
+            executable.symlink_to("/usr/bin/python3")
+            commands: list[list[str]] = []
+            run_durable_routing_once(
+                ROOT, root / "output", workspace_root=Path("/workspace"),
+                assist_root=Path("/assist"), assist_python=executable, assist_env=Path("/env"),
+                command_runner=lambda command: (commands.append(list(command)) or subprocess.CompletedProcess(
+                    command, 1, "", "production is busy")),
+            )
+            self.assertIn(str(executable), commands[0])

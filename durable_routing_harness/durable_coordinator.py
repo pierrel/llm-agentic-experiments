@@ -65,7 +65,7 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path, study_id: str = "durable-promise-routing-v4") -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-routing-v5") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
     if not study_id.startswith(_STUDY_PREFIX) or not study_id[len(_STUDY_PREFIX):].isdigit():
         raise ValueError("durable-routing study id must use the registered version form")
@@ -140,7 +140,7 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, study_id: str = "durable-promise-routing-v4",
+    assist_env: Path, study_id: str = "durable-promise-routing-v5",
     command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
@@ -151,7 +151,7 @@ def run_durable_routing_once(
         _validate_runtime_inputs(definition, assist_root, assist_env)
     with _exclusive_output_lock(output):
         return _run_once(
-            definition, root, output, workspace_root.resolve(), assist_root.resolve(), assist_python.resolve(),
+            definition, root, output, workspace_root.resolve(), assist_root.resolve(), assist_python.absolute(),
             assist_env.resolve(), command_runner or (lambda command: _run_command(command, _timeout(definition))),
         )
 

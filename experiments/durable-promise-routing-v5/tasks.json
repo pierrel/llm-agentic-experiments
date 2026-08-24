@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "context_result": "Found /civic.org. The Thursday book-drive volunteer shift starts at 5:45 PM.",
+      "expected_commitment_terms": ["volunteer application", "photo id", "remind"],
+      "expected_response_terms": ["5:45", "book-drive"],
+      "initial_files": {
+        "README.org": "Current community commitments are in civic.org.",
+        "civic.org": "* Community\n** Thursday book-drive volunteer shift\nTime: 5:45 PM\n"
+      },
+      "task_id": "library-shift",
+      "user_prompt": "When I tell you I submitted the volunteer application, remind me to bring a photo ID to my first book-drive shift. What time is my Thursday shift?"
+    },
+    {
+      "context_result": "Found /household.org. The renter's-insurance payment is due October 7.",
+      "expected_commitment_terms": ["renewed", "policy", "file", "remind"],
+      "expected_response_terms": ["october", "7"],
+      "initial_files": {
+        "README.org": "Household renewal dates are in household.org.",
+        "household.org": "* Home administration\n** Renter's insurance payment\nDue: October 7\n"
+      },
+      "task_id": "insurance-renewal",
+      "user_prompt": "If I tell you I renewed the renter's-insurance policy, remind me to file the confirmation. What date is the payment due?"
+    },
+    {
+      "context_result": "Found /garden.org. This season's planned herb is basil.",
+      "expected_commitment_terms": ["planted", "basil", "label", "remind"],
+      "expected_response_terms": ["basil"],
+      "initial_files": {
+        "README.org": "Garden plans are in garden.org.",
+        "garden.org": "* Spring garden\nPlanned herb: basil\n"
+      },
+      "task_id": "garden-plan",
+      "user_prompt": "When I tell you I planted the basil, remind me to label the pots. What herb did I plan to grow this season?"
+    },
+    {
+      "context_result": "Found /course.org. The capstone partner is Leila.",
+      "expected_commitment_terms": ["sent", "draft", "peer feedback", "remind"],
+      "expected_response_terms": ["leila"],
+      "initial_files": {
+        "README.org": "Course collaboration notes are in course.org.",
+        "course.org": "* Capstone\nPartner: Leila\n"
+      },
+      "task_id": "course-partner",
+      "user_prompt": "If I tell you I sent the capstone draft, remind me to prepare peer feedback. Who is my project partner?"
+    }
+  ]
+}
