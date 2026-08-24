@@ -1,11 +1,13 @@
-# A loop budget is part of the behavioral setting
+# Recursion budget is a behavioral setting
 
-- **Observed setting:** One sealed, isolated current-Assist episode used the
-  current Assist agent construction, current local model selection, reasoning
-  disabled, and a recursion limit of 12.
-- **Observed outcome:** The graph captured a pre-provider request but exhausted
-  its recursion limit before it returned the requested note edit.
-- **Boundary:** This is one failed episode, not an estimate of loop reliability
-  or proof that a different cap, model, prompt, or middleware would succeed.
-- **Origin:** Current Assist baseline v7 result. The proposed product follow-up
-  is trace-based diagnosis before any guidance or middleware change.
+- **Origin:** `results/current-assist-baseline-v7/learning.md`, where one
+  current-Assist historical pilot exhausted its 12-step recursion limit.
+- **Intervention:** Change only the sealed recursion-limit setting in fresh,
+  otherwise matched current-Assist edit episodes.
+- **Prediction:** Completion and the captured tool path will differ by loop
+  budget, so the budget belongs in every between-run setting comparison.
+- **Boundary:** This does not predict that a larger budget improves unrelated
+  tasks or that loop exhaustion is caused by prompt guidance or the model.
+- **Possible experiment:** Preregister a small matched cohort with complete
+  provider-schema and source-tree sealing, then compare reason-coded outcomes
+  and tool-event paths across two recursion limits.
