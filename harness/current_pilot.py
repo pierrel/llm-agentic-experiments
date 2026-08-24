@@ -14,7 +14,7 @@ from .current_assist import CurrentAssistResult, result_payload
 from .manifests import TaskManifest, read_conditions
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 from .report import write_static_report
-from .runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _valid_trace, _write_trace
+from .runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _write_trace
 
 
 @dataclass(frozen=True)

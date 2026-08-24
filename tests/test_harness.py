@@ -252,6 +252,16 @@ class HarnessTest(unittest.TestCase):
                     root, output, workspace_root=Path("/workspace"), assist_python=Path("/venv/python")
                 )
 
+    def test_current_worker_rejects_a_non_object_descriptor(self):
+        from tempfile import TemporaryDirectory
+        from harness.current_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            descriptor = Path(temporary) / "descriptor.json"
+            descriptor.write_text("[]")
+            with self.assertRaisesRegex(ValueError, "invalid descriptor"):
+                run_descriptor(descriptor, Path(temporary) / "result.json", Path(temporary) / "request-started")
+
     def test_current_assist_result_serialization_is_stable(self):
         result = CurrentAssistResult(
             final_response="done",

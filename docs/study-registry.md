@@ -19,3 +19,4 @@ the status or contents of an executed registration.
 | Scripted MVP 0002 | awaiting execution | `experiments/mvp-scripted/amendment-v2.md` | N/A | Same no-model scripted schedule, with its implementation digest extended to include the actual package-initialization import closure. |
 | Pilot 0012 | awaiting execution | `experiments/current-assist-pilot/amendment-v9.md` | N/A | Same current-Assist pilot registered against the revised shared import-closure digest; v11 remains the prior exact-code execution record. |
 | Scripted MVP 0002 execution record | pass | `experiments/mvp-scripted/amendment-v2.md` | `results/mvp-scripted-v2/` | All four sealed scripted episodes passed after the import-closure digest correction. This validates only the deterministic measurement path. |
+| Pilot 0013 | awaiting execution | `experiments/current-assist-pilot/amendment-v10.md` | N/A | Same current-Assist pilot, with explicit non-object descriptor rejection and unused-import removal. |

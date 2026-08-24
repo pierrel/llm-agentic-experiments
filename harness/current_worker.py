@@ -14,7 +14,7 @@ from .manifests import TaskManifest
 def run_descriptor(descriptor_path: Path, result_path: Path, request_started_path: Path) -> None:
     """Execute the one sealed task described by the coordinator."""
     descriptor = json.loads(descriptor_path.read_text())
-    if set(descriptor) != {"bundle_sha256", "max_turns", "task", "trial_sha256"}:
+    if not isinstance(descriptor, dict) or set(descriptor) != {"bundle_sha256", "max_turns", "task", "trial_sha256"}:
         raise ValueError("current Assist worker received an invalid descriptor")
     task = TaskManifest(**descriptor["task"])
     if not isinstance(descriptor["max_turns"], int):
