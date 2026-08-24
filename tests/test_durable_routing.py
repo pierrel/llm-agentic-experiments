@@ -181,7 +181,7 @@ class DurableRoutingTest(unittest.TestCase):
         from durable_routing_harness.durable_coordinator import durable_definition, durable_worker_command
 
         definition = durable_definition(ROOT)
-        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v3")
+        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v4")
         self.assertEqual(len(definition.bundle.schedule), 24)
         command = durable_worker_command(
             ROOT, Path("/workspace"), Path("/assist"), Path("/venv/bin/python"), Path("/env"),
@@ -258,7 +258,7 @@ class DurableRoutingTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "run"
             bundle = StudyBundle.read_verified(
-                ROOT / "experiments/durable-promise-routing-v3/bundle.json"
+                ROOT / "experiments/durable-promise-routing-v4/bundle.json"
             )
             trial = bundle.schedule[0]
             output.mkdir(mode=0o700)
@@ -281,3 +281,9 @@ class DurableRoutingTest(unittest.TestCase):
             outcome = json.loads((output / "outcomes.jsonl").read_text())
             self.assertEqual(outcome["outcome"], "provider_error")
             self.assertTrue(outcome["model_request_made"])
+
+    def test_worker_failure_detail_keeps_the_exception_tail(self) -> None:
+        from durable_routing_harness.durable_coordinator import _command_detail
+
+        result = subprocess.CompletedProcess(["worker"], 1, "", "prefix " * 100 + "actual cause")
+        self.assertIn("actual cause", _command_detail(result))

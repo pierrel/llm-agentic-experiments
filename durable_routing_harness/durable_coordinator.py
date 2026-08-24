@@ -65,7 +65,7 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path, study_id: str = "durable-promise-routing-v3") -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-routing-v4") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
     if not study_id.startswith(_STUDY_PREFIX) or not study_id[len(_STUDY_PREFIX):].isdigit():
         raise ValueError("durable-routing study id must use the registered version form")
@@ -140,7 +140,7 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, study_id: str = "durable-promise-routing-v3",
+    assist_env: Path, study_id: str = "durable-promise-routing-v4",
     command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
@@ -520,4 +520,4 @@ def _is_admission_denial(result: subprocess.CompletedProcess[str]) -> bool:
 
 def _command_detail(result: subprocess.CompletedProcess[str]) -> str:
     text = (result.stderr or result.stdout or "").strip().replace("\n", " ")
-    return text[:500] or f"worker exited {result.returncode}"
+    return text[-500:] or f"worker exited {result.returncode}"
