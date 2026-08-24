@@ -106,6 +106,7 @@ class HarnessTest(unittest.TestCase):
             output = Path(temporary) / "run"
 
             def worker(command):
+                Path(command[command.index("--request-started") + 1]).write_text("model-invoke-started\n")
                 result_path = Path(command[command.index("--result") + 1])
                 descriptor = json.loads(Path(command[command.index("--descriptor") + 1]).read_text())
                 payload = {

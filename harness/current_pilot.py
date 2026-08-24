@@ -191,7 +191,9 @@ def _run_current_assist_pilot(
     _write_trace(trace_dir / f"{trial.sha256}.json", {
         "trial_sha256": trial.sha256, "trace": current_result.messages, "result": result_payload(current_result),
     })
-    outcomes.append(TrialOutcome(trial, "pass" if score.passed else "artifact_failure", True, score.passed, score.detail))
+    outcomes.append(TrialOutcome(
+        trial, "pass" if score.passed else "artifact_failure", _request_started(request_started), score.passed, score.detail
+    ))
     return PilotProgress("complete", _finalize(bundle_path, outcomes, admissions, trace_dir))
 
 

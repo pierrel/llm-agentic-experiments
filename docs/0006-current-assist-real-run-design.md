@@ -42,7 +42,7 @@ A changed model, architecture, test, or setting is a new bundle, never a retry.
 
 ## Execution boundary
 
-`real_coordinator` owns the sealed output directory, schedule prefix, and
+`run_current_assist_pilot` owns the sealed output directory, schedule prefix, and
 admission chain. For its current trial it invokes exactly one bounded worker
 through `tools/agentic resource run llm -- ...`. The worker is not a public
 "direct model" command: it receives only a sealed trial descriptor and returns
