@@ -113,7 +113,10 @@ def main() -> int:
             )
             response = agent.invoke(
                 {"messages": [{"role": "user", "content": bundle.registration["prompt"]}]},
-                {"recursion_limit": bundle.settings["episode"]["recursion_limit"]},
+                {
+                    "recursion_limit": bundle.settings["episode"]["recursion_limit"],
+                    "configurable": {"thread_id": f"experiment:{bundle.study_id}"},
+                },
             )
             messages = response["messages"]
             trace = [message.model_dump(mode="json") for message in messages]

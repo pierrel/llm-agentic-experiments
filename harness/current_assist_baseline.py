@@ -14,7 +14,7 @@ from .bundle import StudyBundle, Trial, canonical_json
 from .records import AdmissionAttempt, AdmissionLog, RecordChain, ScheduledAdmission, TrialOutcome
 
 
-STUDY_ID = "current-assist-baseline-v6"
+STUDY_ID = "current-assist-baseline-v7"
 PROMPT = (
     'Please add the exact line "Checked by the experiment." to today\'s note, '
     "preserving what is already there."
