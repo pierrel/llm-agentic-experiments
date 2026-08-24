@@ -47,3 +47,10 @@ Propose one investigation: capture the full tool-event path for a small set of
 fresh current-Assist edit episodes, then determine whether the cap or a
 particular loop is responsible. Do not change Assist guidance or middleware on
 the basis of this n=1 result.
+
+## Review disposition
+
+The final local review found reusable-runner hardening work that does not alter
+this sealed v7 result. It is documented in
+`docs/0012-current-assist-baseline-local-review.md` and deferred to a separate
+registration rather than folded into this first pass.
