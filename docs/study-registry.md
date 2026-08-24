@@ -6,3 +6,8 @@ the status or contents of an executed registration.
 | Study version | Status | Registration | Results | Notes |
 | --- | --- | --- | --- | --- |
 | Design 0001 | design only | N/A | N/A | Program design for the first two studies; no model trials have run. |
+| current-assist-baseline-v1 | superseded before model | `experiments/current-assist-baseline-v1/bundle.json` | Unsealed pre-request admission record | Worker import failed before a model request. |
+| current-assist-baseline-v2 | superseded before model | `experiments/current-assist-baseline-v2/bundle.json` | Unsealed admission denial | Shared LLM resource was busy; no model request. |
+| current-assist-baseline-v3 | superseded before model | `experiments/current-assist-baseline-v3/bundle.json` | None | Retry-accounting correction registered; no admission attempted. |
+| current-assist-baseline-v4 | superseded before model | `experiments/current-assist-baseline-v4/bundle.json` | None | Request-capture design corrected before model use. |
+| current-assist-baseline-v5 | registered | `experiments/current-assist-baseline-v5/bundle.json` | Pending | Exact Assist construction and per-turn request capture. |
