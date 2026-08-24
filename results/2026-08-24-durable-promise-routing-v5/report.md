@@ -71,3 +71,16 @@ mixed request becoming a durable commitment after checked grounding, while
 preserving honest responses and avoiding a task-specific or skill-specific
 instruction. It needs a new registration and task bank; this pilot's rows are
 now observed and cannot become that confirmation evidence.
+
+## Post-result architecture finding
+
+Subsequent prompt-trace review found that this cohort's current production-shaped
+memory prompt told the model to write forward-looking rules to repository memory
+before ordinary work, while its thread-memory prompt assigned current work to
+`/agent`. The traces show the model following the former by writing
+`/workspace/AGENTS.md` for conditional reminders. This does not invalidate the
+sealed result for C1's grounding-description treatment: both conditions had the
+same memory prompt. It does mean that the observed zero-persistence result is
+evidence for a new memory-scope hypothesis, not evidence that a general
+thread-outcome treatment cannot work. That hypothesis is registered separately
+as durable-promise outcome completion v1 with fresh rows.

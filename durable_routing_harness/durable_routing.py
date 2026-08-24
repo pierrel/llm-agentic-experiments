@@ -224,9 +224,10 @@ def score(task: DurableRoutingTask, result: DurableRoutingResult) -> DurableRout
 
 def run_episode(
     task: DurableRoutingTask, *, grounding_description: str | None = None,
+    memory_guidance: dict[str, str] | None = None,
     on_first_provider_request: Callable[[], None] | None = None,
 ) -> DurableRoutingResult:
-    """Run one real model episode with an optional sealed description treatment.
+    """Run one real model episode with one sealed prompt-only treatment.
 
     This function intentionally has no provider URL argument and no direct model
     invocation path.  The surrounding worker marks the request boundary and is
@@ -270,7 +271,8 @@ def run_episode(
         if sandbox is None:
             raise RuntimeError("durable-routing episode requires the Assist sandbox")
         reset_task_fixture()
-        with patch("assist.tools.requests.get", side_effect=AssertionError("durable-routing must not fetch URLs")), \
+        with _prompt_treatment_context(memory_guidance), \
+             patch("assist.tools.requests.get", side_effect=AssertionError("durable-routing must not fetch URLs")), \
              patch("assist.tools.requests.post", side_effect=AssertionError("durable-routing must not post URLs")), \
              patch.dict(os.environ, {"ASSIST_PROMPT_REWRITE_GUIDANCE_SKILLS": "1"}, clear=False), \
              stub_research_subagent():
@@ -315,6 +317,28 @@ def run_episode(
         cleanup_workspace(workspace)
         shutil.rmtree(agent_dir, ignore_errors=True)
         shutil.rmtree(guidance_root, ignore_errors=True)
+
+
+def _prompt_treatment_context(memory_guidance: dict[str, str] | None):
+    """Patch only a sealed memory-prompt pair for an in-process experiment."""
+    from contextlib import ExitStack
+
+    stack = ExitStack()
+    if memory_guidance is None:
+        return stack
+    required = {"repository_memory_prompt", "thread_memory_prompt"}
+    if set(memory_guidance) != required or not all(
+            isinstance(value, str) and value for value in memory_guidance.values()):
+        raise ValueError("durable-routing memory guidance must be a complete text pair")
+    stack.enter_context(patch(
+        "assist.middleware.memory_middleware.SMALL_MODEL_MEMORY_PROMPT",
+        memory_guidance["repository_memory_prompt"],
+    ))
+    stack.enter_context(patch(
+        "assist.middleware.memory_middleware.THREAD_MEMORY_PROMPT",
+        memory_guidance["thread_memory_prompt"],
+    ))
+    return stack
 
 
 def _replace_grounding_description(path: Path, description: str) -> None:

@@ -128,7 +128,8 @@ class DurableRoutingTest(unittest.TestCase):
             started = root / "started"
             descriptor.write_text(json.dumps({
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
-                "grounding_description": "control description", "task": self.task.payload(),
+                "condition_field": "grounding_description", "condition_value": "control description",
+                "task": self.task.payload(),
                 "model_settings": {"model_id": "test-model", "context_limit": 1},
             }))
             episode_result = DurableRoutingResult(
@@ -149,6 +150,24 @@ class DurableRoutingTest(unittest.TestCase):
             self.assertEqual(stored["trial_sha256"], "trial")
             self.assertEqual(stored["result"], episode_result.payload())
 
+    def test_worker_passes_a_sealed_memory_guidance_pair(self) -> None:
+        from durable_routing_harness.durable_worker import run_descriptor
+
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = root / "descriptor.json"
+            guidance = {"repository_memory_prompt": "repo", "thread_memory_prompt": "thread"}
+            descriptor.write_text(json.dumps({
+                "bundle_sha256": "bundle", "trial_sha256": "trial",
+                "condition_field": "memory_guidance", "condition_value": guidance,
+                "task": self.task.payload(), "model_settings": {"model_id": "test-model", "context_limit": 1},
+            }))
+            episode_result = DurableRoutingResult("", "", (), "", (), (), "", "")
+            with patch("durable_routing_harness.durable_worker._verify_model_settings"), patch(
+                    "durable_routing_harness.durable_worker.run_episode", return_value=episode_result) as run:
+                run_descriptor(descriptor, root / "result.json", root / "started")
+            self.assertEqual(run.call_args.kwargs["memory_guidance"], guidance)
+
     def test_worker_rejects_a_descriptor_with_undeclared_fields(self) -> None:
         from durable_routing_harness.durable_worker import run_descriptor
 
@@ -168,7 +187,8 @@ class DurableRoutingTest(unittest.TestCase):
             started = root / "started"
             descriptor.write_text(json.dumps({
                 "bundle_sha256": "bundle", "trial_sha256": "trial",
-                "grounding_description": "control description", "task": self.task.payload(),
+                "condition_field": "grounding_description", "condition_value": "control description",
+                "task": self.task.payload(),
                 "model_settings": {"model_id": "test-model", "context_limit": 1},
             }))
             with patch("durable_routing_harness.durable_worker._verify_model_settings",
@@ -181,8 +201,9 @@ class DurableRoutingTest(unittest.TestCase):
         from durable_routing_harness.durable_coordinator import durable_definition, durable_worker_command
 
         definition = durable_definition(ROOT)
-        self.assertEqual(definition.bundle.study_id, "durable-promise-routing-v5")
+        self.assertEqual(definition.bundle.study_id, "durable-promise-outcome-v1")
         self.assertEqual(len(definition.bundle.schedule), 24)
+        self.assertEqual(definition.condition_field, "memory_guidance")
         command = durable_worker_command(
             ROOT, Path("/workspace"), Path("/assist"), Path("/venv/bin/python"), Path("/env"),
             Path("/descriptor"), Path("/result"), Path("/started"),
@@ -210,16 +231,16 @@ class DurableRoutingTest(unittest.TestCase):
     def test_coordinator_keeps_one_admitted_trial_and_its_predicates(self) -> None:
         from durable_routing_harness.durable_coordinator import run_durable_routing_once
 
-        task = self.tasks["library-shift"]
+        task = read_tasks(ROOT / "experiments/durable-promise-outcome-v1/tasks.json")["workshop-review"]
         result = DurableRoutingResult(
-            initial_response="", completion_response="Your Thursday book-drive shift starts at 5:45 PM.",
+            initial_response="", completion_response="The workshop review is October 14.",
             calls=(
                 {"name": "load_skill", "args": {"name": "grounding"}},
                 {"name": "start_async_task", "context_task_id": "context-1", "args": {"description": "find shift", "subagent_type": "context-agent"}},
                 {"name": "get_async_task_result", "args": {"task_id": "context-1"}},
-                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When volunteer application is submitted, remind user to bring photo ID."}},
+                {"name": "write_file", "args": {"file_path": "/agent/memory.md", "content": "When proposal is mailed, remind user to send the review packet to Reina."}},
             ),
-            memory="When volunteer application is submitted, remind user to bring photo ID.",
+            memory="When proposal is mailed, remind user to send the review packet to Reina.",
             messages=({"content": task.context_result},), provider_requests=({"messages": [], "kwargs": {}},),
         )
         with TemporaryDirectory() as temporary:
@@ -258,7 +279,7 @@ class DurableRoutingTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / "run"
             bundle = StudyBundle.read_verified(
-                ROOT / "experiments/durable-promise-routing-v5/bundle.json"
+                ROOT / "experiments/durable-promise-outcome-v1/bundle.json"
             )
             trial = bundle.schedule[0]
             output.mkdir(mode=0o700)

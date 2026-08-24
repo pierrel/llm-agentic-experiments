@@ -1,0 +1,48 @@
+{
+  "tasks": [
+    {
+      "task_id": "workshop-review",
+      "user_prompt": "When I tell you I mailed the proposal, remind me to send the review packet to Reina. What date is the workshop review?",
+      "initial_files": {
+        "README.org": "Workshop planning details are kept in retreat.org.",
+        "retreat.org": "* Workshop\n** Review\nDate: October 14\n"
+      },
+      "context_result": "Found /retreat.org. The workshop review is October 14.",
+      "expected_response_terms": ["october 14", "workshop"],
+      "expected_commitment_terms": ["mailed", "review packet", "reina", "remind"]
+    },
+    {
+      "task_id": "camera-return",
+      "user_prompt": "If I say I returned the borrowed camera, remind me to upload the receipt. Which shop needs it back?",
+      "initial_files": {
+        "notes.md": "Equipment details are in gear.md.",
+        "gear.md": "# Loaned camera\nReturn it to Northlight Camera.\n"
+      },
+      "context_result": "Found /gear.md. The borrowed camera must be returned to Northlight Camera.",
+      "expected_response_terms": ["northlight", "camera"],
+      "expected_commitment_terms": ["returned", "upload", "receipt", "remind"]
+    },
+    {
+      "task_id": "reading-group",
+      "user_prompt": "When I tell you I finished the chapter, remind me to bring two questions. Who is leading the next reading group?",
+      "initial_files": {
+        "overview.org": "Reading group notes live in books.org.",
+        "books.org": "* Reading group\nNext leader: Noor\n"
+      },
+      "context_result": "Found /books.org. Noor is leading the next reading group.",
+      "expected_response_terms": ["noor", "reading group"],
+      "expected_commitment_terms": ["finished", "two questions", "bring", "remind"]
+    },
+    {
+      "task_id": "lease-keys",
+      "user_prompt": "If I tell you I picked up the keys, remind me to photograph the meter reading. Which building is the appointment for?",
+      "initial_files": {
+        "housing.txt": "See lease.md for the move-in appointment.",
+        "lease.md": "Move-in appointment: Cedar Court, building B.\n"
+      },
+      "context_result": "Found /lease.md. The key appointment is at Cedar Court, building B.",
+      "expected_response_terms": ["cedar court", "building b"],
+      "expected_commitment_terms": ["picked up", "photograph", "meter", "remind"]
+    }
+  ]
+}

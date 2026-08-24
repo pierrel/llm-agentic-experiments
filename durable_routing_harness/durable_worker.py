@@ -14,11 +14,11 @@ from .durable_routing import DurableRoutingTask, run_episode
 def run_descriptor(descriptor_path: Path, result_path: Path, request_started_path: Path) -> None:
     """Run one coordinator-built descriptor and publish its complete result."""
     descriptor = json.loads(descriptor_path.read_text())
-    required = {"bundle_sha256", "grounding_description", "model_settings", "task", "trial_sha256"}
+    required = {"bundle_sha256", "condition_field", "condition_value", "model_settings", "task", "trial_sha256"}
     if not isinstance(descriptor, dict) or set(descriptor) != required:
         raise ValueError("durable-routing worker received an invalid descriptor")
     if not all(isinstance(descriptor[key], str) for key in (
-            "bundle_sha256", "trial_sha256", "grounding_description",
+            "bundle_sha256", "trial_sha256", "condition_field",
     )):
         raise ValueError("durable-routing worker descriptor requires text identities")
     _write_lifecycle(request_started_path, "descriptor-validated")
@@ -31,10 +31,14 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
         """Record the actual model boundary, after setup and immediately before send."""
         _write_lifecycle(request_started_path, "model-invoke-started")
 
-    result = run_episode(
-        task, grounding_description=descriptor["grounding_description"],
-        on_first_provider_request=mark_first_provider_request,
-    )
+    condition_field, condition_value = descriptor["condition_field"], descriptor["condition_value"]
+    if condition_field == "grounding_description" and isinstance(condition_value, str):
+        treatment = {"grounding_description": condition_value}
+    elif condition_field == "memory_guidance" and isinstance(condition_value, dict):
+        treatment = {"memory_guidance": condition_value}
+    else:
+        raise ValueError("durable-routing worker descriptor has an invalid prompt treatment")
+    result = run_episode(task, on_first_provider_request=mark_first_provider_request, **treatment)
     atomic_write(result_path, canonical_json({
         "bundle_sha256": descriptor["bundle_sha256"],
         "trial_sha256": descriptor["trial_sha256"],

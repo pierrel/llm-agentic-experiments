@@ -17,8 +17,8 @@ from harness.records import AdmissionAttempt, AdmissionLog, RecordChain, Schedul
 from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _write_trace
 
 
-_DESCRIPTION_FIELD = "grounding_description"
-_STUDY_PREFIX = "durable-promise-routing-v"
+_STUDY_PREFIXES = ("durable-promise-routing-v", "durable-promise-outcome-v")
+_CONDITION_FIELDS = {"grounding_description", "memory_guidance"}
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,8 @@ class DurableRoutingDefinition:
 
     bundle: StudyBundle
     tasks: dict[str, DurableRoutingTask]
-    descriptions: dict[str, str]
+    condition_field: str
+    condition_values: dict[str, object]
 
     def validate(self, root: Path) -> None:
         """Reject source, schedule, or condition drift before worker admission."""
@@ -37,18 +38,18 @@ class DurableRoutingDefinition:
             raise ValueError("durable-routing bundle has the wrong registration kind")
         if set(self.tasks) != set(self.bundle.fixtures):
             raise ValueError("durable-routing fixtures do not match the task bank")
-        if set(self.descriptions) != set(self.bundle.conditions):
+        if set(self.condition_values) != set(self.bundle.conditions):
             raise ValueError("durable-routing conditions do not match the bundle")
-        if set(self.descriptions) != {"C0", "C1"}:
+        if set(self.condition_values) != {"C0", "C1"}:
             raise ValueError("durable-routing study requires exactly two opaque conditions")
         for task_id, task in self.tasks.items():
             if self.bundle.fixtures[task_id] != digest(task.payload()):
                 raise ValueError(f"durable-routing fixture digest mismatch: {task_id}")
-        for condition_id, description in self.descriptions.items():
-            if self.bundle.conditions[condition_id] != {"sha256": digest({_DESCRIPTION_FIELD: description})}:
+        for condition_id, value in self.condition_values.items():
+            if self.bundle.conditions[condition_id] != {"sha256": digest({self.condition_field: value})}:
                 raise ValueError(f"durable-routing condition digest mismatch: {condition_id}")
         declared = registration.get("allowed_condition_difference")
-        if declared != _DESCRIPTION_FIELD:
+        if declared != self.condition_field:
             raise ValueError("durable-routing must declare its sole condition difference")
         if registration.get("implementation_sha256") != durable_implementation_sha256(root):
             raise ValueError("durable-routing bundle does not match committed implementation")
@@ -65,26 +66,39 @@ class DurableRoutingProgress:
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def durable_definition(root: Path, study_id: str = "durable-promise-routing-v5") -> DurableRoutingDefinition:
+def durable_definition(root: Path, study_id: str = "durable-promise-outcome-v1") -> DurableRoutingDefinition:
     """Read only the immutable task, condition, and bundle declarations."""
-    if not study_id.startswith(_STUDY_PREFIX) or not study_id[len(_STUDY_PREFIX):].isdigit():
+    prefix = next((prefix for prefix in _STUDY_PREFIXES if study_id.startswith(prefix)), None)
+    if prefix is None or not study_id[len(prefix):].isdigit():
         raise ValueError("durable-routing study id must use the registered version form")
     study_dir = root / "experiments" / study_id
     tasks = read_tasks(study_dir / "tasks.json")
     raw_conditions = json.loads((study_dir / "conditions.json").read_text())
     if not isinstance(raw_conditions, dict):
         raise ValueError("durable-routing conditions must be an object")
-    descriptions: dict[str, str] = {}
-    for condition_id, value in raw_conditions.items():
-        if (not isinstance(condition_id, str) or not isinstance(value, dict)
-                or set(value) != {_DESCRIPTION_FIELD}
-                or not isinstance(value[_DESCRIPTION_FIELD], str)):
-            raise ValueError("durable-routing conditions have an invalid shape")
-        descriptions[condition_id] = value[_DESCRIPTION_FIELD]
+    condition_field = None
+    condition_values: dict[str, object] = {}
     bundle = StudyBundle.read_verified(study_dir / "bundle.json")
+    declared = bundle.registration.get("allowed_condition_difference")
+    if not isinstance(declared, str) or declared not in _CONDITION_FIELDS:
+        raise ValueError("durable-routing has an unsupported condition difference")
+    condition_field = declared
+    for condition_id, value in raw_conditions.items():
+        if not isinstance(condition_id, str) or not isinstance(value, dict) or set(value) != {condition_field}:
+            raise ValueError("durable-routing conditions have an invalid shape")
+        condition_value = value[condition_field]
+        if condition_field == "grounding_description":
+            valid = isinstance(condition_value, str) and bool(condition_value)
+        else:
+            valid = (isinstance(condition_value, dict)
+                     and set(condition_value) == {"repository_memory_prompt", "thread_memory_prompt"}
+                     and all(isinstance(text, str) and text for text in condition_value.values()))
+        if not valid:
+            raise ValueError("durable-routing condition value is invalid")
+        condition_values[condition_id] = condition_value
     if bundle.study_id != study_id:
         raise ValueError("durable-routing bundle identity does not match its directory")
-    definition = DurableRoutingDefinition(bundle, tasks, descriptions)
+    definition = DurableRoutingDefinition(bundle, tasks, condition_field, condition_values)
     definition.validate(root)
     return definition
 
@@ -140,7 +154,7 @@ def durable_worker_command(
 
 def run_durable_routing_once(
     root: Path, output: Path, *, workspace_root: Path, assist_root: Path, assist_python: Path,
-    assist_env: Path, study_id: str = "durable-promise-routing-v5",
+    assist_env: Path, study_id: str = "durable-promise-outcome-v1",
     command_runner: CommandRunner | None = None,
 ) -> DurableRoutingProgress:
     """Make at most one admitted model episode and preserve all terminal outcomes."""
@@ -197,7 +211,8 @@ def _run_once(
         "bundle_sha256": bundle.sha256,
         "trial_sha256": trial.sha256,
         "task": task.payload(),
-        _DESCRIPTION_FIELD: definition.descriptions[trial.condition],
+        "condition_field": definition.condition_field,
+        "condition_value": definition.condition_values[trial.condition],
         "model_settings": bundle.settings["model"],
     }) + b"\n")
     attempt = len([record for record in admissions.read_verified() if record["trial_sha256"] == trial.sha256]) + 1
