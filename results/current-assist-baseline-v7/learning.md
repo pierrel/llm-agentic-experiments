@@ -8,7 +8,9 @@
   original registration sealed the tag name, not this resolved commit ID.
 - Admitted one-episode record and outcome seal: `admissions.jsonl[.seal]` and
   `outcomes.jsonl[.seal]`.
-- Aggregate summary and raw-evidence hashes: `report.json` and `run.json`.
+- Aggregate summary and raw-evidence hashes: `report.json` and
+  `raw-evidence.json`. `run.json` retains the standard empty raw-trace map:
+  this pilot captured pre-provider input, not a trace body.
 - Human-readable result: `reports/current-assist-baseline-v7.md`.
 
 ## Observation

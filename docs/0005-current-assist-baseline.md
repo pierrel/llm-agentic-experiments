@@ -38,6 +38,9 @@ recursion limit before returning the requested edit. Its sealed record keeps the
 adds the non-mutating observation that this was loop exhaustion, not a provider
 availability failure. See `results/current-assist-baseline-v7/`.
 
+The required minimum-adequate-setup audit was completed only after the run, so
+v7 is a historical pilot rather than a compliant confirmation.
+
 The missing weights digest is a limitation of this historical run, not a reason
 to rewrite it. A future model or plan-and-execute comparison must keep the test
 digest unchanged, change exactly one declared axis, and write a new sealed

@@ -19,9 +19,10 @@ success-rate estimate or a comparison between models, settings, or harnesses.
 
 The sole scheduled trial is counted regardless of result. A GPU admission denial
 is recorded separately and the same trial is retried; a failure after a
-pre-provider request capture is a reason-coded outcome. Raw trace bodies remain ignored locally. The committed
-capsule carries their SHA-256 hash, the sealed outcome and admission logs, and a
-compact report.
+pre-provider request capture is a reason-coded outcome. Raw trace bodies remain
+ignored locally and a capsule inventories their SHA-256 hashes when present.
+V7 instead records its pre-provider input hash in `raw-evidence.json`, alongside
+the sealed outcome and admission logs and compact report.
 
 ## Design reviews
 
