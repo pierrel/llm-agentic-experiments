@@ -36,15 +36,18 @@ product change, or treatment change is authorized by this review.
 
 ## Rebase integration review
 
-After the baseline branch was rebased onto the merged scripted-MVP harness, the
-real-Assist runner modules moved from `harness/` to `runners/`. The MVP seals
-every top-level `harness/*.py`; keeping an unrelated real-model runner there
-would make its already sealed static fixture fail closed. The move leaves the
-MVP bundle, the v7 bundle, its immutable tag, the captured Assist revision, and
-all v7 result records unchanged.
+After the baseline branch was rebased onto the merged scripted-MVP harness, it
+became clear that the MVP seals every top-level `harness/*.py`. Keeping an
+unrelated real-model runner in that module set would make its already sealed
+static fixture fail closed. The final branch therefore stores the self-contained
+v7 result capsule; its executable source remains at the immutable v7 tag. This
+leaves the MVP bundle, the v7 bundle, the captured Assist revision, and all v7
+result records unchanged.
 
 The archived v7 episode remains reproducible from its own tag. It must not be
 rerun from this integrated branch: the registration's source-binding guard
 correctly rejects a changed runner, and any future real episode needs a new
-registered study version. The integrated deterministic suite passed 37 tests,
-with `compileall` and `git diff --check` also clean.
+registered study version. Its bundle predates the current shared bundle schema,
+so the capsule preserves its original bytes and verifies them through that tag,
+rather than rewriting the executed registration. The integrated deterministic
+suite passed 35 tests, with `compileall` and `git diff --check` also clean.
