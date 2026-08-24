@@ -53,6 +53,6 @@ the basis of this n=1 result.
 ## Review disposition
 
 The final local review found reusable-runner hardening work that does not alter
-this sealed v7 result. It is documented in
-`docs/0012-current-assist-baseline-local-review.md` and deferred to a separate
-registration rather than folded into this first pass.
+this sealed v7 result. It is documented in the
+[canonical baseline history](../docs/0005-current-assist-baseline.md#post-run-local-review)
+and deferred to a separate registration rather than folded into this first pass.

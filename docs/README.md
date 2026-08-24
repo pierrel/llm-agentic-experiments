@@ -19,7 +19,7 @@ translates recurring technical terms.
 | [Glossary](glossary.md) | Short plain-language definitions. |
 | [Study registry](study-registry.md) | Index of study versions and their status. |
 | [0004 Initial design review](0004-initial-design-review.md) | Findings and resolutions from the first review panel. |
-| [0005 Current Assist baseline](0005-current-assist-baseline.md) | Historical current-Assist baseline profile and result capsule. |
+| [0005 Current Assist baseline](0005-current-assist-baseline.md) | Canonical current-Assist baseline profile, design, changelog, and local-review history. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
