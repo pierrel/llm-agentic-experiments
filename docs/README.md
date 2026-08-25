@@ -21,6 +21,7 @@ translates recurring technical terms.
 | [0004 Initial design review](0004-initial-design-review.md) | Findings and resolutions from the first review panel. |
 | [0005 Current Assist baseline](0005-current-assist-baseline.md) | Verified first real-run model and Deep Agents architecture profile. |
 | [0019 Reach-for-instructions v1 design review](0019-reach-for-instructions-v1-design-review.md) | Preregistered minimum review for the retrieved-versus-handed guidance development screen. |
+| [0020 Reach-for-instructions v2 design review](0020-reach-for-instructions-v2-design-review.md) | Re-review of the pre-admission worker-wrapper correction. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 

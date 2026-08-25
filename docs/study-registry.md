@@ -6,4 +6,5 @@ the status or contents of an executed registration.
 | Study version | Status | Registration | Results | Notes |
 | --- | --- | --- | --- | --- |
 | Design 0001 | design only | N/A | N/A | Program design for the first two studies; no model trials have run. |
-| reach-for-instructions-dev-v1 | development registered | [registration](../experiments/reach-for-instructions-dev-v1/registration.md) | pending | Two delivery modes crossed with three inert-context doses; 18 fresh current-Assist episodes, pending sealed model execution. |
+| reach-for-instructions-dev-v1 | superseded before model admission | [registration](../experiments/reach-for-instructions-dev-v1/registration.md) | N/A | Sealed bundle retained at tag `reach-for-instructions-dev-v1`; a no-model runtime probe found its worker environment wrapper would not set `PYTHONPATH`. |
+| reach-for-instructions-dev-v2 | development registered | [registration](../experiments/reach-for-instructions-dev-v2/registration.md) | pending | V1's corrected worker wrapper, with unchanged question, conditions, fixture, schedule, and planned 18 episodes. |
