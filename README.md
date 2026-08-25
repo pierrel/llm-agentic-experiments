@@ -38,6 +38,15 @@ deferred until a registered study and its design reviews are complete.
 - A treatment and control differ only in the preregistered factor. Their model,
   decoding settings, tools, fixture, synthetic time, user task, and outcome
   oracle are identical.
+- Experiments test **when**, not only **if**, a hypothesis holds. Each
+  registration identifies its quantitative design axes, records their actual
+  values per episode, and predeclares whether it estimates a response curve,
+  threshold, or condition interaction. Report where an intervention helps, has
+  no detectable effect, or harms; do not reduce a dose-response to a
+  short-versus-long headline. Context length, task complexity/length, and
+  skill-catalog size are common axes. First-class treatment does not require an
+  unpowered full factorial: hold non-primary axes fixed and measured, then add
+  them through separately powered registrations.
 - Every trial starts from a fresh conversation and isolated fixture. It receives
   no prior trial output, result label, or tuning note.
 - Use deterministic artifact oracles where possible. Human or model judging is
