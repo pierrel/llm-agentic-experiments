@@ -5,9 +5,10 @@
 V6's 18 outcome records are preserved but withdrawn from interpretation. A
 post-run review found that the callback used by the current runtime did not
 retain any provider-facing requests, and V6 did not reject a request-fidelity
-mismatch before scoring. The response table must not be treated as a delivery
-effect. V7 repeats the unchanged final design after correcting those runner
-requirements.
+mismatch before scoring. V7 repeated the unchanged final design with a sealed
+post-middleware provider-request digest for every trial and an exact
+model-boundary comparison on every live episode. All 18 V7 episodes met that
+contract, so its result is the first interpretable development evidence.
 
 ## Setup
 
@@ -41,13 +42,21 @@ accepted. V6 added that one normalization equally to both conditions before any
 new request and completed its 18 episodes. Its archived capsule has 18
 admissions, 18 terminal outcomes, sealed record chains, and hashes for all
 retained local raw traces. The later review found that its retained request
-arrays were empty, so V6 is invalid for interpretation. V7 is a fresh
-validation version, not an additional result-informed treatment change.
+arrays were empty, so V6 is invalid for interpretation.
+
+V7 is a fresh validation version, not an additional result-informed treatment
+change. It produced 5/9 complete artifact passes for retrieved `G02` and 2/9
+for always-present `G01`. By context dose, the cells were `G01/G02`: 0 lines
+`0/3` versus `1/3`; 900 lines `0/3` versus `1/3`; 3,600 lines `2/3` versus
+`3/3`. The treatment loaded the skill before the first source read in 5/9
+episodes. No delivery-by-context cell has more than three fresh trials.
 
 ## Interpretation and next step
 
 The durable process lesson is stricter than the provisional result: an
 instruction-delivery contrast is uninterpretable until both the artifact oracle
-and the provider-facing request have been audited. V7 must complete before this
-series can propose a held-out confirmation or any Assist action. The series does
-not test transfer across models, reasoning settings, or harness architectures.
+and the provider-facing request have been audited. The valid V7 result is
+directional enough to justify one preregistered held-out task confirmation, but
+not a product change. It does not establish why performance rose in the
+high-context cells, a context threshold, or transfer across models, reasoning
+settings, or harness architectures.
