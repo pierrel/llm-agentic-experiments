@@ -1,22 +1,13 @@
 # Reach-for-instructions development series
 
-## Result
+## Status
 
-The final calibrated development cohort gives a narrow follow-up signal, not a
-product conclusion. In the pinned current Assist Deep Agents loop, retrieved
-guidance (`G02`) passed all three high-context episodes and automatically handed
-guidance (`G01`) passed one of three. No comparable signal appears at the two
-smaller context doses.
-
-| First-request context | Handed `G01` | Retrieved `G02` |
-| --- | ---: | ---: |
-| `C-low`, about 6k tokens | 0/3 | 1/3 |
-| `C-medium`, about 27k tokens | 0/3 | 0/3 |
-| `C-high`, about 89k tokens | 1/3 | 3/3 |
-
-The high-context 3/3 versus 1/3 cell is the only candidate region for a
-held-out confirmation. It does not establish a general advantage, a context
-threshold, or an Assist change.
+V6's 18 outcome records are preserved but withdrawn from interpretation. A
+post-run review found that the callback used by the current runtime did not
+retain any provider-facing requests, and V6 did not reject a request-fidelity
+mismatch before scoring. The response table must not be treated as a delivery
+effect. V7 repeats the unchanged final design after correcting those runner
+requirements.
 
 ## Setup
 
@@ -47,21 +38,16 @@ otherwise usable handoffs. V5 predeclared broader field aliases and exposed a
 3/3 versus 0/3 high-context contrast. Trace review found that two handed
 handoffs had only used the equally direct status `not_issued`, which V5 had not
 accepted. V6 added that one normalization equally to both conditions before any
-new request and was the final allowed development variant. Its archived capsule
-has 18 admissions, 18 terminal outcomes, sealed record chains, and hashes for
-all retained local raw traces.
+new request and completed its 18 episodes. Its archived capsule has 18
+admissions, 18 terminal outcomes, sealed record chains, and hashes for all
+retained local raw traces. The later review found that its retained request
+arrays were empty, so V6 is invalid for interpretation. V7 is a fresh
+validation version, not an additional result-informed treatment change.
 
 ## Interpretation and next step
 
-This work supports two durable process lessons. First, an instruction-delivery
-hypothesis must be tested over a surface, not as one binary average: this task's
-only promising region was the largest tested context. Second, a plausible cell
-contrast is not evidence until the artifact oracle has been calibrated against
-observed equivalent outputs.
-
-The proposed next experiment is one held-out large-context task with a frozen,
-independently reviewed artifact oracle and a larger predeclared sample. It should
-retain the whole-policy contrast, report whether the guide was loaded before the
-first source read, and make no Assist product change unless that confirmation is
-positive. This development series does not test transfer across models,
-reasoning settings, or harness architectures.
+The durable process lesson is stricter than the provisional result: an
+instruction-delivery contrast is uninterpretable until both the artifact oracle
+and the provider-facing request have been audited. V7 must complete before this
+series can propose a held-out confirmation or any Assist action. The series does
+not test transfer across models, reasoning settings, or harness architectures.
