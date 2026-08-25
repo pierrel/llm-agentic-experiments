@@ -375,9 +375,9 @@ def main() -> None:
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--source-commit")
     parser.add_argument("--assist-revision")
-    parser.add_argument("--workspace-root", type=Path, default=Path("/home/pierre/src/agentic"))
+    parser.add_argument("--workspace-root", type=Path, default=Path.home() / "src" / "agentic")
     parser.add_argument("--assist-source", type=Path)
-    parser.add_argument("--assist-python", type=Path, default=Path("/home/pierre/deploy/assist/code/.venv/bin/python"))
+    parser.add_argument("--assist-python", type=Path, default=Path.home() / "deploy" / "assist" / "code" / ".venv" / "bin" / "python")
     args = parser.parse_args()
     if args.command == "seal":
         if not args.source_commit or not args.assist_revision:

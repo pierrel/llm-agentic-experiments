@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,7 +10,7 @@ import unittest
 
 from harness.manifests import TaskManifest
 from studies.context_length.runner import STUDY, _filler, _score, main, seal
-from studies.context_length.worker import _fixture_path
+from studies.context_length.worker import _fixture_path, run_descriptor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,19 @@ class ContextLengthTest(unittest.TestCase):
             _fixture_path(root, "/etc/passwd")
         with self.assertRaises(ValueError):
             _fixture_path(root, "../escape")
+
+    def test_worker_rejects_nontext_prompts_before_runtime_import(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            descriptor = {
+                "bundle_sha256": "a", "trial_sha256": "b", "system_prompt": 1,
+                "user_prompt": "request", "files": {}, "max_turns": 1,
+                "temperature": 0.1, "max_tokens": 1, "runtime": {},
+            }
+            path = root / "descriptor.json"
+            path.write_text(json.dumps(descriptor))
+            with self.assertRaisesRegex(ValueError, "prompts are invalid"):
+                run_descriptor(path, root / "result.json", root / "marker")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
         raise ValueError("context-length worker received an invalid descriptor")
     if not isinstance(descriptor["files"], dict) or not all(isinstance(path, str) and isinstance(text, str) for path, text in descriptor["files"].items()):
         raise ValueError("context-length worker files are invalid")
+    if not isinstance(descriptor["system_prompt"], str) or not isinstance(descriptor["user_prompt"], str):
+        raise ValueError("context-length worker prompts are invalid")
     if not isinstance(descriptor["max_turns"], int) or descriptor["max_turns"] < 1:
         raise ValueError("context-length worker turn limit is invalid")
     if not isinstance(descriptor["max_tokens"], int) or descriptor["max_tokens"] < 1:
