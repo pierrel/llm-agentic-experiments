@@ -19,7 +19,8 @@
     "kind": "case_handoff",
     "output_path": "outgoing/oakridge-reconciliation-handoff.md",
     "required_reads": ["CONVENTION.md", "records/01-intake.md", "records/02-receipt-register.md", "records/03-payment-ledger.md", "records/04-merchant-note.md", "records/05-audit-note.md", "records/06-support-thread.md", "records/07-approver-queue.md", "records/08-policy-excerpt.md"],
-    "required_phrases": ["## Current state", "## Verified facts", "## Next action", "## Uncertainties", "finance review", "OR-1842", "$148.20", "2026-08-12", "R-77", "No payment has been issued", "2026-08-14", "cancelled", "duplicate receipt image", "portal upload error", "one receipt image", "Mira", "confirm which receipt image"],
+    "required_phrases": ["## Current state", "## Verified facts", "## Next action", "## Uncertainties", "finance review", "OR-1842", "$148.20", "2026-08-12", "R-77", "No payment has been issued", "2026-08-14", "cancelled", "duplicate receipt image", "portal upload error", "Mira", "confirm which receipt image"],
+    "required_any_phrases": [["one receipt image", "which receipt image remains", "which receipt image is retained"]],
     "uncertainty_phrase": "duplicate receipt"
   }
 }

@@ -25,7 +25,7 @@ class ContextLengthTest(unittest.TestCase):
 
     def test_oracle_requires_ordered_reads_and_complete_handoff(self) -> None:
         task = TaskManifest.read(ROOT / "fixtures" / "context-length-case-handoff.json")
-        output = "\n".join(task.oracle["required_phrases"]) + "\n"
+        output = "\n".join(task.oracle["required_phrases"]) + "\nwhich receipt image remains\n"
         messages = [{"tool_calls": [{"name": "glob", "args": {}}]}]
         messages += [{"tool_calls": [{"name": "read_file", "args": {"file_path": path}}]} for path in task.oracle["required_reads"]]
         messages += [{"tool_calls": [{"name": "write_file", "args": {"file_path": task.oracle["output_path"]}}], "usage_metadata": {"input_tokens": 1234}}]
@@ -44,7 +44,7 @@ class ContextLengthTest(unittest.TestCase):
                 shutil.copytree(ROOT / directory, root / directory)
             bundle = seal(root, source_commit="a" * 40, assist_revision="b" * 40)
             self.assertEqual({trial.condition for trial in bundle.schedule}, {"C-low", "C-medium", "C-high"})
-            self.assertEqual(bundle.registration["randomization_seed"], 20260826)
+            self.assertEqual(bundle.registration["randomization_seed"], 20260827)
             self.assertTrue((root / "experiments" / "context-length-dev-v1" / "bundle.json").exists())
 
     def test_cli_default_root_is_repository_root(self) -> None:
