@@ -32,6 +32,10 @@ class ContextLengthTest(unittest.TestCase):
         passed, _, tokens = _score(task, {"files": task.initial_files | {task.oracle["output_path"]: output}, "messages": messages})
         self.assertTrue(passed)
         self.assertEqual(tokens, 1234)
+        serialized = [{"tool_calls": [{"name": "list_files", "arguments": {}}]}]
+        serialized += [{"tool_calls": [{"name": "read_file", "arguments": {"file_path": path}}]} for path in task.oracle["required_reads"]]
+        serialized += [{"tool_calls": [{"name": "write_file", "arguments": {"file_path": task.oracle["output_path"]}}], "usage_metadata": {"input_tokens": 1234}}]
+        self.assertTrue(_score(task, {"files": task.initial_files | {task.oracle["output_path"]: output}, "messages": serialized})[0])
         early = messages[:2] + messages[-1:]
         self.assertFalse(_score(task, {"files": task.initial_files | {task.oracle["output_path"]: output}, "messages": early})[0])
         late_inventory = messages[1:] + messages[:1]

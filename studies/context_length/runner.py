@@ -198,9 +198,9 @@ def _score(task: TaskManifest, payload: dict[str, Any]) -> tuple[bool, str, int 
     wrote = False
     for message in messages:
         for call in message.get("tool_calls", []) if isinstance(message, dict) else []:
-            name, args = call.get("name"), call.get("args", {})
+            name, args = call.get("name"), call.get("args", call.get("arguments", {}))
             path = args.get("file_path", args.get("path")) if isinstance(args, dict) else None
-            if name in {"glob", "ls"}:
+            if name in {"glob", "ls", "list_files"}:
                 saw_inventory = True
             if name == "read_file" and isinstance(path, str):
                 if not saw_inventory:
