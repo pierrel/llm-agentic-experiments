@@ -13,16 +13,21 @@ from studies.reach_for_instructions.runner import (
     CONDITION_DELIVERY,
     CONDITIONS,
     CONTEXT_LINES,
+    _capture_provider_requests,
     _filler,
+    _descriptor,
+    _provider_request,
     _fixture_path,
     _output_lock,
     _root_task,
     _schedule,
     _score,
     _system_prompt,
+    _verify_provider_request,
     _worker_command,
     seal,
 )
+from harness.bundle import digest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +115,73 @@ class ReachForInstructionsTest(unittest.TestCase):
         )
         for flag in ("--descriptor", "--result", "--request-started"):
             self.assertTrue(Path(command[command.index(flag) + 1]).is_absolute())
+
+    def test_provider_request_contract_rejects_missing_or_drifted_evidence(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in ("studies", "fixtures", "experiments"):
+                shutil.copytree(ROOT / directory, root / directory)
+            task = _root_task(root)
+            bundle = seal(root, source_commit="a" * 40, assist_revision="b" * 40)
+            descriptor = _descriptor(bundle, bundle.schedule[0], task)
+            request = {
+                "messages": [{"type": "system", "content": descriptor["system_prompt"]}, {"type": "human", "content": descriptor["user_prompt"]}],
+                "invocation_params": {"model": "sealed-model", "temperature": 0.1, "max_tokens": 1200, "tools": [{"type": "function", "function": {"name": "load_skill", "parameters": {"type": "object"}}}]},
+            }
+            descriptor = descriptor | {"provider_request_sha256": digest(request)}
+            valid = {
+                "provider_requests": [request],
+                "expected_provider_request": request,
+                "provider_request_error": None,
+                "fixture_sha256": descriptor["fixture_sha256"],
+            }
+            self.assertIsNone(_verify_provider_request(descriptor, valid))
+            self.assertEqual(_verify_provider_request(descriptor, valid | {"provider_requests": []}), "provider request capture is missing")
+            self.assertIn("differs", _verify_provider_request(descriptor, valid | {"provider_requests": [request | {"messages": []}]}))
+            altered = request | {"invocation_params": request["invocation_params"] | {"temperature": 0.2}}
+            self.assertIn("sealed digest", _verify_provider_request(descriptor, valid | {"provider_requests": [altered], "expected_provider_request": altered}))
+            self.assertIn("fixture", _verify_provider_request(descriptor, valid | {"fixture_sha256": "wrong"}))
+
+    def test_provider_request_serializes_model_messages(self) -> None:
+        class Message:
+            def __init__(self, role: str, content: str) -> None:
+                self.role, self.content = role, content
+
+            def model_dump(self, **_: object) -> dict[str, str]:
+                return {"type": self.role, "content": self.content}
+
+        class Model:
+            def _get_invocation_params(self, **kwargs: object) -> dict[str, object]:
+                return kwargs
+
+        request = _provider_request(Model(), [Message("system", "S"), Message("human", "U")], None, {"tools": []})
+        self.assertEqual(request["messages"], [{"type": "system", "content": "S"}, {"type": "human", "content": "U"}])
+        self.assertEqual(request["invocation_params"], {"stop": None, "tools": []})
+        with self.assertRaisesRegex(ValueError, "messages"):
+            _provider_request(Model(), "not-a-list", None, {})
+
+    def test_provider_boundary_capture_records_and_restores_the_model(self) -> None:
+        class Message:
+            def model_dump(self, **_: object) -> dict[str, str]:
+                return {"type": "human", "content": "U"}
+
+        class Model:
+            def _get_invocation_params(self, **kwargs: object) -> dict[str, object]:
+                return kwargs
+
+            def _generate(self, messages: list[Message], **_: object) -> str:
+                return "provider response"
+
+        with TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "request-started"
+            model, messages = Model(), [Message()]
+            expected = _provider_request(model, messages, None, {})
+            with _capture_provider_requests(model, marker, expected) as capture:
+                self.assertEqual(model._generate(messages), "provider response")
+            self.assertEqual(capture.requests, [expected])
+            self.assertIsNone(capture.error)
+            self.assertTrue(marker.exists())
+            self.assertEqual(model._generate(messages), "provider response")
 
 
 if __name__ == "__main__":

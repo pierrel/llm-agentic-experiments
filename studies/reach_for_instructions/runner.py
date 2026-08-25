@@ -11,9 +11,11 @@ import os
 from pathlib import Path
 import random
 import re
+import signal
 import stat
 import subprocess
 from tempfile import TemporaryDirectory
+from types import MethodType
 from typing import Any
 
 from harness.archive import archive_scripted_run
@@ -24,8 +26,9 @@ from harness.runner import RunArtifacts, _artifact_digests, _valid_trace, _write
 from harness.schedule import blocked_schedule
 
 
-STUDY = "reach-for-instructions-dev-v6"
+STUDY = "reach-for-instructions-validation-v7"
 FIXTURE = "reach-for-instructions-reimbursement-handoff-v5.json"
+RENDERED_REQUEST_DIGESTS = "rendered-request-digests.json"
 WEIGHTS_SHA256 = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
 CONDITION_DELIVERY = {"G01": "handed", "G02": "reached"}
@@ -121,7 +124,7 @@ def _settings(source_commit: str, assist_revision: str) -> dict[str, Any]:
 
 
 def _implementation_sha256(root: Path) -> str:
-    paths = [root / "studies" / "reach_for_instructions" / "runner.py", root / "fixtures" / FIXTURE, root / "experiments" / STUDY / "conditions.json"]
+    paths = [root / "studies" / "reach_for_instructions" / "runner.py", root / "fixtures" / FIXTURE, root / "experiments" / STUDY / "conditions.json", root / "experiments" / STUDY / RENDERED_REQUEST_DIGESTS]
     return digest({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
 
 
@@ -147,6 +150,7 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
     conditions = _conditions(root)
     settings = _settings(source_commit, assist_revision)
     schedule = _schedule()
+    request_digests = _request_digests(root, schedule)
     registration = {
         "kind": "retrieved_vs_handed_guidance_development",
         "hypothesis_seed": "seeds/2026-08-24-reach-for-instructions.md",
@@ -161,6 +165,7 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
         "missingness": "denied admission retries the same trial; every admitted terminal outcome remains",
         "generation_seed": "the local provider does not expose a sealed generation-seed control; trial seeds identify schedule entries only",
         "implementation_sha256": _implementation_sha256(root),
+        "provider_request_sha256": request_digests,
     }
     fixture_sha = digest(task)
     bundle = StudyBundle(
@@ -178,6 +183,18 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
     )
     bundle.write(root / "experiments" / STUDY / "bundle.json")
     return bundle
+
+
+def _request_digests(root: Path, schedule: tuple[Trial, ...]) -> dict[str, str]:
+    """Read only a complete, pre-rendered request-digest map for this schedule."""
+    try:
+        value = json.loads((root / "experiments" / STUDY / RENDERED_REQUEST_DIGESTS).read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("sealed provider-request digests are missing or malformed") from error
+    expected = {trial.sha256 for trial in schedule}
+    if not isinstance(value, dict) or set(value) != expected or not all(isinstance(item, str) and len(item) == 64 for item in value.values()):
+        raise ValueError("sealed provider-request digests do not match the schedule")
+    return value
 
 
 def _definition(root: Path) -> tuple[StudyBundle, dict[str, Any], dict[str, dict[str, str]]]:
@@ -231,6 +248,10 @@ def _descriptor(bundle: StudyBundle, trial: Trial, task: dict[str, Any]) -> dict
         "max_turns": bundle.registration["max_turns"],
         "temperature": task["decoding"]["temperature"],
         "max_tokens": task["decoding"]["max_tokens"],
+        "fixture": task,
+        "fixture_sha256": bundle.fixtures[trial.task],
+        "provider_request_sha256": bundle.registration["provider_request_sha256"][trial.sha256],
+        "tool_schema": bundle.tool_schemas["load_skill"],
         "runtime": {
             "assist_revision": bundle.settings["harness_architecture"]["assist_revision"],
             "deepagents": bundle.settings["harness_architecture"]["deepagents"],
@@ -240,6 +261,111 @@ def _descriptor(bundle: StudyBundle, trial: Trial, task: dict[str, Any]) -> dict
             "reasoning_enabled": bundle.settings["model"]["reasoning"]["enabled"],
         },
     }
+
+
+def _json_value(value: Any) -> Any:
+    """Return a non-secret JSON-shaped provider value or a stable type marker."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): "[redacted]" if str(key).lower() in {"api_key", "authorization", "headers", "password", "secret"} else _json_value(item)
+            for key, item in value.items()
+        }
+    if hasattr(value, "model_dump"):
+        return _json_value(value.model_dump(mode="json"))
+    return {"type": f"{type(value).__module__}.{type(value).__qualname__}"}
+
+
+def _verify_provider_request(descriptor: dict[str, Any], payload: dict[str, Any]) -> str | None:
+    """Reject a post-admission result whose captured provider request drifted."""
+    requests = payload.get("provider_requests")
+    if not isinstance(requests, list) or not requests:
+        return "provider request capture is missing"
+    expected = payload.get("expected_provider_request")
+    if not isinstance(expected, dict) or requests[0] != expected:
+        return "captured first provider request differs from the sealed request"
+    if digest(expected) != descriptor["provider_request_sha256"]:
+        return "worker rendered provider request differs from the sealed digest"
+    if payload.get("provider_request_error") is not None:
+        return "provider request capture reported a contract error"
+    if payload.get("fixture_sha256") != descriptor["fixture_sha256"]:
+        return "worker fixture identity differs from the sealed request"
+    return None
+
+
+def _provider_request(model: Any, messages: list[Any], stop: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Capture the exact request arguments at ChatOpenAI's provider boundary."""
+    if not isinstance(messages, list):
+        raise ValueError("provider request messages must be a list")
+    return {
+        "messages": [_message_payload(message) for message in messages],
+        "invocation_params": _json_value(model._get_invocation_params(stop=stop, **kwargs)),
+    }
+
+
+def _rendered_provider_request(*, system_prompt: str, user_prompt: str, files: dict[str, str], skill_name: str, skill_body: str, temperature: float, max_tokens: int) -> dict[str, Any]:
+    """Render Deep Agents' first post-middleware provider request without calling it."""
+    from assist.model_manager import select_assistant_model
+    from deepagents import create_deep_agent
+    from deepagents.backends import FilesystemBackend
+    from deepagents.middleware.filesystem import FilesystemPermission
+    from langchain_core.tools import tool
+
+    class Rendered(Exception):
+        pass
+
+    @tool("load_skill")
+    def load_skill(name: str) -> str:
+        """Load a listed procedural guide by exact name."""
+        return skill_body if name == skill_name else "No guide exists under that name."
+
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        for relative, text in files.items():
+            path = _fixture_path(root, relative)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        model = select_assistant_model(temperature)
+        model.max_tokens = max_tokens
+        agent = create_deep_agent(model=model, backend=FilesystemBackend(root_dir=str(root), virtual_mode=True), tools=[load_skill], subagents=[], system_prompt=system_prompt, permissions=[FilesystemPermission(operations=["read", "write"], paths=["/**"])])
+        captured: dict[str, Any] = {}
+        original = model._generate
+
+        def render(self: Any, messages: list[Any], stop: Any = None, run_manager: Any = None, **kwargs: Any) -> Any:
+            captured.update(_provider_request(self, messages, stop, kwargs))
+            raise Rendered()
+
+        object.__setattr__(model, "_generate", MethodType(render, model))
+        try:
+            agent.invoke({"messages": [{"role": "user", "content": user_prompt}]})
+        except Rendered:
+            pass
+        finally:
+            object.__setattr__(model, "_generate", original)
+    if set(captured) != {"messages", "invocation_params"}:
+        raise ValueError("Deep Agents did not render a provider request")
+    return captured
+
+
+def render_request_digests(root: Path) -> None:
+    """Render every first request locally and store only its pre-seal digest."""
+    task = _root_task(root)
+    values = {}
+    for trial in _schedule():
+        request = _rendered_provider_request(system_prompt=_system_prompt(CONDITION_DELIVERY[trial.condition], CONTEXT_LINES[trial.task]), user_prompt=task["user_prompt"], files=task["initial_files"], skill_name=SKILL_NAME, skill_body=PROCEDURE, temperature=task["decoding"]["temperature"], max_tokens=task["decoding"]["max_tokens"])
+        values[trial.sha256] = digest(request)
+    atomic_write(root / "experiments" / STUDY / RENDERED_REQUEST_DIGESTS, canonical_json(values) + b"\n")
+
+
+def _terminate_process_group(process: subprocess.Popen[str], signal_number: int) -> None:
+    """Signal a dedicated worker group; an already-exited group needs no action."""
+    try:
+        os.killpg(process.pid, signal_number)
+    except ProcessLookupError:
+        pass
 
 
 def _first_input_tokens(messages: list[dict[str, Any]]) -> int | None:
@@ -413,9 +539,22 @@ def run(root: Path, output: Path, *, workspace_root: Path, assist_source: Path, 
             descriptor, result, marker = output / f".{trial.sha256}.descriptor.json", output / f".{trial.sha256}.result.json", output / f".{trial.sha256}.request-started"
             atomic_write(descriptor, canonical_json(_descriptor(bundle, trial, task)) + b"\n")
             attempt = len([record for record in admissions.read_verified() if record["trial_sha256"] == trial.sha256]) + 1
+            process = subprocess.Popen(
+                _worker_command(root, workspace_root, assist_source, assist_python, descriptor, result, marker),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
             try:
-                process = subprocess.run(_worker_command(root, workspace_root, assist_source, assist_python, descriptor, result, marker), text=True, capture_output=True, timeout=bundle.settings["model"]["timeout_seconds"])
+                stdout, stderr = process.communicate(timeout=bundle.settings["model"]["timeout_seconds"])
             except subprocess.TimeoutExpired:
+                _terminate_process_group(process, signal.SIGTERM)
+                try:
+                    stdout, stderr = process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    _terminate_process_group(process, signal.SIGKILL)
+                    stdout, stderr = process.communicate()
                 if not marker.exists():
                     gate.record(AdmissionAttempt(trial, False, attempt, "worker timed out before model request"))
                     return RunArtifacts(bundle_path, admissions.path, outcomes.path, output / "report.json", traces)
@@ -423,7 +562,7 @@ def run(root: Path, output: Path, *, workspace_root: Path, assist_source: Path, 
                 _write_trace(traces / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "timeout": True, "trace": []})
                 outcomes.append(TrialOutcome(trial, "timeout", True, False, "sealed worker timeout"))
                 continue
-            detail = (process.stderr or process.stdout or "").strip().replace("\n", " ")[-2000:]
+            detail = (stderr or stdout or "").strip().replace("\n", " ")[-2000:]
             if process.returncode and not marker.exists():
                 gate.record(AdmissionAttempt(trial, False, attempt, detail or "worker failed before model invocation"))
                 return RunArtifacts(bundle_path, admissions.path, outcomes.path, output / "report.json", traces)
@@ -432,15 +571,20 @@ def run(root: Path, output: Path, *, workspace_root: Path, assist_source: Path, 
                 _write_trace(traces / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "worker_error": detail, "trace": []})
                 outcomes.append(TrialOutcome(trial, "provider_error", True, False, detail or "worker failed"))
                 continue
+            contract_error = None
             try:
                 payload = json.loads(result.read_text())
                 if payload.get("bundle_sha256") != bundle.sha256 or payload.get("trial_sha256") != trial.sha256:
                     raise ValueError("worker result identity mismatch")
-                score = _score(task, payload)
+                contract_error = _verify_provider_request(json.loads(descriptor.read_text()), payload)
+                score = TrialScore(False, contract_error, None, False) if contract_error else _score(task, payload)
             except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
-                payload, score = {"messages": [], "files": {}}, TrialScore(False, f"malformed worker result: {error}", None, False)
+                contract_error = f"malformed worker result: {error}"
+                payload, score = {"messages": [], "files": {}}, TrialScore(False, contract_error, None, False)
             _write_trace(traces / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "provider_requests": payload.get("provider_requests", []), "trace": payload.get("messages", []), "result": {"files": payload.get("files", {}), "first_prompt_tokens": score.first_input_tokens, "skill_loaded_before_first_read": score.skill_loaded_before_first_read}})
-            outcomes.append(TrialOutcome(trial, "pass" if score.passed else "artifact_failure", marker.exists(), score.passed, score.detail))
+            outcomes.append(TrialOutcome(trial, "pass" if score.passed else ("provider_error" if contract_error else "artifact_failure"), marker.exists(), score.passed, score.detail))
+            if contract_error:
+                return RunArtifacts(bundle_path, admissions.path, outcomes.path, output / "report.json", traces)
         report = output / "report.json"
         write_static_report(bundle, outcomes, report)
         metadata = []
@@ -497,35 +641,54 @@ def _verify_runtime(expected: dict[str, Any], select_assistant_model: Any) -> No
         raise ValueError("Assist source differs from sealed runtime")
 
 
-def _request_capture_callback(path: Path) -> Any:
-    """Mark actual provider entry and retain the provider-facing request objects."""
-    from langchain_core.callbacks import BaseCallbackHandler
-    class Capture(BaseCallbackHandler):
+@contextmanager
+def _capture_provider_requests(model: Any, path: Path, expected: dict[str, Any]):
+    """Capture actual ChatOpenAI provider calls and restore the model afterward."""
+    class Capture:
         def __init__(self) -> None:
             self.requests: list[dict[str, Any]] = []
+            self.error: str | None = None
 
-        def on_llm_start(self, *args: Any, **kwargs: Any) -> None:
-            atomic_write(path, b"model-request-started\n")
+    capture = Capture()
+    original = model._generate
 
-        def on_chat_model_start(self, *args: Any, **kwargs: Any) -> None:
-            atomic_write(path, b"model-request-started\n")
-            messages = args[1] if len(args) > 1 else kwargs.get("messages")
-            if not isinstance(messages, list):
-                raise ValueError("provider callback did not expose chat messages")
-            self.requests.append({"messages": [_message_payload(message) for message in messages]})
-    return Capture()
+    def capture_generate(self: Any, messages: list[Any], stop: Any = None, run_manager: Any = None, **kwargs: Any) -> Any:
+        atomic_write(path, b"model-request-started\n")
+        try:
+            request = _provider_request(self, messages, stop, kwargs)
+        except (TypeError, ValueError) as error:
+            capture.error = str(error)
+        else:
+            capture.requests.append(request)
+            if len(capture.requests) == 1 and request != expected:
+                capture.error = "first provider request differs from the sealed request"
+        return original(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    object.__setattr__(model, "_generate", MethodType(capture_generate, model))
+    try:
+        yield capture
+    finally:
+        object.__setattr__(model, "_generate", original)
 
 
 def run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
     """Run one fresh sealed Deep Agents episode after the parent entered admission."""
     descriptor = json.loads(descriptor_path.read_text())
-    required = {"bundle_sha256", "trial_sha256", "system_prompt", "user_prompt", "files", "skill_name", "skill_body", "max_turns", "temperature", "max_tokens", "runtime"}
+    required = {"bundle_sha256", "trial_sha256", "system_prompt", "user_prompt", "files", "skill_name", "skill_body", "max_turns", "temperature", "max_tokens", "fixture", "fixture_sha256", "provider_request_sha256", "tool_schema", "runtime"}
     if not isinstance(descriptor, dict) or set(descriptor) != required:
         raise ValueError("worker descriptor is invalid")
     if not all(isinstance(descriptor[name], str) and descriptor[name] for name in ("bundle_sha256", "trial_sha256", "system_prompt", "user_prompt", "skill_name", "skill_body")):
         raise ValueError("worker descriptor text is invalid")
     if not isinstance(descriptor["files"], dict) or not all(isinstance(path, str) and isinstance(text, str) for path, text in descriptor["files"].items()):
         raise ValueError("worker descriptor files are invalid")
+    if not isinstance(descriptor["fixture_sha256"], str) or not isinstance(descriptor["provider_request_sha256"], str) or not isinstance(descriptor["tool_schema"], dict):
+        raise ValueError("worker descriptor fidelity contract is invalid")
+    if not isinstance(descriptor["fixture"], dict) or digest(descriptor["fixture"]) != descriptor["fixture_sha256"]:
+        raise ValueError("worker fixture digest differs from the sealed request")
+    if descriptor["fixture"].get("user_prompt") != descriptor["user_prompt"] or descriptor["fixture"].get("initial_files") != descriptor["files"]:
+        raise ValueError("worker fixture contents differ from the sealed request")
+    if descriptor["fixture"].get("decoding") != {"temperature": descriptor["temperature"], "max_tokens": descriptor["max_tokens"]}:
+        raise ValueError("worker fixture decoding differs from the sealed request")
     if not isinstance(descriptor["max_turns"], int) or descriptor["max_turns"] < 1 or not isinstance(descriptor["max_tokens"], int) or descriptor["max_tokens"] < 1:
         raise ValueError("worker limits are invalid")
     from assist.model_manager import select_assistant_model
@@ -554,15 +717,18 @@ def run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
             raise ValueError("reasoning configuration differs from sealed configuration")
         model.max_tokens = descriptor["max_tokens"]
         agent = create_deep_agent(model=model, backend=FilesystemBackend(root_dir=str(root), virtual_mode=True), tools=[load_skill], subagents=[], system_prompt=descriptor["system_prompt"], permissions=[FilesystemPermission(operations=["read", "write"], paths=["/**"])])
-        capture = _request_capture_callback(marker)
-        response = agent.invoke({"messages": [{"role": "user", "content": descriptor["user_prompt"]}]}, {"recursion_limit": descriptor["max_turns"], "callbacks": [capture]})
-        payload = {"bundle_sha256": descriptor["bundle_sha256"], "trial_sha256": descriptor["trial_sha256"], "messages": [_message_payload(message) for message in response["messages"]], "provider_requests": capture.requests, "files": {path.relative_to(root).as_posix(): path.read_text() for path in root.rglob("*") if path.is_file()}}
+        expected_request = _rendered_provider_request(system_prompt=descriptor["system_prompt"], user_prompt=descriptor["user_prompt"], files=descriptor["files"], skill_name=descriptor["skill_name"], skill_body=descriptor["skill_body"], temperature=float(descriptor["temperature"]), max_tokens=descriptor["max_tokens"])
+        if digest(expected_request) != descriptor["provider_request_sha256"]:
+            raise ValueError("post-middleware provider request differs from the sealed request")
+        with _capture_provider_requests(model, marker, expected_request) as capture:
+            response = agent.invoke({"messages": [{"role": "user", "content": descriptor["user_prompt"]}]}, {"recursion_limit": descriptor["max_turns"]})
+        payload = {"bundle_sha256": descriptor["bundle_sha256"], "trial_sha256": descriptor["trial_sha256"], "fixture_sha256": descriptor["fixture_sha256"], "expected_provider_request": expected_request, "provider_request_error": capture.error, "messages": [_message_payload(message) for message in response["messages"]], "provider_requests": capture.requests, "files": {path.relative_to(root).as_posix(): path.read_text() for path in root.rglob("*") if path.is_file()}}
         atomic_write(result_path, canonical_json(payload) + b"\n")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("seal", "run", "archive", "worker"))
+    parser.add_argument("command", choices=("render", "seal", "run", "archive", "worker"))
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output", type=Path)
     parser.add_argument("--archive", type=Path)
@@ -575,7 +741,9 @@ def main() -> None:
     parser.add_argument("--result", type=Path)
     parser.add_argument("--request-started", type=Path)
     args = parser.parse_args()
-    if args.command == "seal":
+    if args.command == "render":
+        render_request_digests(args.root)
+    elif args.command == "seal":
         if not args.source_commit or not args.assist_revision:
             raise SystemExit("seal requires --source-commit and --assist-revision")
         seal(args.root, source_commit=args.source_commit, assist_revision=args.assist_revision)
