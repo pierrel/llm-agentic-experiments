@@ -24,7 +24,7 @@ from harness.runner import RunArtifacts, _artifact_digests, _valid_trace, _write
 from harness.schedule import blocked_schedule
 
 
-STUDY = "reach-for-instructions-dev-v5"
+STUDY = "reach-for-instructions-dev-v6"
 FIXTURE = "reach-for-instructions-reimbursement-handoff-v5.json"
 WEIGHTS_SHA256 = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
@@ -275,7 +275,7 @@ def _payment_not_issued(value: object) -> bool:
     return (
         "not issued" in normalized
         or ("no payment" in normalized and "issued" in normalized)
-        or normalized.strip() in {"not_paid", "no_payment_issued"}
+        or normalized.strip() in {"not_paid", "not_issued", "no_payment_issued"}
     )
 
 

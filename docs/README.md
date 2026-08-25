@@ -25,6 +25,7 @@ translates recurring technical terms.
 | [0021 Reach-for-instructions v3 design review](0021-reach-for-instructions-v3-design-review.md) | Re-review of the pre-admission private-output creation correction. |
 | [0022 Reach-for-instructions v4 design review](0022-reach-for-instructions-v4-design-review.md) | Re-review of the pre-admission absolute-artifact-path correction. |
 | [0023 Reach-for-instructions v5 design review](0023-reach-for-instructions-v5-design-review.md) | Re-review of the result-informed JSON-oracle calibration. |
+| [0024 Reach-for-instructions v6 design review](0024-reach-for-instructions-v6-design-review.md) | Re-review of the final normalized-payment oracle calibration. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 

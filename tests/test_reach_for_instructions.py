@@ -62,7 +62,7 @@ class ReachForInstructionsTest(unittest.TestCase):
         aliases = {key: value for key, value in handoff.items() if key not in {"amount_cents", "uncertainty"}} | {
             "verified_amount_cents": handoff["amount_cents"],
             "remaining_uncertainty": handoff["uncertainty"],
-            "payment_status": "not_paid",
+            "payment_status": "not_issued",
         }
         self.assertTrue(_score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(aliases)}, "messages": messages}).passed)
         early = messages[2:3] + messages[:2] + messages[3:]
