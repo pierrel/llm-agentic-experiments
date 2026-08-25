@@ -24,7 +24,7 @@ from harness.runner import RunArtifacts, _artifact_digests, _valid_trace, _write
 from harness.schedule import blocked_schedule
 
 
-STUDY = "reach-for-instructions-dev-v2"
+STUDY = "reach-for-instructions-dev-v3"
 WEIGHTS_SHA256 = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
 CONDITION_DELIVERY = {"G01": "handed", "G02": "reached"}
@@ -334,7 +334,10 @@ def _score(task: dict[str, Any], payload: dict[str, Any]) -> TrialScore:
 
 @contextmanager
 def _output_lock(output: Path):
-    output.mkdir(parents=True, exist_ok=True)
+    try:
+        output.mkdir(parents=True, mode=0o700)
+    except FileExistsError:
+        pass
     if output.is_symlink() or not output.is_dir():
         raise ValueError("run output must be a real directory")
     if stat.S_IMODE(output.stat().st_mode) != 0o700:

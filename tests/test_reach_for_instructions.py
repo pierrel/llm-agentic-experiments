@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import stat
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -14,6 +15,7 @@ from studies.reach_for_instructions.runner import (
     CONTEXT_LINES,
     _filler,
     _fixture_path,
+    _output_lock,
     _root_task,
     _schedule,
     _score,
@@ -81,6 +83,18 @@ class ReachForInstructionsTest(unittest.TestCase):
             _fixture_path(root, "../escape")
         with self.assertRaises(ValueError):
             _fixture_path(root, "/etc/passwd")
+
+    def test_new_raw_output_is_private_and_existing_public_output_is_rejected(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "new-output"
+            with _output_lock(output):
+                self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o700)
+            public = Path(temporary) / "public-output"
+            public.mkdir(mode=0o755)
+            public.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "private"):
+                with _output_lock(public):
+                    pass
 
 
 if __name__ == "__main__":
