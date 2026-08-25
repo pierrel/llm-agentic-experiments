@@ -59,6 +59,12 @@ class ReachForInstructionsTest(unittest.TestCase):
         self.assertTrue(score.passed)
         self.assertTrue(score.skill_loaded_before_first_read)
         self.assertEqual(score.first_input_tokens, 1234)
+        aliases = {key: value for key, value in handoff.items() if key not in {"amount_cents", "uncertainty"}} | {
+            "verified_amount_cents": handoff["amount_cents"],
+            "remaining_uncertainty": handoff["uncertainty"],
+            "payment_status": "not_paid",
+        }
+        self.assertTrue(_score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(aliases)}, "messages": messages}).passed)
         early = messages[2:3] + messages[:2] + messages[3:]
         self.assertFalse(_score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(handoff)}, "messages": early}).passed)
 

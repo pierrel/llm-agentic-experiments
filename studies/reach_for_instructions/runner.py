@@ -24,7 +24,8 @@ from harness.runner import RunArtifacts, _artifact_digests, _valid_trace, _write
 from harness.schedule import blocked_schedule
 
 
-STUDY = "reach-for-instructions-dev-v4"
+STUDY = "reach-for-instructions-dev-v5"
+FIXTURE = "reach-for-instructions-reimbursement-handoff-v5.json"
 WEIGHTS_SHA256 = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
 CONDITION_DELIVERY = {"G01": "handed", "G02": "reached"}
@@ -52,7 +53,7 @@ class TrialScore:
 
 
 def _root_task(root: Path) -> dict[str, Any]:
-    value = json.loads((root / "fixtures" / "reach-for-instructions-reimbursement-handoff.json").read_text())
+    value = json.loads((root / "fixtures" / FIXTURE).read_text())
     required = {"task_id", "user_prompt", "initial_files", "oracle", "decoding"}
     if not isinstance(value, dict) or set(value) != required:
         raise ValueError("reach-for-instructions fixture shape is invalid")
@@ -120,7 +121,7 @@ def _settings(source_commit: str, assist_revision: str) -> dict[str, Any]:
 
 
 def _implementation_sha256(root: Path) -> str:
-    paths = [root / "studies" / "reach_for_instructions" / "runner.py", root / "fixtures" / "reach-for-instructions-reimbursement-handoff.json", root / "experiments" / STUDY / "conditions.json"]
+    paths = [root / "studies" / "reach_for_instructions" / "runner.py", root / "fixtures" / FIXTURE, root / "experiments" / STUDY / "conditions.json"]
     return digest({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
 
 
@@ -271,7 +272,11 @@ def _payment_not_issued(value: object) -> bool:
     if not isinstance(value, str):
         return False
     normalized = value.lower()
-    return "not issued" in normalized or ("no payment" in normalized and "issued" in normalized)
+    return (
+        "not issued" in normalized
+        or ("no payment" in normalized and "issued" in normalized)
+        or normalized.strip() in {"not_paid", "no_payment_issued"}
+    )
 
 
 def _score(task: dict[str, Any], payload: dict[str, Any]) -> TrialScore:
@@ -289,17 +294,20 @@ def _score(task: dict[str, Any], payload: dict[str, Any]) -> TrialScore:
         handoff = json.loads(files[outputs[0]])
     except (TypeError, json.JSONDecodeError):
         return TrialScore(False, "handoff is not valid JSON", first_tokens, False)
-    if not isinstance(handoff, dict) or not set(task["oracle"]["required_keys"]).issubset(handoff):
+    required = set(task["oracle"]["required_keys"])
+    if not isinstance(handoff, dict) or not required.issubset(handoff):
         return TrialScore(False, "handoff lacks required structured fields", first_tokens, False)
     expected = task["oracle"]["expected"]
+    amount = handoff.get("amount_cents", handoff.get("verified_amount_cents"))
+    uncertainty = handoff.get("uncertainty", handoff.get("remaining_uncertainty"))
     semantic_checks = (
         handoff.get("case_id") == expected["case_id"],
-        _amount_cents(handoff.get("amount_cents")) == expected["amount_cents"],
+        _amount_cents(amount) == expected["amount_cents"],
         handoff.get("receipt_id") == expected["receipt_id"],
         _payment_not_issued(handoff.get("payment_status")),
         handoff.get("next_owner") == expected["next_owner"],
         _text_contains(handoff.get("next_action"), "select", "receipt") and _text_contains(handoff.get("next_action"), "approve", "return"),
-        _text_contains(handoff.get("uncertainty"), "receipt", "image") and (_text_contains(handoff.get("uncertainty"), "retain") or _text_contains(handoff.get("uncertainty"), "select")),
+        _text_contains(uncertainty, "receipt", "image") and (_text_contains(uncertainty, "retain") or _text_contains(uncertainty, "select")),
     )
     if not all(semantic_checks):
         return TrialScore(False, "handoff has an unsupported or incomplete fact", first_tokens, False)
