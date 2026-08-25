@@ -19,7 +19,7 @@ from harness.report import write_static_report
 from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _valid_trace, _write_trace
 
 
-STUDY = "context-length-dev-v1-r2"
+STUDY = "context-length-dev-v1-r3"
 MODEL_WEIGHTS = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 
 
@@ -105,7 +105,7 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
         "kind": "context_length_development",
         "hypothesis_seed": "seeds/2026-08-24-context-length-instruction-following.md",
         "source_commit": source_commit,
-        "registration_tag": "context-length-dev-v1-r2",
+        "registration_tag": "context-length-dev-v1-r3",
         "max_turns": 20,
         "primary_outcome": "procedure-plus-artifact case-handoff success",
         "analysis": "compare all scheduled reason-coded outcomes and provider-reported first-request input tokens",

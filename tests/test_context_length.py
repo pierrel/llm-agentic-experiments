@@ -9,6 +9,7 @@ import unittest
 
 from harness.manifests import TaskManifest
 from studies.context_length.runner import _filler, _score, main, seal
+from studies.context_length.worker import _fixture_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +56,14 @@ class ContextLengthTest(unittest.TestCase):
         ) as sealed:
             main()
         self.assertEqual(sealed.call_args.args[0], ROOT)
+
+    def test_fixture_path_is_relative_and_rejects_escape(self) -> None:
+        root = Path("/tmp/context-length-root")
+        self.assertEqual(_fixture_path(root, "records/item.md"), root / "records/item.md")
+        with self.assertRaises(ValueError):
+            _fixture_path(root, "/etc/passwd")
+        with self.assertRaises(ValueError):
+            _fixture_path(root, "../escape")
 
 
 if __name__ == "__main__":

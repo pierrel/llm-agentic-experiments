@@ -38,9 +38,7 @@ def run_descriptor(descriptor_path: Path, result_path: Path, request_started_pat
     with TemporaryDirectory() as temporary:
         root = Path(temporary)
         for relative, content in descriptor["files"].items():
-            path = root / relative
-            if path.is_absolute() or ".." in path.parts or not relative:
-                raise ValueError("context-length worker file path escapes fixture")
+            path = _fixture_path(root, relative)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content)
         model = select_assistant_model(float(descriptor["temperature"]))
@@ -79,6 +77,14 @@ def _message_payload(message: Any) -> dict[str, Any]:
         raise ValueError("context-length message payload is invalid")
     json.dumps(value, sort_keys=True, ensure_ascii=True, allow_nan=False)
     return value
+
+
+def _fixture_path(root: Path, relative: str) -> Path:
+    """Resolve one non-empty fixture-relative path without allowing escape."""
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts or not relative:
+        raise ValueError("context-length worker file path escapes fixture")
+    return root / candidate
 
 
 def _verify_runtime(expected: Any, select_assistant_model: Any) -> None:
