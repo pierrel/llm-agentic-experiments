@@ -275,6 +275,9 @@ def run(root: Path, output: Path, *, workspace_root: Path, assist_source: Path, 
             try:
                 process = subprocess.run(_worker_command(root, workspace_root, assist_source, assist_python, descriptor, result_path, marker), text=True, capture_output=True, timeout=bundle.settings["model"]["timeout_seconds"])
             except subprocess.TimeoutExpired:
+                if not marker.exists():
+                    gate.record(AdmissionAttempt(trial, False, attempt, "worker timed out before model request"))
+                    return RunArtifacts(bundle_path, admissions.path, outcomes.path, output / "report.json", trace_dir)
                 gate.record(AdmissionAttempt(trial, True, attempt, "worker entered shared admission"))
                 _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "timeout": True, "trace": []})
                 outcomes.append(TrialOutcome(trial, "timeout", marker.exists(), False, "sealed worker timeout"))

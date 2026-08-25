@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from harness.manifests import TaskManifest
-from studies.context_length.runner import _filler, _score, main, seal
+from studies.context_length.runner import STUDY, _filler, _score, main, seal
 from studies.context_length.worker import _fixture_path
 
 
@@ -45,7 +45,7 @@ class ContextLengthTest(unittest.TestCase):
             bundle = seal(root, source_commit="a" * 40, assist_revision="b" * 40)
             self.assertEqual({trial.condition for trial in bundle.schedule}, {"C-low", "C-medium", "C-high"})
             self.assertEqual(bundle.registration["randomization_seed"], 20260827)
-            self.assertTrue((root / "experiments" / "context-length-dev-v1" / "bundle.json").exists())
+            self.assertTrue((root / "experiments" / STUDY / "bundle.json").exists())
 
     def test_cli_default_root_is_repository_root(self) -> None:
         import sys
