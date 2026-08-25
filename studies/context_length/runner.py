@@ -19,7 +19,7 @@ from harness.report import write_static_report
 from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _valid_trace, _write_trace
 
 
-STUDY = "context-length-dev-v1-r3"
+STUDY = "context-length-dev-v2"
 MODEL_WEIGHTS = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 
 
@@ -59,7 +59,7 @@ def _filler(lines: int) -> str:
 
 
 def _task(root: Path) -> TaskManifest:
-    return TaskManifest.read(root / "fixtures" / "context-length-case-handoff.json")
+    return TaskManifest.read(root / "fixtures" / "context-length-complex-case-handoff.json")
 
 
 def _settings(source_commit: str, assist_revision: str) -> dict[str, Any]:
@@ -99,18 +99,18 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
     conditions = _conditions(root / "experiments" / STUDY / "conditions.json")
     settings = _settings(source_commit, assist_revision)
     order = list(conditions)
-    random.Random(20260825).shuffle(order)
+    random.Random(20260826).shuffle(order)
     schedule = tuple(Trial(task.task_id, 1, condition, 7000 + index) for index, condition in enumerate(order))
     registration = {
         "kind": "context_length_development",
         "hypothesis_seed": "seeds/2026-08-24-context-length-instruction-following.md",
         "source_commit": source_commit,
-        "registration_tag": "context-length-dev-v1-r3",
+        "registration_tag": "context-length-dev-v2",
         "max_turns": 20,
         "primary_outcome": "procedure-plus-artifact case-handoff success",
         "analysis": "compare all scheduled reason-coded outcomes and provider-reported first-request input tokens",
-        "development_series": "v1 runtime-source revision; later versions only after this sealed result",
-        "randomization_seed": 20260825,
+        "development_series": "v2 higher-complexity handoff after the flat v1 screen",
+        "randomization_seed": 20260826,
         "position_balance": "adjust_for_position",
         "missingness": "denied admission retries the same trial; every admitted terminal outcome remains",
         "implementation_sha256": _source_hash(root),

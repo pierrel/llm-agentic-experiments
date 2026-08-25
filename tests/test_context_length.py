@@ -44,7 +44,7 @@ class ContextLengthTest(unittest.TestCase):
                 shutil.copytree(ROOT / directory, root / directory)
             bundle = seal(root, source_commit="a" * 40, assist_revision="b" * 40)
             self.assertEqual({trial.condition for trial in bundle.schedule}, {"C-low", "C-medium", "C-high"})
-            self.assertEqual(bundle.registration["randomization_seed"], 20260825)
+            self.assertEqual(bundle.registration["randomization_seed"], 20260826)
             self.assertTrue((root / "experiments" / "context-length-dev-v1" / "bundle.json").exists())
 
     def test_cli_default_root_is_repository_root(self) -> None:

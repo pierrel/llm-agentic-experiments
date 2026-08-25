@@ -1,0 +1,25 @@
+{
+  "task_id": "oakridge-complex-case-handoff",
+  "system_prompt": "For a case handoff, first inventory the workspace. Read the governing convention and all relevant source records before writing. Reconcile only supported facts, label unresolved conflicts, create one final handoff with the current state, verified facts, next action, and uncertainties, and leave source records unchanged.",
+  "user_prompt": "Please prepare the handoff for the Oakridge reimbursement case. The workspace has the material.",
+  "initial_files": {
+    "CONVENTION.md": "# Case handoff convention\n\nCreate exactly one final handoff at `outgoing/oakridge-reconciliation-handoff.md`. It must have these four headings: `## Current state`, `## Verified facts`, `## Next action`, and `## Uncertainties`. Do not edit source records.\n",
+    "records/01-intake.md": "# Oakridge reimbursement intake\n\nClaim reference: OR-1842. Requested amount: $148.20. The case is waiting for finance review.\n",
+    "records/02-receipt-register.md": "# Receipt register\n\nOn 2026-08-12, receipt R-77 was verified and attached to claim OR-1842 for $148.20.\n",
+    "records/03-payment-ledger.md": "# Payment ledger\n\nNo payment has been issued for OR-1842. A 2026-08-14 draft payment entry was cancelled before release.\n",
+    "records/04-merchant-note.md": "# Merchant note\n\nOakridge submitted a duplicate receipt image. The original is receipt R-77.\n",
+    "records/05-audit-note.md": "# Audit note\n\nAudit requires the claim packet to retain one receipt image only. Finance must record the selection before approval.\n",
+    "records/06-support-thread.md": "# Support thread\n\nThe merchant says the duplicate image was sent after a portal upload error; it does not request a new reimbursement amount.\n",
+    "records/07-approver-queue.md": "# Approver queue\n\nNext action: Finance must confirm which receipt image remains in the claim packet, then approve or return OR-1842. Queue owner: Mira.\n",
+    "records/08-policy-excerpt.md": "# Reimbursement policy excerpt\n\nVerified receipt, exact claim reference, and one retained image are required before finance approval. Cancellation of a draft payment is not payment.\n"
+  },
+  "skills": {},
+  "decoding": {"temperature": 0.1, "max_tokens": 1200},
+  "oracle": {
+    "kind": "case_handoff",
+    "output_path": "outgoing/oakridge-reconciliation-handoff.md",
+    "required_reads": ["CONVENTION.md", "records/01-intake.md", "records/02-receipt-register.md", "records/03-payment-ledger.md", "records/04-merchant-note.md", "records/05-audit-note.md", "records/06-support-thread.md", "records/07-approver-queue.md", "records/08-policy-excerpt.md"],
+    "required_phrases": ["## Current state", "## Verified facts", "## Next action", "## Uncertainties", "finance review", "OR-1842", "$148.20", "2026-08-12", "R-77", "No payment has been issued", "2026-08-14", "cancelled", "duplicate receipt image", "portal upload error", "one receipt image", "Mira", "confirm which receipt image"],
+    "uncertainty_phrase": "duplicate receipt"
+  }
+}
