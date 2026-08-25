@@ -1,0 +1,5 @@
+{
+  "C-low": {"filler_lines": 0},
+  "C-medium": {"filler_lines": 900},
+  "C-high": {"filler_lines": 3600}
+}
