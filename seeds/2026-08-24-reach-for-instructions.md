@@ -15,7 +15,10 @@
   unrelated system context, the treatment will more often complete the
   deterministic primary outcome and follow the required procedure. On simple
   tasks with a small system prompt, there may be little difference or the extra
-  retrieval step may make the treatment worse.
+  retrieval step may make the treatment worse. The relevant claim is therefore
+  a response surface, not one global effect: estimate where the treatment helps,
+  has no detectable effect, or harms as rendered context length, task
+  complexity/length, and available-skill count change.
 - **Boundary:** A gain must not be credited merely to different instruction
   wording, extra tools, changed context length, or a leading user prompt. The
   treatment must load the skill before relying on its procedure; failure to load
@@ -23,8 +26,13 @@
   establish transfer to a different model, skill description, reasoning setting,
   or harness architecture.
 - **Possible experiment:** Register a matched two-condition study with the same
-  natural user tasks and oracle in both arms. Include a deliberately simple
-  small-context task as a negative-control stratum, plus procedure-heavy
-  large-context and obscure-shape strata. Capture rendered prompts, the skill
+  natural user tasks and oracle in both arms. Make rendered context length the
+  first primary quantitative axis, with preregistered token targets and an
+  interaction between guidance condition and actual rendered input tokens. Use
+  a deliberately simple small-context task as a negative-control stratum, plus
+  procedure-heavy large-context and obscure-shape strata. Record task
+  complexity/length and skill-catalog size as quantified design variables even
+  when held fixed; introduce each as a separately powered axis rather than
+  averaging a sparse full factorial. Capture rendered prompts, the skill
   discovery surface, actual skill-load events, tool schemas, and final artifacts
   before scoring procedure compliance and artifact success blind to condition.
