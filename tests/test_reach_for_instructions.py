@@ -20,6 +20,7 @@ from studies.reach_for_instructions.runner import (
     _schedule,
     _score,
     _system_prompt,
+    _worker_command,
     seal,
 )
 
@@ -95,6 +96,14 @@ class ReachForInstructionsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "private"):
                 with _output_lock(public):
                     pass
+
+    def test_worker_artifacts_are_absolute_across_admission_working_directories(self) -> None:
+        command = _worker_command(
+            ROOT, Path("/workspace"), Path("/assist"), Path("/python"),
+            Path("relative/descriptor.json"), Path("relative/result.json"), Path("relative/marker"),
+        )
+        for flag in ("--descriptor", "--result", "--request-started"):
+            self.assertTrue(Path(command[command.index(flag) + 1]).is_absolute())
 
 
 if __name__ == "__main__":

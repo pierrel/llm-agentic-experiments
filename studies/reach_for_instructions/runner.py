@@ -24,7 +24,7 @@ from harness.runner import RunArtifacts, _artifact_digests, _valid_trace, _write
 from harness.schedule import blocked_schedule
 
 
-STUDY = "reach-for-instructions-dev-v3"
+STUDY = "reach-for-instructions-dev-v4"
 WEIGHTS_SHA256 = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
 CONDITION_DELIVERY = {"G01": "handed", "G02": "reached"}
@@ -214,7 +214,7 @@ def _worker_command(root: Path, workspace_root: Path, assist_source: Path, assis
         "sh", "-c", 'set -a; . "$1"; PYTHONPATH="$2"; export PYTHONPATH; shift 2; exec "$@"', "sh",
         str(workspace_root / "assist" / ".deploy.env"), f"{root}:{assist_source}",
         str(assist_python), "-m", "studies.reach_for_instructions.runner", "worker",
-        "--descriptor", str(descriptor), "--result", str(result), "--request-started", str(marker),
+        "--descriptor", str(descriptor.resolve()), "--result", str(result.resolve()), "--request-started", str(marker.resolve()),
     ]
 
 

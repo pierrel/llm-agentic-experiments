@@ -23,6 +23,7 @@ translates recurring technical terms.
 | [0019 Reach-for-instructions v1 design review](0019-reach-for-instructions-v1-design-review.md) | Preregistered minimum review for the retrieved-versus-handed guidance development screen. |
 | [0020 Reach-for-instructions v2 design review](0020-reach-for-instructions-v2-design-review.md) | Re-review of the pre-admission worker-wrapper correction. |
 | [0021 Reach-for-instructions v3 design review](0021-reach-for-instructions-v3-design-review.md) | Re-review of the pre-admission private-output creation correction. |
+| [0022 Reach-for-instructions v4 design review](0022-reach-for-instructions-v4-design-review.md) | Re-review of the pre-admission absolute-artifact-path correction. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
