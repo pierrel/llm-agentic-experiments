@@ -80,3 +80,9 @@ instruction, while a multi-agent workflow would introduce unnecessary routing,
 skill, and scheduling variance. This task needs source inspection, factual
 reconciliation, a constrained write, and honest uncertainty handling, but no
 network, live Assist thread, external data, or qualitative judge.
+
+## First-study feedback checkpoints
+
+This is Pierre's designated high-touch initial study. Before any model trial, he
+reviews the task and oracle, context-length schedule, and registration under the
+project-wide [direction, development, and confirmation process](../README.md#direction-development-and-confirmation).
