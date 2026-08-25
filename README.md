@@ -3,11 +3,6 @@
 A controlled research lab for studying how prompt placement, repetition, and
 progressive guidance affect small models acting as agents.
 
-This is not an Assist release repository. It may borrow a *shape* from Assist:
-an agent loop, filesystem-like state, progressive skill loading, tool calls, and
-specialist-task handoffs. It must not become a hidden fork of Assist or a path
-for shipping unvalidated prompting changes.
-
 The project has two jobs:
 
 1. Run preregistered, contamination-resistant experiments.
@@ -27,14 +22,6 @@ deferred until a registered study and its design reviews are complete.
 
 ## Non-negotiable rules
 
-- Every real model run goes through the shared admission wrapper:
-
-  ```sh
-  /home/pierre/src/agentic/tools/agentic resource run llm -- <bounded command>
-  ```
-
-  No direct local-model or GPU command is permitted. One trial is one bounded
-  admission, so production can regain the slot between trials.
 - A treatment and control differ only in the preregistered factor. Their model,
   decoding settings, tools, fixture, synthetic time, user task, and outcome
   oracle are identical.
@@ -106,8 +93,8 @@ Archive every completed run in `results/<run-id>/`. A result capsule commits the
 sealed bundle and settings, admission/outcome chains and seals, report, and the
 hash inventory for locally retained raw traces. It also contains `learning.md`
 for the observation, evidence, and limits, plus `assist-roadmap-proposal.md`.
-A genuine learning gets a private `larochelle.io/seeds/` blog seed linked to the
-capsule and a proposed Assist roadmap item. These are evidence-preserving
+A genuine learning gets a private blog seed linked to the capsule and a proposed
+Assist roadmap item. These are evidence-preserving
 handoffs, not authorization to change Assist.
 
 ## Local checks
