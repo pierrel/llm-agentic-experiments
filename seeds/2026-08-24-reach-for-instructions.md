@@ -1,6 +1,6 @@
 # Retrieved procedural guidance may beat always-present guidance under context pressure
 
-- **Origin:** Pierre's 2026-08-24 observation from roughly a month of Assist
+- **Origin:** Pierre's 2026-08-24 observation after roughly a month of Assist
   design: an agent may follow a procedure better when it recognizes the task
   shape and loads the relevant skill than when the full procedure is always in
   its system prompt.
