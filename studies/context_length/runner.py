@@ -19,7 +19,7 @@ from harness.report import write_static_report
 from harness.runner import RunArtifacts, _artifact_digests, _exclusive_output_lock, _prepare_output, _valid_trace, _write_trace
 
 
-STUDY = "context-length-dev-v1"
+STUDY = "context-length-dev-v1-r2"
 MODEL_WEIGHTS = "d797b531c527bea28a04fdb326515c43114f798a4fa2a5c1c0e0cffaeaa6fd09"
 
 
@@ -105,11 +105,11 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
         "kind": "context_length_development",
         "hypothesis_seed": "seeds/2026-08-24-context-length-instruction-following.md",
         "source_commit": source_commit,
-        "registration_tag": STUDY,
+        "registration_tag": "context-length-dev-v1-r2",
         "max_turns": 20,
         "primary_outcome": "procedure-plus-artifact case-handoff success",
         "analysis": "compare all scheduled reason-coded outcomes and provider-reported first-request input tokens",
-        "development_series": "v1 low-medium-high; later versions only after this sealed result",
+        "development_series": "v1 runtime-source revision; later versions only after this sealed result",
         "randomization_seed": 20260825,
         "position_balance": "adjust_for_position",
         "missingness": "denied admission retries the same trial; every admitted terminal outcome remains",
@@ -156,12 +156,14 @@ def _definition(root: Path) -> tuple[StudyBundle, TaskManifest, dict[str, Contex
     return bundle, task, conditions
 
 
-def _worker_command(root: Path, workspace_root: Path, assist_python: Path, descriptor: Path, result: Path, marker: Path) -> list[str]:
+def _worker_command(
+    root: Path, workspace_root: Path, assist_source: Path, assist_python: Path, descriptor: Path, result: Path, marker: Path
+) -> list[str]:
     """Build the sole model-capable command, nested beneath the shared gate."""
     return [
         str(workspace_root / "tools" / "agentic"), "resource", "run", "llm", "--",
         "sh", "-c", 'set -a; . "$1"; shift; exec "$@"', "sh",
-        str(workspace_root / "assist" / ".deploy.env"), "env", f"PYTHONPATH={root}",
+        str(workspace_root / "assist" / ".deploy.env"), "env", f"PYTHONPATH={root}:{assist_source}",
         str(assist_python), "-m", "studies.context_length.worker",
         "--descriptor", str(descriptor), "--result", str(result), "--request-started", str(marker),
     ]
@@ -216,7 +218,7 @@ def _first_input_tokens(messages: list[dict[str, Any]]) -> int | None:
     return None
 
 
-def run(root: Path, output: Path, *, workspace_root: Path, assist_python: Path) -> RunArtifacts:
+def run(root: Path, output: Path, *, workspace_root: Path, assist_source: Path, assist_python: Path) -> RunArtifacts:
     """Run each fresh registered episode once, with a separate admission gate."""
     root = root.resolve()
     bundle, task, conditions = _definition(root)
@@ -263,13 +265,13 @@ def run(root: Path, output: Path, *, workspace_root: Path, assist_python: Path) 
             }) + b"\n")
             attempt = len([entry for entry in admissions.read_verified() if entry["trial_sha256"] == trial.sha256]) + 1
             try:
-                process = subprocess.run(_worker_command(root, workspace_root, assist_python, descriptor, result_path, marker), text=True, capture_output=True, timeout=bundle.settings["model"]["timeout_seconds"])
+                process = subprocess.run(_worker_command(root, workspace_root, assist_source, assist_python, descriptor, result_path, marker), text=True, capture_output=True, timeout=bundle.settings["model"]["timeout_seconds"])
             except subprocess.TimeoutExpired:
                 gate.record(AdmissionAttempt(trial, True, attempt, "worker entered shared admission"))
                 _write_trace(trace_dir / f"{trial.sha256}.json", {"trial_sha256": trial.sha256, "timeout": True, "trace": []})
                 outcomes.append(TrialOutcome(trial, "timeout", marker.exists(), False, "sealed worker timeout"))
                 continue
-            detail = (process.stderr or process.stdout or "").strip().replace("\n", " ")[:500]
+            detail = (process.stderr or process.stdout or "").strip().replace("\n", " ")[-2000:]
             if process.returncode and not marker.exists():
                 gate.record(AdmissionAttempt(trial, False, attempt, detail or "worker failed before model invocation"))
                 return RunArtifacts(bundle_path, admissions.path, outcomes.path, output / "report.json", trace_dir)
@@ -363,6 +365,7 @@ def main() -> None:
     parser.add_argument("--source-commit")
     parser.add_argument("--assist-revision")
     parser.add_argument("--workspace-root", type=Path, default=Path("/home/pierre/src/agentic"))
+    parser.add_argument("--assist-source", type=Path)
     parser.add_argument("--assist-python", type=Path, default=Path("/home/pierre/deploy/assist/code/.venv/bin/python"))
     args = parser.parse_args()
     if args.command == "seal":
@@ -370,9 +373,9 @@ def main() -> None:
             raise SystemExit("seal requires --source-commit and --assist-revision")
         seal(args.root, source_commit=args.source_commit, assist_revision=args.assist_revision)
     elif args.command == "run":
-        if args.output is None:
-            raise SystemExit("run requires --output")
-        run(args.root, args.output, workspace_root=args.workspace_root, assist_python=args.assist_python)
+        if args.output is None or args.assist_source is None:
+            raise SystemExit("run requires --output and --assist-source")
+        run(args.root, args.output, workspace_root=args.workspace_root, assist_source=args.assist_source, assist_python=args.assist_python)
     else:
         if args.output is None or args.archive is None:
             raise SystemExit("archive requires --output and --archive")

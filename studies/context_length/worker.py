@@ -95,6 +95,9 @@ def _verify_runtime(expected: Any, select_assistant_model: Any) -> None:
     }:
         raise ValueError("context-length dependency versions differ from the sealed runtime")
     assist_root = Path(inspect.getfile(select_assistant_model)).resolve().parents[1]
+    clean = subprocess.run(["git", "-C", str(assist_root), "status", "--porcelain"], capture_output=True, text=True)
+    if clean.returncode or clean.stdout:
+        raise ValueError("context-length Assist source must be a clean Git worktree")
     revision = subprocess.run(["git", "-C", str(assist_root), "rev-parse", "HEAD"], capture_output=True, text=True)
     if revision.returncode or revision.stdout.strip() != expected["assist_revision"]:
         raise ValueError("context-length Assist revision differs from the sealed runtime")
