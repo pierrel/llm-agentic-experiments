@@ -19,7 +19,9 @@ translates recurring technical terms.
 | [Glossary](glossary.md) | Short plain-language definitions. |
 | [Study registry](study-registry.md) | Index of study versions and their status. |
 | [0004 Initial design review](0004-initial-design-review.md) | Findings and resolutions from the first review panel. |
-| [0005 Current Assist baseline](0005-current-assist-baseline.md) | Verified first real-run model and Deep Agents architecture profile. |
+| [0005 Current Assist baseline](0005-current-assist-baseline.md) | Canonical current-Assist baseline profile, design, changelog, and local-review history. |
+| [Context-length development series](../reports/context-length-development-series.md) | Three registered development variants and their bounded oracle-design learning. |
+| [Context-length development series](../reports/context-length-development-series.md) | Three registered development variants and their bounded oracle-design learning. |
 | [0019 Reach-for-instructions v1 design review](0019-reach-for-instructions-v1-design-review.md) | Preregistered minimum review for the retrieved-versus-handed guidance development screen. |
 | [0020 Reach-for-instructions v2 design review](0020-reach-for-instructions-v2-design-review.md) | Re-review of the pre-admission worker-wrapper correction. |
 | [0021 Reach-for-instructions v3 design review](0021-reach-for-instructions-v3-design-review.md) | Re-review of the pre-admission private-output creation correction. |
