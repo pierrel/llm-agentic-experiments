@@ -1,0 +1,17 @@
+{
+  "task_id": "reimbursement-handoff",
+  "user_prompt": "Please prepare a compact JSON handoff for the Northbridge reimbursement case from the workspace material. Include the case ID, verified amount in cents, receipt ID, payment status, next owner, next action, and the remaining uncertainty.",
+  "initial_files": {
+    "records/intake.md": "Case NB-4817 is awaiting finance review. The requested amount is $214.60.",
+    "records/receipt.md": "Receipt RX-19 was verified for Northbridge reimbursement case NB-4817 at $214.60.",
+    "records/payment.md": "No payment has been issued for NB-4817. A draft payment was cancelled before release.",
+    "records/merchant.md": "Northbridge uploaded a duplicate receipt image after a portal upload error. RX-19 is the original receipt.",
+    "records/queue.md": "Finance owner Imani must select the retained receipt image, then approve or return NB-4817."
+  },
+  "oracle": {
+    "required_keys": ["case_id", "receipt_id", "payment_status", "next_owner", "next_action"],
+    "expected": {"case_id": "NB-4817", "amount_cents": 21460, "receipt_id": "RX-19", "payment_status": "not issued", "next_owner": "Imani", "next_action": "select the retained receipt image, then approve or return", "uncertainty": "which receipt image to retain"},
+    "required_reads": ["records/intake.md", "records/receipt.md", "records/payment.md", "records/merchant.md", "records/queue.md"]
+  },
+  "decoding": {"temperature": 0.1, "max_tokens": 1200}
+}
