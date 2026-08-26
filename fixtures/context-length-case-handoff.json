@@ -1,0 +1,20 @@
+{
+  "task_id": "oakridge-case-handoff",
+  "system_prompt": "For a case handoff, first inventory the workspace. Read the governing convention and all relevant source records before writing. Reconcile only supported facts, label unresolved conflicts, create one final handoff with the current state, verified facts, next action, and uncertainties, and leave source records unchanged.",
+  "user_prompt": "Please prepare the handoff for the Oakridge reimbursement case. The workspace has the material.",
+  "initial_files": {
+    "CONVENTION.md": "# Case handoff convention\n\nCreate exactly one final handoff at `outgoing/oakridge-handoff.md`. It must have these four headings: `## Current state`, `## Verified facts`, `## Next action`, and `## Uncertainties`. Do not edit source records.\n",
+    "records/claim-summary.md": "# Oakridge reimbursement\n\nCurrent state: the reimbursement is waiting for finance review.\nClaim reference: OR-1842.\nRequested amount: $148.20.\n",
+    "records/payment-log.md": "# Payment log\n\nOn 2026-08-12, receipts for $148.20 were verified and attached to claim OR-1842.\nNo payment has been issued.\n",
+    "records/merchant-note.md": "# Merchant note\n\nOakridge submitted a duplicate receipt image. The original receipt is the verified attachment.\nNext action: Finance must confirm which receipt image remains in the claim packet before approving reimbursement.\n"
+  },
+  "skills": {},
+  "decoding": {"temperature": 0.1, "max_tokens": 1200},
+  "oracle": {
+    "kind": "case_handoff",
+    "output_path": "outgoing/oakridge-handoff.md",
+    "required_reads": ["CONVENTION.md", "records/claim-summary.md", "records/payment-log.md", "records/merchant-note.md"],
+    "required_phrases": ["## Current state", "## Verified facts", "## Next action", "## Uncertainties", "finance review", "OR-1842", "$148.20", "2026-08-12", "No payment has been issued", "duplicate receipt image", "confirm which receipt image"],
+    "uncertainty_phrase": "duplicate receipt"
+  }
+}

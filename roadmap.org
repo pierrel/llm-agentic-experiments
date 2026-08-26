@@ -127,3 +127,23 @@ are complete.
 Create a new confirmation registration with a separate task cohort, fixed
 sample plan, and analysis revision.  Report every scheduled episode and retain
 the limits of inference to the pinned model, loop, and tasks.
+
+
+** Context-length instruction-following dose-response
+
+Register the first response-surface study: test whether instruction following
+degrades as rendered context length increases, then estimate how much and over
+which token range for the pinned model and harness. Hold the natural task,
+instruction wording, fixture, tools, decoding, reasoning setting, and architecture
+fixed. Vary only a sealed, semantically non-conflicting context payload, record
+the actual rendered input-token count for every episode, and use fresh episodes
+with a deterministic procedure-plus-artifact oracle.
+
+Use a preregistered coarse grid across the usable rendered-context range. The
+first analysis must distinguish no detectable degradation, gradual degradation,
+and a practically meaningful threshold with uncertainty; it must not collapse the
+grid into a short-versus-long headline. Task complexity/length and skill-catalog
+size are first-class quantified design variables: hold them fixed in this first
+dose-response study, record their values, and add each as a separately powered
+axis in later registrations. This is an experiment proposal, not authorization to
+change Assist.
