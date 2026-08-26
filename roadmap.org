@@ -147,3 +147,16 @@ size are first-class quantified design variables: hold them fixed in this first
 dose-response study, record their values, and add each as a separately powered
 axis in later registrations. This is an experiment proposal, not authorization to
 change Assist.
+
+** Held-out progressive-guidance confirmation
+
+The valid =reach-for-instructions-validation-v7= development screen found 5/9
+complete artifacts for retrieved guidance and 2/9 for always-present guidance,
+but only three episodes occupy each context cell and the response surface is not
+monotonic. Before changing Assist, register one new natural procedural task with
+an independent fixture and a larger per-cell sample. Retain the pinned model,
+reasoning setting, Deep Agents loop, matched catalog and procedure, and
+0/900/3,600-line doses. Require a pre-admission condition-blind oracle
+calibration that accepts known valid alternatives and rejects a known unsupported
+fact. Report every terminal outcome, skill-load timing, provider-request capture,
+and per-cell count.
