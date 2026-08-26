@@ -1,0 +1,17 @@
+{
+  "task_id": "access-transition-handoff",
+  "user_prompt": "Please prepare a compact JSON handoff for the Cedar Loop access-transition case from the workspace material. Include the case ID, verified account ID, access status, next owner, next action, and the remaining uncertainty.",
+  "initial_files": {
+    "records/brief.md": "Case CL-2704 concerns the Cedar Loop contractor access transition. Account CED-118 must be handled by Friday. The removal request has not been executed.",
+    "records/identity.md": "Identity review verified that contractor account CED-118 is the account in scope. Badge B-77 is assigned to that contractor.",
+    "records/approval.md": "Manager Anwar approved removal of CED-118 after the badge handoff is confirmed. No revocation has been recorded.",
+    "records/assets.md": "A relabeling created duplicate asset tag CL-04A beside current tag CL-04. The records do not establish which tag is attached to badge B-77.",
+    "records/queue.md": "Security owner Marisol must confirm the handoff of badge B-77, then revoke access for CED-118."
+  },
+  "oracle": {
+    "required_keys": ["case_id", "account_id", "access_status", "next_owner", "next_action"],
+    "expected": {"case_id": "CL-2704", "account_id": "CED-118", "next_owner": "Marisol"},
+    "required_reads": ["records/brief.md", "records/identity.md", "records/approval.md", "records/assets.md", "records/queue.md"]
+  },
+  "decoding": {"temperature": 0.1, "max_tokens": 1200}
+}
