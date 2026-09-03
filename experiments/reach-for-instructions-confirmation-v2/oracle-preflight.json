@@ -1,0 +1,34 @@
+{
+  "accepted": [
+    {
+      "name": "direct-grounded-form",
+      "handoff": {"case_id": "CL-2704", "account_id": "CED-118", "access_status": "Approved, but access has not been revoked.", "next_owner": "Marisol", "next_action": "Confirm handoff of badge B-77, then revoke access for account CED-118.", "uncertainty": "It remains unclear whether asset tag CL-04 or CL-04A is attached to badge B-77."}
+    },
+    {
+      "name": "equivalent-grounded-form",
+      "handoff": {"case_id": "CL-2704", "verified_account_id": "CED-118", "access_status": "pending revocation after approved badge handoff", "next_owner": "Marisol", "next_action": "First confirm the badge handoff, then revoke the contractor account.", "remaining_uncertainty": "The badge's asset tag is unresolved after the CL-04/CL-04A relabel."}
+    },
+    {
+      "name": "observed-removal-status-and-owner-role",
+      "handoff": {"case_id": "CL-2704", "verified_account_id": "CED-118", "access_status": "approved_for_removal_not_executed", "next_owner": "Marisol (security owner)", "next_action": "Confirm handoff of badge B-77, then revoke access for CED-118", "remaining_uncertainty": "Duplicate asset tags CL-04 and CL-04A exist; records do not establish which tag is attached to badge B-77."}
+    },
+    {
+      "name": "observed-short-owner-role",
+      "handoff": {"case_id": "CL-2704", "verified_account_id": "CED-118", "access_status": "approved for removal, not executed", "next_owner": "Marisol (security)", "next_action": "Confirm handoff of badge B-77, then revoke access for CED-118", "remaining_uncertainty": "Duplicate asset tags CL-04 and CL-04A exist; records do not establish which tag is attached to badge B-77."}
+    }
+  ],
+  "rejected": [
+    {
+      "name": "unsupported-account",
+      "handoff": {"case_id": "CL-2704", "account_id": "CED-119", "access_status": "Approved, but access has not been revoked.", "next_owner": "Marisol", "next_action": "Confirm handoff of badge B-77, then revoke access for account CED-119.", "uncertainty": "It remains unclear which asset tag is attached to badge B-77."}
+    },
+    {
+      "name": "unsupported-owner-role",
+      "handoff": {"case_id": "CL-2704", "account_id": "CED-118", "access_status": "Approved, but access has not been revoked.", "next_owner": "Marisol (not the security owner)", "next_action": "Confirm handoff of badge B-77, then revoke access for account CED-118.", "uncertainty": "It remains unclear which asset tag is attached to badge B-77."}
+    },
+    {
+      "name": "unrelated-unexecuted-approval",
+      "handoff": {"case_id": "CL-2704", "account_id": "CED-118", "access_status": "The approved badge handoff was not executed.", "next_owner": "Marisol", "next_action": "Confirm handoff of badge B-77, then revoke access for account CED-118.", "uncertainty": "It remains unclear which asset tag is attached to badge B-77."}
+    }
+  ]
+}
