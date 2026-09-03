@@ -31,6 +31,7 @@ translates recurring technical terms.
 | [0025 Reach-for-instructions v7 integrity review](0025-reach-for-instructions-v7-integrity-review.md) | Re-review of the request-fidelity, timeout-containment, and seed-provenance fixes before the clean validation run. |
 | [0026 Reach-for-instructions confirmation v1 design review](0026-reach-for-instructions-confirmation-v1-design-review.md) | Held-out task, calibrated oracle, and fixed larger confirmation cohort. |
 | [0027 Reach-for-instructions confirmation v2 design review](0027-reach-for-instructions-confirmation-v2-design-review.md) | Fresh calibration rerun after V1's preflight was too narrow. |
+| [0028 Access-transition oracle calibration gate](0028-access-transition-oracle-calibration-gate.md) | Condition-blind prerequisite before a future Qwen3.8 confirmation. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
