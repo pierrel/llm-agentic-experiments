@@ -24,8 +24,8 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
             for directory in ("studies", "fixtures", "experiments"):
                 shutil.copytree(ROOT / directory, root / directory)
             with runner._configured():
-                schedule = runner.base.base.base._schedule()
-                command = runner.base.base.base._worker_command(
+                schedule = runner.base.base._schedule()
+                command = runner.base.base._worker_command(
                     root, Path("/workspace"), Path("/assist"), Path("/python"),
                     Path("descriptor"), Path("result"), Path("marker"),
                 )
@@ -47,7 +47,7 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
             for directory in ("studies", "fixtures", "experiments"):
                 shutil.copytree(ROOT / directory, root / directory)
             with runner._configured():
-                schedule = runner.base.base.base._schedule()
+                schedule = runner.base.base._schedule()
             (root / "experiments" / runner.STUDY / "rendered-request-digests.json").write_text(
                 json.dumps({trial.sha256: "a" * 64 for trial in schedule})
             )
