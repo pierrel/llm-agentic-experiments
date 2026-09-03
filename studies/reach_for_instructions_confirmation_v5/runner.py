@@ -7,6 +7,7 @@ import hashlib
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+import threading
 from typing import Any, Iterator
 
 from harness.bundle import digest
@@ -16,6 +17,7 @@ from studies.reach_for_instructions_confirmation_v4 import runner as base
 
 STUDY = "reach-for-instructions-confirmation-v5-qwen38"
 RANDOMIZATION_SEED = 20260905
+_LOCK = threading.RLock()
 
 
 def _implementation_sha256(root: Path) -> str:
@@ -54,15 +56,16 @@ def _configured() -> Iterator[None]:
         "_implementation_sha256": _implementation_sha256,
         "_worker_command": _worker_command,
     }
-    originals = {name: getattr(base, name) for name in replacements}
-    try:
-        for name, value in replacements.items():
-            setattr(base, name, value)
-        with base._configured():
-            yield
-    finally:
-        for name, value in originals.items():
-            setattr(base, name, value)
+    with _LOCK:
+        originals = {name: getattr(base, name) for name in replacements}
+        try:
+            for name, value in replacements.items():
+                setattr(base, name, value)
+            with base._configured():
+                yield
+        finally:
+            for name, value in originals.items():
+                setattr(base, name, value)
 
 
 def preflight(root: Path) -> None:
@@ -132,7 +135,7 @@ def main() -> None:
         archive(RunArtifacts(args.output / "bundle.json", args.output / "admissions.jsonl", args.output / "outcomes.jsonl", args.output / "report.json", args.output / "traces"), args.archive)
     else:
         if args.descriptor is None or args.result is None or args.request_started is None:
-            raise SystemExit("worker requires descriptor, result, and request-started")
+            raise SystemExit("worker requires --descriptor, --result, and --request-started")
         run_worker(args.descriptor, args.result, args.request_started)
 
 

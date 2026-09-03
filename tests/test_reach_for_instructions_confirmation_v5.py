@@ -18,6 +18,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
+    def test_configuration_restores_the_wrapped_v4_globals(self) -> None:
+        original_study = runner.base.STUDY
+        with runner._configured():
+            self.assertEqual(runner.base.STUDY, runner.STUDY)
+        self.assertEqual(runner.base.STUDY, original_study)
+
     def test_seal_binds_the_actual_fresh_schedule_seed_and_worker(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
