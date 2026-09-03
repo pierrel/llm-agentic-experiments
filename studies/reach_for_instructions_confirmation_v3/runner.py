@@ -182,7 +182,7 @@ def run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
 
         @tool("load_skill")
         def load_skill(name: str) -> str:
-            """Load the single listed procedural guide by exact name."""
+            """Load a listed procedural guide by exact name."""
             return descriptor["skill_body"] if name == descriptor["skill_name"] else "No guide exists under that name."
 
         with TemporaryDirectory() as temporary:
