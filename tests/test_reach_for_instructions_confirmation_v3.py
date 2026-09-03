@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from harness.bundle import digest
 from studies.reach_for_instructions_confirmation_v3 import runner
@@ -53,6 +55,18 @@ class ReachForInstructionsConfirmationV3Test(unittest.TestCase):
             self.assertEqual(bundle.settings["model"]["weights_sha256"], runner.WEIGHTS_SHA256)
             self.assertEqual(bundle.model["configuration_sha256"], digest(bundle.settings["model"]))
             self.assertEqual(bundle.registration["oracle_preflight_sha256"], digest(runner.oracle_preflight(root)))
+
+    def test_cli_seal_uses_the_v3_wrapper(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in ("studies", "fixtures", "experiments"):
+                shutil.copytree(ROOT / directory, root / directory)
+            path = root / "experiments" / runner.STUDY / "rendered-request-digests.json"
+            path.write_text(json.dumps({trial.sha256: "a" * 64 for trial in runner._schedule()}))
+            with patch.object(sys, "argv", ["runner", "seal", "--root", str(root), "--source-commit", "a" * 40, "--assist-revision", "b" * 40]):
+                runner.main()
+            bundle = runner.StudyBundle.read_verified(root / "experiments" / runner.STUDY / "bundle.json")
+            self.assertEqual(bundle.model["id"], runner.MODEL_ID)
 
 
 if __name__ == "__main__":

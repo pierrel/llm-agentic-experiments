@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from contextlib import contextmanager
@@ -208,9 +209,41 @@ def run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
 
 
 def main() -> None:
-    """Expose V2's reviewed command interface under the V3 configuration."""
-    with _configured():
-        base.main()
+    """Expose the reviewed command interface through V3's bound wrappers."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("preflight", "render", "seal", "run", "archive", "worker"))
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--source-commit")
+    parser.add_argument("--assist-revision")
+    parser.add_argument("--workspace-root", type=Path)
+    parser.add_argument("--assist-source", type=Path)
+    parser.add_argument("--assist-python", type=Path)
+    parser.add_argument("--descriptor", type=Path)
+    parser.add_argument("--result", type=Path)
+    parser.add_argument("--request-started", type=Path)
+    args = parser.parse_args()
+    if args.command == "preflight":
+        preflight(args.root)
+    elif args.command == "render":
+        render_request_digests(args.root)
+    elif args.command == "seal":
+        if not args.source_commit or not args.assist_revision:
+            raise SystemExit("seal requires --source-commit and --assist-revision")
+        seal(args.root, source_commit=args.source_commit, assist_revision=args.assist_revision)
+    elif args.command == "run":
+        if args.output is None or args.workspace_root is None or args.assist_source is None or args.assist_python is None:
+            raise SystemExit("run requires --output, --workspace-root, --assist-source, and --assist-python")
+        run(args.root, args.output, workspace_root=args.workspace_root, assist_source=args.assist_source, assist_python=args.assist_python)
+    elif args.command == "archive":
+        if args.output is None or args.archive is None:
+            raise SystemExit("archive requires --output and --archive")
+        archive(base.RunArtifacts(args.output / "bundle.json", args.output / "admissions.jsonl", args.output / "outcomes.jsonl", args.output / "report.json", args.output / "traces"), args.archive)
+    else:
+        if args.descriptor is None or args.result is None or args.request_started is None:
+            raise SystemExit("worker requires descriptor, result, and request-started")
+        run_worker(args.descriptor, args.result, args.request_started)
 
 
 if __name__ == "__main__":
