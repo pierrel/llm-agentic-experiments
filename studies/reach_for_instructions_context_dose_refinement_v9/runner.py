@@ -24,7 +24,7 @@ from studies.reach_for_instructions_confirmation_v8 import runner as v8
 
 STUDY = "reach-for-instructions-context-dose-refinement-v9-qwen38-current"
 RANDOMIZATION_SEED = 20260914
-REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r2"
+REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r3"
 FIXTURE = calibration.FIXTURE
 CONTEXT_LINES = {
     "C-1800": 1800,
@@ -75,6 +75,25 @@ def _definition(root: Path) -> tuple[StudyBundle, dict[str, Any], dict[str, dict
     """Require the immutable tag to preserve every V9 definition input."""
     bundle, task, conditions = v8._CORE_DEFINITION(root)
     registration = bundle.registration
+    if registration.get("randomization_seed") != RANDOMIZATION_SEED:
+        raise ValueError("V9 bundle randomization seed does not match")
+    if bundle.schedule != _schedule():
+        raise ValueError("V9 bundle schedule does not match")
+    if registration.get("registration_tag") != REGISTRATION_TAG:
+        raise ValueError("V9 bundle registration tag does not match")
+    architecture = bundle.settings.get("harness_architecture") if isinstance(bundle.settings, dict) else None
+    source_commit = registration.get("source_commit")
+    assist_revision = architecture.get("assist_revision") if isinstance(architecture, dict) else None
+    if not isinstance(source_commit, str) or not isinstance(assist_revision, str):
+        raise ValueError("V9 bundle settings are malformed")
+    expected_settings = v8._settings(source_commit, assist_revision)
+    expected_model = {
+        "id": v8.MODEL_ID,
+        "revision": "2026-09-11",
+        "configuration_sha256": digest(expected_settings["model"]),
+    }
+    if bundle.settings != expected_settings or bundle.model != expected_model:
+        raise ValueError("V9 bundle model or harness settings do not match")
     if registration.get("registration_sha256") != _file_sha256(root / "experiments" / STUDY / "registration.md"):
         raise ValueError("V9 bundle registration does not match")
     if registration.get("analysis_sha256") != _file_sha256(root / "harness" / "report.py"):

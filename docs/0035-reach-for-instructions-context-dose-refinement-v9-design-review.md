@@ -41,6 +41,13 @@ would spend episodes without locating the high-context boundary.
   declarations. The runner now writes the current Qwen3.8 identity and the
   no-model contract binds the exact 96-trial schedule, r2 tag, and model
   revision. No V9 model request occurred before the correction.
+- **Pre-admission integrity r3:** Admission now recomputes and compares V9's
+  exact seed, schedule, registration tag, current model identity, and complete
+  current-profile settings instead of accepting a merely self-consistent
+  bundle. The V9 contract also invokes the inherited V8 calibration gate. The
+  public worker command remains a cooperative scheduler implementation detail,
+  not a model-provider authorization boundary; hardening local provider access
+  is separate infrastructure work. No V9 model request occurred before r3.
 
 ## Decision
 

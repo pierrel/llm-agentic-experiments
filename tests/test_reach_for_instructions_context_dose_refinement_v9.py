@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import shutil
@@ -10,6 +11,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from harness.bundle import StudyBundle, digest
+from studies import equipment_return_oracle_calibration_v8 as calibration
 from studies.reach_for_instructions_confirmation_v2 import runner as core
 from studies.reach_for_instructions_context_dose_refinement_v9 import runner
 
@@ -35,8 +37,12 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
         self.assertIn("studies.reach_for_instructions_context_dose_refinement_v9.runner", command)
 
     def test_v8_fixture_and_oracle_remain_the_only_task_measurement_inputs(self) -> None:
+        runner.preflight(ROOT)
+        corpus = json.loads((ROOT / "experiments" / calibration.STUDY / "corpus.json").read_text())
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
         self.assertEqual(task["task_id"], "equipment-return-handoff-v8")
+        self.assertTrue(calibration.handoff_is_grounded(task, corpus["accepted"][0]["handoff"]))
+        self.assertFalse(calibration.handoff_is_grounded(task, corpus["rejected"][0]["handoff"]))
         self.assertEqual(runner.CONTEXT_LINES, {"C-1800": 1800, "C-2700": 2700, "C-3600": 3600, "C-4500": 4500})
 
     def test_seal_binds_the_v9_grid_registration_and_immutable_tag(self) -> None:
@@ -68,6 +74,27 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
         self.assertEqual(sealed.model["revision"], "2026-09-11")
         self.assertEqual(accepted.sha256, sealed.sha256)
         self.assertEqual(stored.sha256, sealed.sha256)
+
+    def test_definition_rejects_a_self_consistent_reordered_schedule(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _copy_seal_inputs(root)
+            schedule = runner._schedule()
+            digest_path = root / "experiments" / runner.STUDY / core.RENDERED_REQUEST_DIGESTS
+            digest_path.write_text(json.dumps({trial.sha256: "a" * 64 for trial in schedule}))
+            sealed = runner.seal(root, source_commit="a" * 40, assist_revision="b" * 40)
+            replace(sealed, schedule=tuple(reversed(sealed.schedule))).write(root / "experiments" / runner.STUDY / "bundle.json")
+            for command in (
+                ["git", "init", "--quiet", str(root)],
+                ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
+                ["git", "-C", str(root), "config", "user.name", "Test"],
+                ["git", "-C", str(root), "add", "."],
+                ["git", "-C", str(root), "commit", "--quiet", "-m", "altered definition"],
+                ["git", "-C", str(root), "tag", runner.REGISTRATION_TAG],
+            ):
+                subprocess.run(command, check=True, capture_output=True)
+            with runner._configured(), self.assertRaisesRegex(ValueError, "schedule does not match"):
+                core._definition(root)
 
 
 if __name__ == "__main__":

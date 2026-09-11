@@ -1,12 +1,19 @@
 # Reach-for-instructions context-dose refinement V9
 
-## Pre-admission integrity r2
+## Pre-admission integrity r2-r3
 
 No V9 model request occurred under r1. Revision r2 corrects the sealed bundle's
 model identity to the current Qwen3.8 profile and adds schedule, tag, and model
 identity assertions to the no-model contract. The task, delivery contrast,
 context grid, randomization seed, sample plan, oracle, and settings are
 unchanged.
+
+No V9 model request occurred under r2. Revision r3 makes admission reject a
+self-consistent but altered seed, schedule, tag, model identity, or current
+profile settings, adds a direct V8 calibration assertion to the V9 contract,
+and records both pre-admission revisions in the registry. The task, delivery
+contrast, context grid, randomization seed, sample plan, oracle, and settings
+are unchanged.
 
 ## Question
 
