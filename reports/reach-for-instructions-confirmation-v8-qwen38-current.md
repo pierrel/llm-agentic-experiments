@@ -67,4 +67,3 @@ item. No Assist guidance or architecture change is authorized by this result.
   shared-GPU wrapper as a model-provider trust boundary was declined and
   resolved: it is cooperative scheduling, not access control, and hardening
   that boundary would be separate work.
-
