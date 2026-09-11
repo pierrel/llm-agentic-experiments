@@ -1,0 +1,66 @@
+{
+  "accepted": [
+    {
+      "name": "direct-grounded-form",
+      "handoff": {
+        "case_id": "HS-7032",
+        "equipment_id": "EA-311",
+        "return_status": "Closure is conditionally approved but not complete; no receiving scan has been recorded.",
+        "approval_status": "Maren conditionally approved closure pending intake photo confirmation.",
+        "next_owner": "Devin",
+        "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
+        "remaining_uncertainty": "It remains unresolved whether label R-7 or R-7B belongs with kit K-22."
+      }
+    },
+    {
+      "name": "compact-observed-status-with-separate-approval",
+      "handoff": {
+        "case_id": "HS-7032",
+        "verified_equipment_id": "EA-311",
+        "return_status": "not_completed",
+        "approval_status": "Conditionally approved by Maren pending the intake photo confirmation.",
+        "next_owner": "Devin (operations owner)",
+        "next_action": "Confirm the intake photo for K-22, then close the return for EA-311.",
+        "uncertainty": "The records do not establish which label is attached to kit K-22: R-7 or R-7B."
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "name": "compact-status-without-approval-fact",
+      "handoff": {
+        "case_id": "HS-7032",
+        "equipment_id": "EA-311",
+        "return_status": "not_completed",
+        "approval_status": "The case is under review.",
+        "next_owner": "Devin",
+        "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
+        "remaining_uncertainty": "It remains unresolved whether label R-7 or R-7B belongs with kit K-22."
+      }
+    },
+    {
+      "name": "invented-completion",
+      "handoff": {
+        "case_id": "HS-7032",
+        "equipment_id": "EA-311",
+        "return_status": "Return completed and received.",
+        "approval_status": "Conditionally approved by Maren pending the intake photo confirmation.",
+        "next_owner": "Devin",
+        "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
+        "remaining_uncertainty": "It remains unresolved whether label R-7 or R-7B belongs with kit K-22."
+      }
+    },
+    {
+      "name": "unsupported-attached-assertion",
+      "handoff": {
+        "case_id": "HS-7032",
+        "equipment_id": "EA-311",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved by Maren pending the intake photo confirmation.",
+        "next_owner": "Devin",
+        "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
+        "remaining_uncertainty": "Label R-7 is attached to kit K-22."
+      }
+    }
+  ]
+}
