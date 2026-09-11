@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 
@@ -30,6 +31,7 @@ def _status_is_grounded(return_status: object, approval_status: object) -> bool:
         and "conditional" in approval
         and "photo" in approval
         and "maren" in approval
+        and any(term in approval for term in ("pending", "awaiting"))
         and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed"))
     )
     if "approved" in status:
@@ -57,7 +59,7 @@ def _action_is_grounded(value: object) -> bool:
 
 
 def _uncertainty_is_grounded(value: object) -> bool:
-    if not _contains(value, "r-7", "r-7b", "k-22"):
+    if not isinstance(value, str) or not all(re.search(rf"(?<![a-z0-9-]){re.escape(label)}(?![a-z0-9-])", value.lower()) for label in ("r-7", "r-7b", "k-22")):
         return False
     text = value.lower()
     if any(claim in text for claim in ("r-7 is attached", "r-7b is attached", "r-7 attached", "r-7b attached", "r-7 is assigned", "r-7b is assigned")):

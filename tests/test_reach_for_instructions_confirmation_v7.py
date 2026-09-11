@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _copy_seal_inputs(root: Path) -> None:
+    shutil.copytree(ROOT / "harness", root / "harness")
     shutil.copytree(ROOT / "studies", root / "studies")
     shutil.copytree(ROOT / "fixtures", root / "fixtures")
     experiments = root / "experiments"

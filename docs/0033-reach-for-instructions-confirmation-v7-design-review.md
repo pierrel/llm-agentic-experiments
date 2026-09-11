@@ -19,6 +19,11 @@ agent, judge, tool, or product prompt.
   approval field says that approval is conditional on the photo. It rejects the
   same compact status without that fact, invented completion, and an unsupported
   label assertion.
+- **Statistical rigor, retained:** the estimand is the descriptive difference
+  in primary pass rate between G02 and G01 within each fixed context dose. The
+  12 episodes per cell make 72 interleaved observations for a stable screen,
+  not a powered interaction estimate; all terminal outcomes remain and no
+  threshold or product action is planned from a single cohort.
 - **Contrast, retained:** G01 gets the complete procedure and no discoverable
   guide name. G02 gets only the named guide catalog entry and must load it to
   receive the procedure. The loader schema itself remains fixed.

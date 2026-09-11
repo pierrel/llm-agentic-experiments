@@ -37,6 +37,7 @@ def _implementation_sha256(root: Path) -> str:
         root / "studies" / "reach_for_instructions_confirmation_v4" / "runner.py",
         root / "studies" / "reach_for_instructions_confirmation_v3" / "runner.py",
         root / "studies" / "reach_for_instructions_confirmation_v2" / "runner.py",
+        root / "harness" / "report.py",
         root / "studies" / "equipment_return_oracle_calibration_v7.py",
         root / "fixtures" / FIXTURE,
         root / "experiments" / STUDY / "conditions.json",
