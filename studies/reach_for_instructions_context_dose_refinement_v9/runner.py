@@ -24,7 +24,7 @@ from studies.reach_for_instructions_confirmation_v8 import runner as v8
 
 STUDY = "reach-for-instructions-context-dose-refinement-v9-qwen38-current"
 RANDOMIZATION_SEED = 20260914
-REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r1"
+REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r2"
 FIXTURE = calibration.FIXTURE
 CONTEXT_LINES = {
     "C-1800": 1800,
@@ -158,6 +158,11 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
                 "primary_outcome": "structured equipment-return handoff plus ordered workspace procedure",
                 "registration_sha256": _file_sha256(root / "experiments" / STUDY / "registration.md"),
                 "analysis_sha256": _file_sha256(root / "harness" / "report.py"),
+            },
+            model={
+                "id": v8.MODEL_ID,
+                "revision": "2026-09-11",
+                "configuration_sha256": digest(sealed.settings["model"]),
             },
             runner_revision="reach-for-instructions-context-dose-refinement-v9",
             analysis_revision="harness/report.py",

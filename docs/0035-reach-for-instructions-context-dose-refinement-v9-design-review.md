@@ -36,6 +36,11 @@ would spend episodes without locating the high-context boundary.
   LLM judge, production thread, or extra delivery treatment would confound the
   local context question. They are excluded. A fresh task family follows only
   if this within-task curve is interpretable.
+- **Pre-admission integrity r2:** Copilot caught an inherited Qwen3.6 bundle
+  identity and tests that did not compare the sealed schedule or tag to V9's
+  declarations. The runner now writes the current Qwen3.8 identity and the
+  no-model contract binds the exact 96-trial schedule, r2 tag, and model
+  revision. No V9 model request occurred before the correction.
 
 ## Decision
 

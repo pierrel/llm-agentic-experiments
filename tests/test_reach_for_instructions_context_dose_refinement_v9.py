@@ -1,4 +1,4 @@
-"""No-model contracts for the V8 high-context dose refinement."""
+"""No-model contracts for the V9 high-context dose refinement."""
 
 from __future__ import annotations
 
@@ -60,8 +60,12 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
                 accepted, task, _ = core._definition(root)
             stored = StudyBundle.read_verified(root / "experiments" / runner.STUDY / "bundle.json")
         self.assertEqual(len(sealed.schedule), 96)
+        self.assertEqual(sealed.schedule, runner._schedule())
         self.assertEqual(sealed.fixtures, {context: digest(task) for context in runner.CONTEXT_LINES})
         self.assertEqual(sealed.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+        self.assertEqual(sealed.registration["registration_tag"], runner.REGISTRATION_TAG)
+        self.assertEqual(sealed.model["id"], "Qwen3.8-27B-UD-Q4_K_XL.gguf")
+        self.assertEqual(sealed.model["revision"], "2026-09-11")
         self.assertEqual(accepted.sha256, sealed.sha256)
         self.assertEqual(stored.sha256, sealed.sha256)
 

@@ -1,5 +1,13 @@
 # Reach-for-instructions context-dose refinement V9
 
+## Pre-admission integrity r2
+
+No V9 model request occurred under r1. Revision r2 corrects the sealed bundle's
+model identity to the current Qwen3.8 profile and adds schedule, tag, and model
+identity assertions to the no-model contract. The task, delivery contrast,
+context grid, randomization seed, sample plan, oracle, and settings are
+unchanged.
+
 ## Question
 
 V8 found a retrieved-guidance advantage only at its 3,600-line context dose.
