@@ -1,5 +1,14 @@
 # Reach-for-instructions held-out confirmation V8: approval-status representation correction
 
+## Pre-admission integrity revision r2
+
+No V8 model request occurred under r1. Revision r2 adds adversarial
+calibration cases for contradictory completion, embedded label assertions, and
+an explicitly not-yet-confirmed photo. It also seals the registration, report
+implementation, and every shared harness module used at admission, and verifies
+that the tag retains those exact inputs. The task, contrast, profile, sample
+plan, and randomization seed are unchanged.
+
 ## Why this is a new study
 
 V7 ran 13 terminal current-Qwen3.8 episodes, all rejected by its primary

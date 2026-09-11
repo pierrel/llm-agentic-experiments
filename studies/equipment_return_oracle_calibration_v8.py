@@ -24,14 +24,15 @@ def _normalise(value: object) -> str:
 def _status_is_grounded(return_status: object, approval_status: object) -> bool:
     """Require conditional approval and a still-pending intake photo in either form."""
     status, approval = _normalise(return_status), _normalise(approval_status)
-    if not status or "received" in status or "closed" in status or ("completed" in status and "not completed" not in status):
+    completion_residue = status.replace("not completed", "")
+    if not status or "received" in status or "closed" in status or "completed" in completion_residue:
         return False
     approval_is_grounded = (
         "approved" in approval
         and "conditional" in approval
         and "photo" in approval
         and any(term in approval for term in ("pending", "awaiting"))
-        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed", "confirmed"))
+        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed", "photo was confirmed", "photo is confirmed", "photo has been confirmed", "photo-confirmed"))
     )
     if "approved" in status:
         return "not approved" not in status and any(term in status for term in ("pending", "not complete", "no receiving scan")) and approval_is_grounded
@@ -54,7 +55,7 @@ def _uncertainty_is_grounded(value: object) -> bool:
     if not isinstance(value, str) or not all(re.search(rf"(?<![a-z0-9-]){re.escape(label)}(?![a-z0-9-])", value.lower()) for label in ("s-4", "s-4b", "k-31")):
         return False
     text = value.lower()
-    if any(claim in text for claim in ("s-4 is attached", "s-4b is attached", "s-4 attached", "s-4b attached", "s-4 is assigned", "s-4b is assigned")):
+    if "not unresolved" in text or re.search(r"(?:^|[.;]|but)\s*(?:label\s+)?s-4b?\s+(?:is\s+)?(?:attached|assigned|belongs)\b", text):
         return False
     if "do not establish which" in text and "attached" in text:
         return True

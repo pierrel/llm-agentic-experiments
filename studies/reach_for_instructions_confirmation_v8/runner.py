@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 import random
+import subprocess
 import threading
 from typing import Any, Iterator
 
@@ -25,10 +26,11 @@ STUDY = "reach-for-instructions-confirmation-v8-qwen38-current"
 MODEL_ID = "Qwen3.8-27B-UD-Q4_K_XL.gguf"
 WEIGHTS_SHA256 = "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e"
 RANDOMIZATION_SEED = 20260913
-REGISTRATION_TAG = "reach-for-instructions-confirmation-v8-qwen38-current-r1"
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v8-qwen38-current-r2"
 FIXTURE = calibration.FIXTURE
 _LOCK = threading.RLock()
 _PRIOR_WORKER_COMMAND = prior._worker_command
+_CORE_DEFINITION = core._definition
 
 
 def _schedule() -> tuple[Trial, ...]:
@@ -47,9 +49,9 @@ def _schedule() -> tuple[Trial, ...]:
     return tuple(trial for block in ordered for trial in block)
 
 
-def _implementation_sha256(root: Path) -> str:
-    """Bind V8, inherited layers, the fresh fixture, and its oracle calibration."""
-    paths = [
+def _sealed_paths(root: Path) -> list[Path]:
+    """List every non-result file that can change V8 admission or analysis behavior."""
+    return [
         root / "studies" / "reach_for_instructions_confirmation_v8" / "runner.py",
         root / "studies" / "reach_for_instructions_confirmation_v7" / "runner.py",
         root / "studies" / "reach_for_instructions_confirmation_v6" / "runner.py",
@@ -58,13 +60,47 @@ def _implementation_sha256(root: Path) -> str:
         root / "studies" / "reach_for_instructions_confirmation_v3" / "runner.py",
         root / "studies" / "reach_for_instructions_confirmation_v2" / "runner.py",
         root / "harness" / "report.py",
+        root / "harness" / "archive.py",
+        root / "harness" / "bundle.py",
+        root / "harness" / "records.py",
+        root / "harness" / "runner.py",
+        root / "harness" / "schedule.py",
         root / "studies" / "equipment_return_oracle_calibration_v8.py",
         root / "fixtures" / FIXTURE,
         root / "experiments" / STUDY / "conditions.json",
+        root / "experiments" / STUDY / "registration.md",
         root / "experiments" / STUDY / core.RENDERED_REQUEST_DIGESTS,
         root / "experiments" / calibration.STUDY / "corpus.json",
     ]
+
+
+def _implementation_sha256(root: Path) -> str:
+    """Bind V8, inherited layers, fixture, oracle, and shared harness code."""
+    paths = _sealed_paths(root)
     return digest({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _definition(root: Path) -> tuple[StudyBundle, dict[str, Any], dict[str, dict[str, str]]]:
+    """Require the tag to preserve registration, analysis, and every sealed V8 input."""
+    bundle, task, conditions = _CORE_DEFINITION(root)
+    registration = bundle.registration
+    if registration.get("registration_sha256") != _file_sha256(root / "experiments" / STUDY / "registration.md"):
+        raise ValueError("V8 bundle registration does not match")
+    if registration.get("analysis_sha256") != _file_sha256(root / "harness" / "report.py"):
+        raise ValueError("V8 bundle analysis does not match")
+    tag = registration.get("registration_tag")
+    if not isinstance(tag, str) or not tag:
+        raise ValueError("V8 registration tag is missing")
+    for path in _sealed_paths(root):
+        relative = path.relative_to(root).as_posix()
+        tagged = subprocess.run(["git", "-C", str(root), "show", f"{tag}:{relative}"], capture_output=True)
+        if tagged.returncode or tagged.stdout != path.read_bytes():
+            raise ValueError(f"V8 registration tag does not retain sealed input: {relative}")
+    return bundle, task, conditions
 
 
 def _settings(source_commit: str, assist_revision: str) -> dict[str, Any]:
@@ -166,6 +202,7 @@ def _configured() -> Iterator[None]:
                     "_schedule": _schedule,
                     "_settings": _settings,
                     "_implementation_sha256": _implementation_sha256,
+                    "_definition": _definition,
                     "_worker_command": _worker_command,
                     "oracle_preflight": oracle_preflight,
                     "_handoff_is_grounded": calibration.handoff_is_grounded,
@@ -213,10 +250,12 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
                 "randomization_seed": RANDOMIZATION_SEED,
                 "registration_tag": REGISTRATION_TAG,
                 "primary_outcome": "structured equipment-return handoff plus ordered workspace procedure",
+                "registration_sha256": _file_sha256(root / "experiments" / STUDY / "registration.md"),
+                "analysis_sha256": _file_sha256(root / "harness" / "report.py"),
             },
             model={"id": MODEL_ID, "revision": "2026-09-11", "configuration_sha256": digest(sealed.settings["model"])},
             runner_revision="reach-for-instructions-qwen38-current-runner-v8",
-            analysis_revision="reach-for-instructions-qwen38-current-summary-v8",
+            analysis_revision="harness/report.py",
         )
         bundle.write(root / "experiments" / STUDY / "bundle.json")
         return bundle

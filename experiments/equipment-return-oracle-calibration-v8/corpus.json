@@ -23,6 +23,18 @@
         "next_action": "Confirm the intake photo for K-31, then close the return for EB-507.",
         "uncertainty": "The records do not establish which label is attached to kit K-31: S-4 or S-4B."
       }
+    },
+    {
+      "name": "pending-photo-explicitly-not-confirmed",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved; the intake photo is not yet confirmed and remains pending confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
     }
   ],
   "rejected": [
@@ -63,6 +75,18 @@
       }
     },
     {
+      "name": "contradictory-later-completion",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "Closure is conditionally approved but not completed; completed later.",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
+    },
+    {
       "name": "unsupported-attached-assertion",
       "handoff": {
         "case_id": "NL-9127",
@@ -72,6 +96,18 @@
         "next_owner": "Rowan",
         "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
         "remaining_uncertainty": "Label S-4 is attached to kit K-31."
+      }
+    },
+    {
+      "name": "embedded-unsupported-label-claim",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31, but S-4 belongs with kit K-31."
       }
     }
   ]

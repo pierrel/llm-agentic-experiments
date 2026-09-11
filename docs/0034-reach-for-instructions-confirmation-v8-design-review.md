@@ -34,6 +34,11 @@ axis.
   and would add new causal factors. The retained model, architecture, context
   doses, ordering check, and process measure are necessary to preserve the
   original confirmation question and its known context condition.
+- **Pre-admission integrity r2:** Before any V8 model request, the calibration
+  adds contradictory-completion, embedded-assertion, and explicitly-pending
+  photo cases. The bundle now records the registration and report hashes, and
+  admission verifies the tagged contents of those files plus every shared
+  harness module used by the runner.
 
 ## Decision
 
