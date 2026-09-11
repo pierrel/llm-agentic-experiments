@@ -24,7 +24,11 @@ STUDY = "reach-for-instructions-confirmation-v6-qwen38-current"
 MODEL_ID = "Qwen3.8-27B-UD-Q4_K_XL.gguf"
 WEIGHTS_SHA256 = "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e"
 RANDOMIZATION_SEED = 20260911
-REGISTRATION_TAG = "reach-for-instructions-confirmation-v6-qwen38-current-r1"
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v6-qwen38-current-r2"
+PRIMARY_OUTCOME = (
+    "fixture-grounded equipment-return JSON handoff plus required inventory, "
+    "source-read, and handoff-write ordering"
+)
 FIXTURE = calibration.FIXTURE
 SKILL_NAME = "prepare-equipment-return"
 SKILL_CATALOG = (
@@ -259,6 +263,8 @@ def _run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
         raise ValueError("V6 worker files are invalid")
     if not isinstance(descriptor["fixture"], dict) or digest(descriptor["fixture"]) != descriptor["fixture_sha256"]:
         raise ValueError("V6 worker fixture differs from the sealed descriptor")
+    if descriptor["fixture"].get("user_prompt") != descriptor["user_prompt"] or descriptor["fixture"].get("initial_files") != descriptor["files"]:
+        raise ValueError("V6 worker task content differs from the sealed fixture")
     if descriptor["fixture"].get("decoding") != {"temperature": descriptor["temperature"], "max_tokens": None} or descriptor["max_tokens"] is not None:
         raise ValueError("V6 worker output-token policy differs from the fixture")
     if not isinstance(descriptor["max_turns"], int) or descriptor["max_turns"] < 1 or not isinstance(descriptor["temperature"], (int, float)):
@@ -331,7 +337,7 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
         sealed = core.seal(root, source_commit=source_commit, assist_revision=assist_revision)
         bundle = replace(
             sealed,
-            registration=sealed.registration | {"randomization_seed": RANDOMIZATION_SEED, "registration_tag": REGISTRATION_TAG},
+            registration=sealed.registration | {"randomization_seed": RANDOMIZATION_SEED, "registration_tag": REGISTRATION_TAG, "primary_outcome": PRIMARY_OUTCOME},
             model={"id": MODEL_ID, "revision": "2026-09-11", "configuration_sha256": digest(sealed.settings["model"])},
             runner_revision="reach-for-instructions-qwen38-current-runner-v1",
             analysis_revision="reach-for-instructions-qwen38-current-summary-v1",

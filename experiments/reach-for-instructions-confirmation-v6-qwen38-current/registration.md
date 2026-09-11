@@ -42,9 +42,10 @@ is reported without replacement.
 The primary outcome is a deterministic, condition-blind, fixture-grounded JSON
 handoff plus required inventory/read/write ordering. The independent calibration
 corpus must accept an unresolved statement that asks which label is attached to
-the kit and reject a direct unsupported attachment assertion before any model
-request. The secondary process measure is an exact named-skill call before the
-first source read; it is computed even when the primary artifact fails.
+the kit and reject both a direct unsupported attachment assertion and an
+unsupported completed-return claim before any model request. The secondary
+process measure is an exact named-skill call before the first source read; it is
+computed even when the primary artifact fails.
 
 Report every terminal outcome, condition-by-context cell count, actual
 first-provider-request input tokens, and the secondary process count. Do not

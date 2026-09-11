@@ -68,8 +68,16 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
         calibration.verify(ROOT)
         corpus = json.loads((ROOT / "experiments" / calibration.STUDY / "corpus.json").read_text())
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
-        self.assertTrue(calibration.handoff_is_grounded(task, corpus["accepted"][1]["handoff"]))
-        self.assertFalse(calibration.handoff_is_grounded(task, corpus["rejected"][0]["handoff"]))
+        cases = {case["name"]: case["handoff"] for label in corpus for case in corpus[label]}
+        self.assertTrue(calibration.handoff_is_grounded(task, cases["observed-unresolved-attached-form"]))
+        self.assertFalse(calibration.handoff_is_grounded(task, cases["unsupported-attached-assertion"]))
+        self.assertFalse(calibration.handoff_is_grounded(task, cases["unsupported-completion-claim"]))
+
+    def test_calibration_rejects_positive_completion_status(self) -> None:
+        self.assertFalse(calibration._status_is_grounded("Closure is approved and complete; no receiving scan has been recorded."))
+        self.assertFalse(calibration._status_is_grounded("Approved; the return was received and completion recorded."))
+        self.assertTrue(calibration._status_is_grounded("Closure is approved but not complete; no receiving scan has been recorded."))
+        self.assertTrue(calibration._status_is_grounded("Approved closure; the return is still pending."))
 
     def test_seal_binds_fresh_schedule_and_immutable_tag(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -87,6 +95,10 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
             self.assertEqual(sealed.fixtures, {context: digest(task) for context in core.CONTEXT_LINES})
             self.assertEqual(descriptor["fixture"]["task_id"], "equipment-return-handoff")
             self.assertEqual(descriptor["max_tokens"], None)
+            drifted = root / "descriptor.json"
+            drifted.write_text(json.dumps(descriptor | {"user_prompt": descriptor["user_prompt"] + " Also name the guide."}))
+            with self.assertRaises(ValueError):
+                runner._run_worker(drifted, root / "result.json", root / "marker")
             self.assertTrue(
                 runner.SKILL_NAME in descriptor["system_prompt"]
                 or runner.PROCEDURE in descriptor["system_prompt"]
@@ -105,6 +117,8 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
             stored = StudyBundle.read_verified(root / "experiments" / runner.STUDY / "bundle.json")
         self.assertEqual(len(sealed.schedule), 72)
         self.assertEqual(sealed.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+        self.assertEqual(sealed.registration["primary_outcome"], runner.PRIMARY_OUTCOME)
+        self.assertIn("equipment-return", sealed.registration["primary_outcome"])
         self.assertEqual(accepted.sha256, sealed.sha256)
         self.assertEqual(stored.sha256, sealed.sha256)
 

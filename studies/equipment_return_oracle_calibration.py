@@ -16,12 +16,29 @@ def _contains(value: object, *terms: str) -> bool:
     return isinstance(value, str) and all(term in value.lower() for term in terms)
 
 
+NEGATED_COMPLETION = (
+    "not yet completed",
+    "not yet complete",
+    "not completed",
+    "not complete",
+    "never completed",
+    "awaiting completion",
+    "pending completion",
+    "completion is pending",
+    "completion pending",
+    "incomplete",
+)
+
+
 def _status_is_grounded(value: object) -> bool:
     """Accept an approved but uncompleted return without inventing receipt."""
     if not isinstance(value, str):
         return False
     text = " ".join(value.lower().replace("_", " ").split())
-    if "approved" not in text or any(term in text for term in ("completed", "received", "closed")):
+    asserted = text
+    for term in NEGATED_COMPLETION:
+        asserted = asserted.replace(term, "")
+    if "approved" not in text or any(term in asserted for term in ("complete", "completion", "received", "closed")):
         return False
     return "no receiving scan" in text or "pending" in text or "not complete" in text
 
