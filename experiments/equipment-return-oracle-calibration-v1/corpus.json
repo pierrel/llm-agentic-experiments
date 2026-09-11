@@ -1,0 +1,50 @@
+{
+  "accepted": [
+    {
+      "name": "direct-grounded-form",
+      "handoff": {
+        "case_id": "DT-4819",
+        "equipment_id": "EQ-204",
+        "return_status": "Closure is approved but not complete; no receiving scan has been recorded.",
+        "next_owner": "Imani",
+        "next_action": "Confirm the intake photo for kit K-14, then close the return for EQ-204.",
+        "remaining_uncertainty": "It remains unresolved whether label P-19 or P-19A belongs with kit K-14."
+      }
+    },
+    {
+      "name": "observed-unresolved-attached-form",
+      "handoff": {
+        "case_id": "DT-4819",
+        "verified_equipment_id": "EQ-204",
+        "return_status": "Supervisor approved closure, but the return is still pending and no receiving scan is recorded.",
+        "next_owner": "Imani (facilities owner)",
+        "next_action": "Confirm the intake photo for K-14, then close the return for EQ-204.",
+        "uncertainty": "The records do not establish which label is attached to kit K-14: P-19 or P-19A."
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "name": "unsupported-attached-assertion",
+      "handoff": {
+        "case_id": "DT-4819",
+        "equipment_id": "EQ-204",
+        "return_status": "Closure is approved but not complete; no receiving scan has been recorded.",
+        "next_owner": "Imani",
+        "next_action": "Confirm the intake photo for kit K-14, then close the return for EQ-204.",
+        "remaining_uncertainty": "Label P-19 is attached to kit K-14."
+      }
+    },
+    {
+      "name": "invented-equipment-id",
+      "handoff": {
+        "case_id": "DT-4819",
+        "equipment_id": "EQ-205",
+        "return_status": "Closure is approved but not complete; no receiving scan has been recorded.",
+        "next_owner": "Imani",
+        "next_action": "Confirm the intake photo for kit K-14, then close the return for EQ-204.",
+        "remaining_uncertainty": "It remains unresolved whether label P-19 or P-19A belongs with kit K-14."
+      }
+    }
+  ]
+}

@@ -557,10 +557,14 @@ def _record_batch_cooldown(output: Path, completed_outcomes: int, *, now: float)
 
 
 def _enforce_batch_cooldown(output: Path, completed_outcomes: int, *, now: float) -> None:
-    """Reject an immediate resume at an incomplete sealed batch boundary."""
-    if not completed_outcomes or completed_outcomes % RUN_BATCH_EPISODES:
+    """Reject a resume before the last recorded sealed pause has elapsed."""
+    if not completed_outcomes:
         return
     path = output / "batch-cooldown.json"
+    if not path.exists():
+        if completed_outcomes % RUN_BATCH_EPISODES:
+            return
+        raise ValueError("sealed batch cooldown is missing or malformed")
     try:
         value = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
@@ -568,9 +572,13 @@ def _enforce_batch_cooldown(output: Path, completed_outcomes: int, *, now: float
     if (
         not isinstance(value, dict)
         or set(value) != {"completed_outcomes", "not_before_unix"}
-        or value["completed_outcomes"] != completed_outcomes
+        or not isinstance(value["completed_outcomes"], int)
         or not isinstance(value["not_before_unix"], (int, float))
     ):
+        raise ValueError("sealed batch cooldown does not match the run")
+    if value["completed_outcomes"] < completed_outcomes:
+        return
+    if value["completed_outcomes"] != completed_outcomes:
         raise ValueError("sealed batch cooldown does not match the run")
     if now < value["not_before_unix"]:
         raise ValueError("sealed batch cooldown has not elapsed")
