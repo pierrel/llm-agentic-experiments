@@ -137,6 +137,15 @@ class ReachForInstructionsConfirmationV2Test(unittest.TestCase):
                 _enforce_batch_cooldown(output, 24, now=1899)
             _enforce_batch_cooldown(output, 24, now=1900)
 
+    def test_run_batch_cooldown_applies_after_an_interrupted_batch(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            _record_batch_cooldown(output, 29, now=1000)
+            with self.assertRaisesRegex(ValueError, "not elapsed"):
+                _enforce_batch_cooldown(output, 29, now=1899)
+            _enforce_batch_cooldown(output, 29, now=1900)
+            _enforce_batch_cooldown(output, 30, now=1900)
+
     def test_fixture_path_rejects_escape(self) -> None:
         root = Path("/tmp/reach-for-instructions")
         self.assertEqual(_fixture_path(root, "records/a.md"), root / "records/a.md")

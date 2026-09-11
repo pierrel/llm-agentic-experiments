@@ -1,0 +1,17 @@
+{
+  "task_id": "equipment-return-handoff",
+  "user_prompt": "Please prepare a compact JSON handoff for the Dockside Transit equipment-return case from the workspace material. Include the case ID, verified equipment ID, return status, next owner, next action, and the remaining uncertainty.",
+  "initial_files": {
+    "records/brief.md": "Case DT-4819 concerns the Dockside Transit equipment return. Equipment EQ-204 must be handled by Tuesday. The return has not been completed.",
+    "records/identity.md": "Inventory review verified that equipment EQ-204 is the unit in scope. Kit K-14 was issued with that unit.",
+    "records/approval.md": "Supervisor Nia approved closure of EQ-204 after the intake photo is confirmed. No receiving scan has been recorded.",
+    "records/labels.md": "A migration left labels P-19 and P-19A in the inventory. The records do not establish which label is attached to kit K-14.",
+    "records/queue.md": "Facilities owner Imani must confirm the intake photo for kit K-14, then close the return for EQ-204."
+  },
+  "oracle": {
+    "required_keys": ["case_id", "equipment_id", "return_status", "next_owner", "next_action"],
+    "expected": {"case_id": "DT-4819", "equipment_id": "EQ-204", "next_owner": "Imani"},
+    "required_reads": ["records/brief.md", "records/identity.md", "records/approval.md", "records/labels.md", "records/queue.md"]
+  },
+  "decoding": {"temperature": 0.1, "max_tokens": null}
+}
