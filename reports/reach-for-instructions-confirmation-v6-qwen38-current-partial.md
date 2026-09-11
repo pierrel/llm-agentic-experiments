@@ -22,3 +22,13 @@ field. V6's preregistered oracle required the word `approved` in the status
 field itself. Changing that oracle after its first model request would be an
 unregistered amendment, so V6 remains immutable. V7 is the fresh held-out
 study that tests the corrected boundary.
+
+## Post-review validity note
+
+The later review also found that V6 inherited an access-transition label for
+its primary outcome in the sealed bundle, although its fixture and oracle are
+an equipment-return handoff. This is an additional validity defect, not a
+reason to rewrite the executed V6 registration or runner. The report remains
+non-diagnostic: no V6 count is evidence for the guidance hypothesis. V7 and
+V8 are fresh registrations with their own task, primary outcome, calibration,
+and seals.
