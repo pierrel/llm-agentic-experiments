@@ -17,6 +17,7 @@ from studies.reach_for_instructions_confirmation_v4 import runner as base
 
 STUDY = "reach-for-instructions-confirmation-v5-qwen38"
 RANDOMIZATION_SEED = 20260905
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v5-qwen38-r3"
 _LOCK = threading.RLock()
 
 
@@ -81,7 +82,13 @@ def render_request_digests(root: Path) -> None:
 def seal(root: Path, *, source_commit: str, assist_revision: str) -> Any:
     with _configured():
         sealed = base.seal(root, source_commit=source_commit, assist_revision=assist_revision)
-        bundle = replace(sealed, registration=sealed.registration | {"randomization_seed": RANDOMIZATION_SEED})
+        bundle = replace(
+            sealed,
+            registration=sealed.registration | {
+                "randomization_seed": RANDOMIZATION_SEED,
+                "registration_tag": REGISTRATION_TAG,
+            },
+        )
         bundle.write(root / "experiments" / STUDY / "bundle.json")
         return bundle
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -43,6 +44,7 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
             ).registration["randomization_seed"]
         self.assertEqual(len(schedule), 72)
         self.assertEqual(bundle.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+        self.assertEqual(bundle.registration["registration_tag"], runner.REGISTRATION_TAG)
         self.assertEqual(list(bundle.schedule), list(schedule))
         self.assertIn("studies.reach_for_instructions_confirmation_v5.runner", command)
         self.assertEqual(stored_seed, runner.RANDOMIZATION_SEED)
@@ -61,6 +63,30 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
                 runner.main()
             bundle = StudyBundle.read_verified(root / "experiments" / runner.STUDY / "bundle.json")
         self.assertEqual(bundle.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+
+    def test_definition_accepts_the_immutable_tag_that_contains_the_sealed_bundle(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for directory in ("studies", "fixtures", "experiments"):
+                shutil.copytree(ROOT / directory, root / directory)
+            with runner._configured():
+                schedule = runner.base.base._schedule()
+            (root / "experiments" / runner.STUDY / "rendered-request-digests.json").write_text(
+                json.dumps({trial.sha256: "a" * 64 for trial in schedule})
+            )
+            sealed = runner.seal(root, source_commit="a" * 40, assist_revision="b" * 40)
+            for command in (
+                ["git", "init", "--quiet", str(root)],
+                ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
+                ["git", "-C", str(root), "config", "user.name", "Test"],
+                ["git", "-C", str(root), "add", "."],
+                ["git", "-C", str(root), "commit", "--quiet", "-m", "sealed definition"],
+                ["git", "-C", str(root), "tag", runner.REGISTRATION_TAG],
+            ):
+                subprocess.run(command, check=True, capture_output=True)
+            with runner._configured():
+                accepted, _, _ = runner.base.base.base._definition(root)
+        self.assertEqual(accepted.sha256, sealed.sha256)
 
 
 if __name__ == "__main__":
