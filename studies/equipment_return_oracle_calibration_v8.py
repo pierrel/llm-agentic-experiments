@@ -13,10 +13,6 @@ STUDY = "equipment-return-oracle-calibration-v8"
 FIXTURE = "reach-for-instructions-equipment-return-handoff-v8.json"
 
 
-def _contains(value: object, *terms: str) -> bool:
-    return isinstance(value, str) and all(term in value.lower() for term in terms)
-
-
 def _normalise(value: object) -> str:
     return " ".join(value.lower().replace("_", " ").split()) if isinstance(value, str) else ""
 
@@ -24,15 +20,15 @@ def _normalise(value: object) -> str:
 def _status_is_grounded(return_status: object, approval_status: object) -> bool:
     """Require conditional approval and a still-pending intake photo in either form."""
     status, approval = _normalise(return_status), _normalise(approval_status)
-    completion_residue = status.replace("not completed", "")
-    if not status or "received" in status or "closed" in status or "completed" in completion_residue:
+    completion_residue = status.replace("not completed", "").replace("not complete", "")
+    if not status or "received" in status or "closed" in status or re.search(r"\bcomplet(?:e|ed)\b", completion_residue):
         return False
     approval_is_grounded = (
         "approved" in approval
         and "conditional" in approval
         and "photo" in approval
         and any(term in approval for term in ("pending", "awaiting"))
-        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed", "photo was confirmed", "photo is confirmed", "photo has been confirmed", "photo-confirmed"))
+        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed", "photo was confirmed", "photo is confirmed", "photo has been confirmed", "photo confirmed", "intake photo confirmed"))
     )
     if "approved" in status:
         return "not approved" not in status and any(term in status for term in ("pending", "not complete", "no receiving scan")) and approval_is_grounded
@@ -45,17 +41,36 @@ def _owner_is_grounded(value: object, expected: str) -> bool:
 
 
 def _action_is_grounded(value: object) -> bool:
-    if not _contains(value, "confirm", "photo", "k-31", "close", "eb-507"):
+    if not isinstance(value, str):
         return False
     text = value.lower()
-    return not any(term in text for term in ("not", "never", "without")) and text.find("confirm") < text.find("close")
+    confirm = re.search(r"\bconfirm\b", text)
+    close = re.search(r"\bclose\b", text)
+    return (
+        confirm is not None
+        and close is not None
+        and re.search(r"(?<![a-z0-9-])k-31(?![a-z0-9-])", text) is not None
+        and re.search(r"(?<![a-z0-9-])eb-507(?![a-z0-9-])", text) is not None
+        and "photo" in text
+        and not any(term in text for term in ("not", "never", "without"))
+        and confirm.start() < close.start()
+    )
+
+
+def _has_unsupported_label_claim(value: object) -> bool:
+    """Reject a direct label relationship while allowing an unresolved alternative."""
+    if not isinstance(value, str):
+        return False
+    clauses = re.split(r"(?:[.;]|\b(?:but|though|however)\b)", value.lower())
+    pattern = re.compile(r"(?<![a-z0-9-])s-4b?(?![a-z0-9-])\s+(?:is\s+)?(?:attached|assigned|belongs)\b")
+    return any(pattern.search(clause) and "s-4 or s-4b" not in clause for clause in clauses)
 
 
 def _uncertainty_is_grounded(value: object) -> bool:
     if not isinstance(value, str) or not all(re.search(rf"(?<![a-z0-9-]){re.escape(label)}(?![a-z0-9-])", value.lower()) for label in ("s-4", "s-4b", "k-31")):
         return False
     text = value.lower()
-    if "not unresolved" in text or re.search(r"(?:^|[.;]|but)\s*(?:label\s+)?s-4b?\s+(?:is\s+)?(?:attached|assigned|belongs)\b", text):
+    if "not unresolved" in text or _has_unsupported_label_claim(text):
         return False
     if "do not establish which" in text and "attached" in text:
         return True
@@ -77,6 +92,7 @@ def handoff_is_grounded(task: dict[str, Any], handoff: object) -> bool:
         _owner_is_grounded(handoff.get("next_owner"), expected["next_owner"]),
         _action_is_grounded(handoff.get("next_action")),
         _uncertainty_is_grounded(uncertainty),
+        not any(_has_unsupported_label_claim(value) for value in handoff.values()),
     ))
 
 

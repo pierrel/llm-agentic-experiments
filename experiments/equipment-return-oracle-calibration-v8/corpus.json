@@ -63,6 +63,18 @@
       }
     },
     {
+      "name": "compact-photo-confirmed",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "conditionally_approved_pending_photo_confirmed",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
+    },
+    {
       "name": "invented-completion",
       "handoff": {
         "case_id": "NL-9127",
@@ -80,6 +92,18 @@
         "case_id": "NL-9127",
         "equipment_id": "EB-507",
         "return_status": "Closure is conditionally approved but not completed; completed later.",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
+    },
+    {
+      "name": "contradictory-complete-form",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "Closure is conditionally approved but not complete; closure is complete.",
         "approval_status": "Conditionally approved pending the intake photo confirmation.",
         "next_owner": "Rowan",
         "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
@@ -108,6 +132,42 @@
         "next_owner": "Rowan",
         "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
         "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31, but S-4 belongs with kit K-31."
+      }
+    },
+    {
+      "name": "unsupported-label-in-action",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507; S-4 is attached to kit K-31.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
+    },
+    {
+      "name": "negative-or-boundary-action",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Disconfirm the intake photo for kit K-310, then close the return for EB-5070.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31."
+      }
+    },
+    {
+      "name": "unsupported-label-though-clause",
+      "handoff": {
+        "case_id": "NL-9127",
+        "equipment_id": "EB-507",
+        "return_status": "not completed",
+        "approval_status": "Conditionally approved pending the intake photo confirmation.",
+        "next_owner": "Rowan",
+        "next_action": "Confirm the intake photo for kit K-31, then close the return for EB-507.",
+        "remaining_uncertainty": "It remains unresolved whether label S-4 or S-4B belongs with kit K-31, though S-4 is attached to kit K-31."
       }
     }
   ]

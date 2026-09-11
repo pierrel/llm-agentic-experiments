@@ -39,6 +39,10 @@ axis.
   photo cases. The bundle now records the registration and report hashes, and
   admission verifies the tagged contents of those files plus every shared
   harness module used by the runner.
+- **Oracle hardening r3:** The condition-blind corpus now places an unsupported
+  label claim in the action field as well as uncertainty, distinguishes both
+  complete and completed from their negated forms, and rejects compact
+  photo-confirmed, prefix-verb, and identifier-suffix variants.
 
 ## Decision
 
