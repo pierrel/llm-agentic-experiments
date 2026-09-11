@@ -1,0 +1,4 @@
+{
+  "G01": {"delivery": "The complete equipment-return procedure is in the system prompt. The fixed loader schema remains available but no named guide is discoverable."},
+  "G02": {"delivery": "Only the named equipment-return guide is discoverable in the system prompt. Its complete procedure is returned after an exact load_skill request."}
+}

@@ -1,0 +1,4 @@
+{
+  "G01": {"delivery": "The complete procedure is appended to the system prompt before the first model decision."},
+  "G02": {"delivery": "Only the skill catalog is in the system prompt; the same procedure is returned by load_skill after the agent requests it."}
+}
