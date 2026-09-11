@@ -78,6 +78,7 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
         self.assertFalse(calibration._status_is_grounded("Approved; the return was received and completion recorded."))
         self.assertTrue(calibration._status_is_grounded("Closure is approved but not complete; no receiving scan has been recorded."))
         self.assertTrue(calibration._status_is_grounded("Approved closure; the return is still pending."))
+        self.assertTrue(calibration._status_is_grounded("Approved; closure is not complete and not received."))
 
     def test_seal_binds_fresh_schedule_and_immutable_tag(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -97,6 +98,9 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
             self.assertEqual(descriptor["max_tokens"], None)
             drifted = root / "descriptor.json"
             drifted.write_text(json.dumps(descriptor | {"user_prompt": descriptor["user_prompt"] + " Also name the guide."}))
+            with self.assertRaises(ValueError):
+                runner._run_worker(drifted, root / "result.json", root / "marker")
+            drifted.write_text(json.dumps(descriptor | {"files": descriptor["files"] | {"records/extra.md": "Injected material."}}))
             with self.assertRaises(ValueError):
                 runner._run_worker(drifted, root / "result.json", root / "marker")
             self.assertTrue(

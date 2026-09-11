@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -16,29 +17,30 @@ def _contains(value: object, *terms: str) -> bool:
     return isinstance(value, str) and all(term in value.lower() for term in terms)
 
 
-NEGATED_COMPLETION = (
-    "not yet completed",
-    "not yet complete",
-    "not completed",
-    "not complete",
-    "never completed",
-    "awaiting completion",
-    "pending completion",
-    "completion is pending",
-    "completion pending",
-    "incomplete",
+CLOSURE_TERM = r"(?:complete[a-z]*|received|receipt|closed)"
+NEGATED_CLOSURE = (
+    re.compile(rf"\b(?:not|never|no)\b(?:\s+(?:yet|been|fully|currently|still))*\s+{CLOSURE_TERM}\b"),
+    re.compile(rf"\b(?:awaiting|pending|without)\s+{CLOSURE_TERM}\b"),
+    re.compile(rf"\b{CLOSURE_TERM}\s+(?:is\s+|are\s+|remains\s+)?(?:still\s+)?pending\b"),
+    re.compile(r"\bincomplete\b"),
 )
 
 
 def _status_is_grounded(value: object) -> bool:
-    """Accept an approved but uncompleted return without inventing receipt."""
+    """Accept an approved but uncompleted return without inventing receipt.
+
+    A grounded status states approval and withholds completion, receipt, and
+    closure. Negated forms such as "not complete" or "awaiting receipt" are
+    removed first, so only an unsupported positive closure claim remains in
+    `asserted` and causes rejection.
+    """
     if not isinstance(value, str):
         return False
     text = " ".join(value.lower().replace("_", " ").split())
     asserted = text
-    for term in NEGATED_COMPLETION:
-        asserted = asserted.replace(term, "")
-    if "approved" not in text or any(term in asserted for term in ("complete", "completion", "received", "closed")):
+    for pattern in NEGATED_CLOSURE:
+        asserted = pattern.sub(" ", asserted)
+    if "approved" not in text or re.search(rf"\b{CLOSURE_TERM}\b", asserted):
         return False
     return "no receiving scan" in text or "pending" in text or "not complete" in text
 
