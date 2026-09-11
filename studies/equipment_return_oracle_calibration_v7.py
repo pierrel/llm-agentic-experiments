@@ -25,16 +25,22 @@ def _status_is_grounded(return_status: object, approval_status: object) -> bool:
     status, approval = _normalise(return_status), _normalise(approval_status)
     if not status or "received" in status or "closed" in status or ("completed" in status and "not completed" not in status):
         return False
-    if "approved" in status:
-        return any(term in status for term in ("pending", "not complete", "no receiving scan"))
-    return (
-        status in {"not completed", "return not completed"}
-        and "approved" in approval
+    approval_is_grounded = (
+        "approved" in approval
         and "conditional" in approval
         and "photo" in approval
         and "maren" in approval
-        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected"))
-        and not any(term in approval for term in ("completed", "received", "closed"))
+        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected", "completed", "received", "closed"))
+    )
+    if "approved" in status:
+        return (
+            "not approved" not in status
+            and any(term in status for term in ("pending", "not complete", "no receiving scan"))
+            and approval_is_grounded
+        )
+    return (
+        status in {"not completed", "return not completed"}
+        and approval_is_grounded
     )
 
 
