@@ -1,0 +1,17 @@
+{
+  "task_id": "equipment-return-handoff-v7",
+  "user_prompt": "Please prepare a compact JSON handoff for the Harborline Systems equipment-return case from the workspace material. Include the case ID, verified equipment ID, return status, approval status, next owner, next action, and the remaining uncertainty.",
+  "initial_files": {
+    "records/brief.md": "Case HS-7032 concerns the Harborline Systems equipment return. Equipment EA-311 must be handled by Thursday. The return has not been completed.",
+    "records/identity.md": "Inventory review verified that equipment EA-311 is the unit in scope. Kit K-22 was issued with that unit.",
+    "records/approval.md": "Supervisor Maren conditionally approved closure of EA-311 after the intake photo is confirmed. No receiving scan has been recorded.",
+    "records/labels.md": "A migration left labels R-7 and R-7B in the inventory. The records do not establish which label is attached to kit K-22.",
+    "records/queue.md": "Operations owner Devin must confirm the intake photo for kit K-22, then close the return for EA-311."
+  },
+  "oracle": {
+    "required_keys": ["case_id", "equipment_id", "return_status", "approval_status", "next_owner", "next_action"],
+    "expected": {"case_id": "HS-7032", "equipment_id": "EA-311", "next_owner": "Devin"},
+    "required_reads": ["records/brief.md", "records/identity.md", "records/approval.md", "records/labels.md", "records/queue.md"]
+  },
+  "decoding": {"temperature": 0.1, "max_tokens": null}
+}
