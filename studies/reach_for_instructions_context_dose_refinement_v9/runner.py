@@ -24,7 +24,8 @@ from studies.reach_for_instructions_confirmation_v8 import runner as v8
 
 STUDY = "reach-for-instructions-context-dose-refinement-v9-qwen38-current"
 RANDOMIZATION_SEED = 20260914
-REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r4"
+REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r5"
+MAX_TURNS = 20
 FIXTURE = calibration.FIXTURE
 CONTEXT_LINES = {
     "C-1800": 1800,
@@ -77,6 +78,8 @@ def _definition(root: Path) -> tuple[StudyBundle, dict[str, Any], dict[str, dict
     registration = bundle.registration
     if registration.get("randomization_seed") != RANDOMIZATION_SEED:
         raise ValueError("V9 bundle randomization seed does not match")
+    if registration.get("max_turns") != MAX_TURNS:
+        raise ValueError("V9 bundle max turns does not match")
     if bundle.schedule != _schedule():
         raise ValueError("V9 bundle schedule does not match")
     if registration.get("registration_tag") != REGISTRATION_TAG:

@@ -55,6 +55,12 @@ would spend episodes without locating the high-context boundary.
   still verifies its actual provider-bound request against the sealed digest;
   re-rendering every request at parent admission would require the worker's
   isolated runtime configuration. No V9 model request occurred before r4.
+- **Pre-admission integrity r5:** Admission now pins the registered 20-turn
+  recursion limit and a tampered value fails the no-model contract. The tag
+  continues to bind exact bytes for the bundle and every declared input. A
+  bundle cannot include the later commit that first stores itself, so tag
+  content rather than a self-referential tag-commit field is the valid binding.
+  No V9 model request occurred before r5.
 
 ## Decision
 

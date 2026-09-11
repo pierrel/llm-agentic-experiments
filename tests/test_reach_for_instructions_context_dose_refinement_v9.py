@@ -72,6 +72,7 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
         self.assertEqual(sealed.schedule, runner._schedule())
         self.assertEqual(sealed.fixtures, {context: digest(task) for context in runner.CONTEXT_LINES})
         self.assertEqual(sealed.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+        self.assertEqual(sealed.registration["max_turns"], runner.MAX_TURNS)
         self.assertEqual(sealed.registration["registration_tag"], runner.REGISTRATION_TAG)
         self.assertEqual(sealed.model["id"], "Qwen3.8-27B-UD-Q4_K_XL.gguf")
         self.assertEqual(sealed.model["revision"], "2026-09-11")
@@ -102,6 +103,7 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
     def test_definition_rejects_self_consistent_schedule_seed_tag_and_model_changes(self) -> None:
         self._assert_definition_rejects(lambda bundle: replace(bundle, schedule=tuple(reversed(bundle.schedule))), "schedule does not match")
         self._assert_definition_rejects(lambda bundle: replace(bundle, registration=bundle.registration | {"randomization_seed": -1}), "seed does not match")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, registration=bundle.registration | {"max_turns": 1}), "max turns does not match")
         self._assert_definition_rejects(lambda bundle: replace(bundle, registration=bundle.registration | {"registration_tag": "other"}), "tag")
         self._assert_definition_rejects(lambda bundle: replace(bundle, model=bundle.model | {"id": "other"}), "model or harness settings do not match")
 

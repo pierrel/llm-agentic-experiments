@@ -1,6 +1,6 @@
 # Reach-for-instructions context-dose refinement V9
 
-## Pre-admission integrity r2-r4
+## Pre-admission integrity r2-r5
 
 No V9 model request occurred under r1. Revision r2 corrects the sealed bundle's
 model identity to the current Qwen3.8 profile and adds schedule, tag, and model
@@ -14,6 +14,14 @@ profile settings, adds a direct V8 calibration assertion to the V9 contract,
 and records both pre-admission revisions in the registry. The task, delivery
 contrast, context grid, randomization seed, sample plan, oracle, and settings
 are unchanged.
+
+No V9 model request occurred under r4. Revision r5 pins the registered
+20-turn recursion limit and adds a tampering regression. The registration tag
+continues to verify the exact tagged bundle and every declared input. The
+bundle cannot self-record the later commit that first contains it, so a tag
+commit identity is not a separate seal field; a tag move that changes a sealed
+input fails the existing byte-for-byte check. The task, delivery contrast,
+context grid, sample plan, oracle, and settings are unchanged.
 
 No V9 model request occurred under r3. Revision r4 pins the fixed Deep Agents
 architecture and tool schema at admission. It adds independent seed perturbation
