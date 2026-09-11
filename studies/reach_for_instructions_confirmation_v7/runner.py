@@ -187,7 +187,11 @@ def seal(root: Path, *, source_commit: str, assist_revision: str) -> StudyBundle
         sealed = core.seal(root, source_commit=source_commit, assist_revision=assist_revision)
         bundle = replace(
             sealed,
-            registration=sealed.registration | {"randomization_seed": RANDOMIZATION_SEED, "registration_tag": REGISTRATION_TAG},
+            registration=sealed.registration | {
+                "randomization_seed": RANDOMIZATION_SEED,
+                "registration_tag": REGISTRATION_TAG,
+                "primary_outcome": "structured equipment-return handoff plus ordered workspace procedure",
+            },
             model={"id": MODEL_ID, "revision": "2026-09-11", "configuration_sha256": digest(sealed.settings["model"])},
             runner_revision="reach-for-instructions-qwen38-current-runner-v7",
             analysis_revision="reach-for-instructions-qwen38-current-summary-v7",

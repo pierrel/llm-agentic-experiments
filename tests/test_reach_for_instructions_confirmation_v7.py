@@ -85,6 +85,7 @@ class ReachForInstructionsConfirmationV7Test(unittest.TestCase):
             stored = StudyBundle.read_verified(root / "experiments" / runner.STUDY / "bundle.json")
         self.assertEqual(len(sealed.schedule), 72)
         self.assertEqual(sealed.registration["randomization_seed"], runner.RANDOMIZATION_SEED)
+        self.assertEqual(sealed.registration["primary_outcome"], "structured equipment-return handoff plus ordered workspace procedure")
         self.assertEqual(accepted.sha256, sealed.sha256)
         self.assertEqual(stored.sha256, sealed.sha256)
 
