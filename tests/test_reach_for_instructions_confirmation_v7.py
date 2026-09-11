@@ -59,6 +59,17 @@ class ReachForInstructionsConfirmationV7Test(unittest.TestCase):
         score = runner._score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(handoff)}, "messages": messages})
         self.assertFalse(score.passed)
 
+    def test_any_write_before_all_reads_fails_and_schedule_uses_v7_seed(self) -> None:
+        task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
+        handoff = json.loads((ROOT / "experiments" / calibration.STUDY / "corpus.json").read_text())["accepted"][0]["handoff"]
+        messages = [{"tool_calls": [{"name": "glob", "args": {}}]}, {"tool_calls": [{"name": "write_file", "args": {"file_path": "notes.txt"}}]}]
+        score = runner._score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(handoff)}, "messages": messages})
+        self.assertFalse(score.passed)
+        inherited = core._schedule()
+        with runner._configured():
+            self.assertEqual(core._schedule(), runner._schedule())
+            self.assertNotEqual(core._schedule(), inherited)
+
     def test_process_metric_remains_independent_of_artifact_success(self) -> None:
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
         score = runner._score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": "{}"}, "messages": [{"tool_calls": [{"name": "load_skill", "args": {"name": runner.base.SKILL_NAME}}]}]})

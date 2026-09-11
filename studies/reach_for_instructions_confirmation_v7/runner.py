@@ -8,11 +8,13 @@ import json
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+import random
 import threading
 from typing import Any, Iterator
 
-from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
+from harness.bundle import StudyBundle, Trial, atomic_write, canonical_json, digest
 from harness.runner import RunArtifacts
+from harness.schedule import blocked_schedule
 from studies import equipment_return_oracle_calibration_v7 as calibration
 from studies.reach_for_instructions_confirmation_v2 import runner as core
 from studies.reach_for_instructions_confirmation_v6 import runner as base
@@ -26,6 +28,22 @@ REGISTRATION_TAG = "reach-for-instructions-confirmation-v7-qwen38-current-r4"
 FIXTURE = calibration.FIXTURE
 _LOCK = threading.RLock()
 _BASE_WORKER_COMMAND = base._worker_command
+
+
+def _schedule() -> tuple[Trial, ...]:
+    """Interleave fresh context blocks from V7's declared randomization seed."""
+    blocks = []
+    for offset, context in enumerate(core.CONTEXT_LINES):
+        trials = blocked_schedule([context], core.CONDITIONS, 12, RANDOMIZATION_SEED + offset)
+        blocks.extend(tuple(trials[index:index + len(core.CONDITIONS)]) for index in range(0, len(trials), len(core.CONDITIONS)))
+    deterministic = random.Random(RANDOMIZATION_SEED)
+    ordered: list[tuple[Trial, ...]] = []
+    while blocks:
+        candidates = [block for block in blocks if not ordered or block[0].task != ordered[-1][0].task]
+        choice = deterministic.choice(candidates or blocks)
+        blocks.remove(choice)
+        ordered.append(choice)
+    return tuple(trial for block in ordered for trial in block)
 
 
 def _implementation_sha256(root: Path) -> str:
@@ -125,8 +143,7 @@ def _score(task: dict[str, Any], payload: dict[str, Any]) -> core.TrialScore:
             elif name in {"write_file", "edit_file"}:
                 is_handoff = isinstance(path, str) and path.lstrip("/") in outputs
                 if not inventory or not set(task["oracle"]["required_reads"]).issubset(reads):
-                    if is_handoff:
-                        return core.TrialScore(False, "a handoff write occurred before all source reads", first_tokens, process_loaded)
+                    return core.TrialScore(False, "a write occurred before all source reads", first_tokens, process_loaded)
                 elif is_handoff:
                     wrote = True
     if not inventory or not wrote or not set(task["oracle"]["required_reads"]).issubset(reads):
@@ -140,6 +157,7 @@ def _configured() -> Iterator[None]:
     outer = {"STUDY": STUDY, "RANDOMIZATION_SEED": RANDOMIZATION_SEED, "_implementation_sha256": _implementation_sha256, "_worker_command": _worker_command}
     inner = {
         "FIXTURE": FIXTURE,
+        "_schedule": _schedule,
         "_settings": _settings,
         "_implementation_sha256": _implementation_sha256,
         "_worker_command": _worker_command,
