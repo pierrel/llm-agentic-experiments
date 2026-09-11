@@ -35,6 +35,7 @@ class ReachForInstructionsConfirmationV7Test(unittest.TestCase):
         self.assertTrue(calibration.handoff_is_grounded(task, corpus["accepted"][1]["handoff"]))
         self.assertFalse(calibration.handoff_is_grounded(task, corpus["rejected"][0]["handoff"]))
         self.assertFalse(calibration.handoff_is_grounded(task, corpus["rejected"][1]["handoff"]))
+        self.assertFalse(calibration.handoff_is_grounded(task, corpus["rejected"][3]["handoff"]))
 
     def test_fixture_grounded_handoff_passes_primary_score(self) -> None:
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
@@ -44,6 +45,18 @@ class ReachForInstructionsConfirmationV7Test(unittest.TestCase):
         calls.append({"tool_calls": [{"name": "write_file", "args": {"file_path": "outgoing/handoff.json"}}]})
         score = runner._score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(handoff)}, "messages": calls})
         self.assertTrue(score.passed)
+
+    def test_output_write_before_all_reads_fails_even_if_a_later_write_occurs(self) -> None:
+        task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
+        handoff = json.loads((ROOT / "experiments" / calibration.STUDY / "corpus.json").read_text())["accepted"][0]["handoff"]
+        messages = [
+            {"tool_calls": [{"name": "glob", "args": {}}]},
+            {"tool_calls": [{"name": "write_file", "args": {"file_path": "outgoing/handoff.json"}}]},
+            *({"tool_calls": [{"name": "read_file", "args": {"file_path": path}}]} for path in task["oracle"]["required_reads"]),
+            {"tool_calls": [{"name": "write_file", "args": {"file_path": "notes.txt"}}]},
+        ]
+        score = runner._score(task, {"files": task["initial_files"] | {"outgoing/handoff.json": json.dumps(handoff)}, "messages": messages})
+        self.assertFalse(score.passed)
 
     def test_process_metric_remains_independent_of_artifact_success(self) -> None:
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())

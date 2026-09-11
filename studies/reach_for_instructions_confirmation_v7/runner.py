@@ -22,7 +22,7 @@ STUDY = "reach-for-instructions-confirmation-v7-qwen38-current"
 MODEL_ID = "Qwen3.8-27B-UD-Q4_K_XL.gguf"
 WEIGHTS_SHA256 = "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e"
 RANDOMIZATION_SEED = 20260912
-REGISTRATION_TAG = "reach-for-instructions-confirmation-v7-qwen38-current-r1"
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v7-qwen38-current-r2"
 FIXTURE = calibration.FIXTURE
 _LOCK = threading.RLock()
 _BASE_WORKER_COMMAND = base._worker_command
@@ -122,9 +122,12 @@ def _score(task: dict[str, Any], payload: dict[str, Any]) -> core.TrialScore:
                     return core.TrialScore(False, "a source read occurred before inventory", first_tokens, process_loaded)
                 reads.add(path.lstrip("/"))
             elif name in {"write_file", "edit_file"}:
+                is_handoff = isinstance(path, str) and path.lstrip("/") in outputs
                 if not inventory or not set(task["oracle"]["required_reads"]).issubset(reads):
-                    return core.TrialScore(False, "a handoff write occurred before all source reads", first_tokens, process_loaded)
-                wrote = True
+                    if is_handoff:
+                        return core.TrialScore(False, "a handoff write occurred before all source reads", first_tokens, process_loaded)
+                elif is_handoff:
+                    wrote = True
     if not inventory or not wrote or not set(task["oracle"]["required_reads"]).issubset(reads):
         return core.TrialScore(False, "trace lacks required inventory, reads, or handoff write", first_tokens, process_loaded)
     return core.TrialScore(True, "structured handoff and ordered procedure passed", first_tokens, process_loaded)

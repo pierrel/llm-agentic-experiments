@@ -32,6 +32,8 @@ def _status_is_grounded(return_status: object, approval_status: object) -> bool:
         and "approved" in approval
         and "conditional" in approval
         and "photo" in approval
+        and "maren" in approval
+        and not any(term in approval for term in ("not approved", "not conditionally approved", "no approval", "rejected"))
         and not any(term in approval for term in ("completed", "received", "closed"))
     )
 
@@ -52,6 +54,8 @@ def _uncertainty_is_grounded(value: object) -> bool:
     if not _contains(value, "r-7", "r-7b", "k-22"):
         return False
     text = value.lower()
+    if any(claim in text for claim in ("r-7 is attached", "r-7b is attached", "r-7 attached", "r-7b attached", "r-7 is assigned", "r-7b is assigned")):
+        return False
     if "do not establish which" in text and "attached" in text:
         return True
     return (

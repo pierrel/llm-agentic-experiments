@@ -61,6 +61,18 @@
         "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
         "remaining_uncertainty": "Label R-7 is attached to kit K-22."
       }
+    },
+    {
+      "name": "negated-or-invented-approval",
+      "handoff": {
+        "case_id": "HS-7032",
+        "equipment_id": "EA-311",
+        "return_status": "not_completed",
+        "approval_status": "Not approved by Alice, despite a conditional photo note.",
+        "next_owner": "Devin",
+        "next_action": "Confirm the intake photo for kit K-22, then close the return for EA-311.",
+        "remaining_uncertainty": "It remains unresolved whether label R-7 or R-7B belongs with kit K-22."
+      }
     }
   ]
 }
