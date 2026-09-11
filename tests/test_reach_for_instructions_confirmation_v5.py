@@ -18,6 +18,15 @@ from studies.reach_for_instructions_confirmation_v5 import runner
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _copy_seal_inputs(root: Path) -> None:
+    shutil.copytree(ROOT / "studies", root / "studies")
+    shutil.copytree(ROOT / "fixtures", root / "fixtures")
+    experiments = root / "experiments"
+    experiments.mkdir()
+    for study in (runner.STUDY, runner.base.base.calibration.STUDY):
+        shutil.copytree(ROOT / "experiments" / study, experiments / study)
+
+
 class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
     def test_configuration_restores_the_wrapped_v4_globals(self) -> None:
         original_study = runner.base.STUDY
@@ -28,8 +37,7 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
     def test_seal_binds_the_actual_fresh_schedule_seed_and_worker(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for directory in ("studies", "fixtures", "experiments"):
-                shutil.copytree(ROOT / directory, root / directory)
+            _copy_seal_inputs(root)
             with runner._configured():
                 schedule = runner.base.base._schedule()
                 command = runner.base.base._worker_command(
@@ -52,8 +60,7 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
     def test_cli_seal_uses_the_v5_seed_binding(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for directory in ("studies", "fixtures", "experiments"):
-                shutil.copytree(ROOT / directory, root / directory)
+            _copy_seal_inputs(root)
             with runner._configured():
                 schedule = runner.base.base._schedule()
             (root / "experiments" / runner.STUDY / "rendered-request-digests.json").write_text(
@@ -67,8 +74,7 @@ class ReachForInstructionsConfirmationV5Test(unittest.TestCase):
     def test_definition_accepts_the_immutable_tag_that_contains_the_sealed_bundle(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for directory in ("studies", "fixtures", "experiments"):
-                shutil.copytree(ROOT / directory, root / directory)
+            _copy_seal_inputs(root)
             with runner._configured():
                 schedule = runner.base.base._schedule()
             (root / "experiments" / runner.STUDY / "rendered-request-digests.json").write_text(

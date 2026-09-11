@@ -17,7 +17,7 @@ from studies.reach_for_instructions_confirmation_v4 import runner as base
 
 STUDY = "reach-for-instructions-confirmation-v5-qwen38"
 RANDOMIZATION_SEED = 20260905
-REGISTRATION_TAG = "reach-for-instructions-confirmation-v5-qwen38-r3"
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v5-qwen38-r4"
 _LOCK = threading.RLock()
 
 
@@ -31,7 +31,7 @@ def _implementation_sha256(root: Path) -> str:
         root / "fixtures" / base.base.base.FIXTURE,
         root / "experiments" / STUDY / "conditions.json",
         root / "experiments" / STUDY / base.base.base.RENDERED_REQUEST_DIGESTS,
-        root / "experiments" / "access-transition-oracle-calibration-v1" / "corpus.json",
+        root / "experiments" / base.base.calibration.STUDY / "corpus.json",
     ]
     return digest({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
 

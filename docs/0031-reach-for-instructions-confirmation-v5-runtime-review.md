@@ -13,8 +13,8 @@ no-admission bundle remains in Git history and is not a result record.
 
 The subsequent launch also stopped before admission: V5's rewritten bundle
 retained its inherited registration tag, while the current sealed bundle was
-stored under the immutable `-r2` tag. V5 now writes its exact immutable tag
-into the registration and has a no-model regression that builds a temporary
-tagged repository and passes the same definition check used before launch. The
-new `-r3` tag is a provenance correction only; it does not alter the registered
-scientific design.
+stored under the immutable `-r2` tag. The superseded no-admission `-r3` tag
+preserves that first provenance correction. V5 now writes its exact immutable `-r4` tag into the
+registration and has a no-model regression that builds a temporary tagged
+repository and passes the same definition check used before launch. This is a
+provenance correction only; it does not alter the registered scientific design.
