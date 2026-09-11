@@ -1,0 +1,17 @@
+{
+  "task_id": "equipment-return-handoff-v8",
+  "user_prompt": "Please prepare a compact JSON handoff for the Northridge Labs equipment-return case from the workspace material. Include the case ID, verified equipment ID, return status, approval status, next owner, next action, and the remaining uncertainty.",
+  "initial_files": {
+    "records/brief.md": "Case NL-9127 concerns the Northridge Labs equipment return. Equipment EB-507 must be handled by Friday. The return has not been completed.",
+    "records/identity.md": "Inventory review verified that equipment EB-507 is the unit in scope. Kit K-31 was issued with that unit.",
+    "records/approval.md": "Supervisor Talia conditionally approved closure of EB-507 after the intake photo is confirmed. No receiving scan has been recorded.",
+    "records/labels.md": "A migration left labels S-4 and S-4B in the inventory. The records do not establish which label is attached to kit K-31.",
+    "records/queue.md": "Operations owner Rowan must confirm the intake photo for kit K-31, then close the return for EB-507."
+  },
+  "oracle": {
+    "required_keys": ["case_id", "equipment_id", "return_status", "approval_status", "next_owner", "next_action"],
+    "expected": {"case_id": "NL-9127", "equipment_id": "EB-507", "next_owner": "Rowan"},
+    "required_reads": ["records/brief.md", "records/identity.md", "records/approval.md", "records/labels.md", "records/queue.md"]
+  },
+  "decoding": {"temperature": 0.1, "max_tokens": null}
+}
