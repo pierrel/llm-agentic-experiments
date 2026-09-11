@@ -48,6 +48,13 @@ would spend episodes without locating the high-context boundary.
   public worker command remains a cooperative scheduler implementation detail,
   not a model-provider authorization boundary; hardening local provider access
   is separate infrastructure work. No V9 model request occurred before r3.
+- **Pre-admission integrity r4:** Admission now also pins the Deep Agents
+  architecture identity and fixed tool schema. The no-model suite independently
+  perturbs the randomization seed and rejects self-consistent schedule, seed,
+  tag, model, fixture, architecture, and tool-schema rewrites. Each worker
+  still verifies its actual provider-bound request against the sealed digest;
+  re-rendering every request at parent admission would require the worker's
+  isolated runtime configuration. No V9 model request occurred before r4.
 
 ## Decision
 

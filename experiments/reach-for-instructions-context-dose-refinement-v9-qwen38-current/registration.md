@@ -1,6 +1,6 @@
 # Reach-for-instructions context-dose refinement V9
 
-## Pre-admission integrity r2-r3
+## Pre-admission integrity r2-r4
 
 No V9 model request occurred under r1. Revision r2 corrects the sealed bundle's
 model identity to the current Qwen3.8 profile and adds schedule, tag, and model
@@ -13,6 +13,15 @@ self-consistent but altered seed, schedule, tag, model identity, or current
 profile settings, adds a direct V8 calibration assertion to the V9 contract,
 and records both pre-admission revisions in the registry. The task, delivery
 contrast, context grid, randomization seed, sample plan, oracle, and settings
+are unchanged.
+
+No V9 model request occurred under r3. Revision r4 pins the fixed Deep Agents
+architecture and tool schema at admission. It adds independent seed perturbation
+and self-consistent tampering cases for schedule, seed, tag, model, fixture,
+architecture, and tool schema. Provider-request digests remain sealed and are
+verified at the provider boundary by each worker; recomputing them at admission
+would require runtime model configuration before the worker's isolated setup.
+The task, delivery contrast, context grid, sample plan, oracle, and settings
 are unchanged.
 
 ## Question

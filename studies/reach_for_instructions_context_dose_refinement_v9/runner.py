@@ -24,7 +24,7 @@ from studies.reach_for_instructions_confirmation_v8 import runner as v8
 
 STUDY = "reach-for-instructions-context-dose-refinement-v9-qwen38-current"
 RANDOMIZATION_SEED = 20260914
-REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r3"
+REGISTRATION_TAG = "reach-for-instructions-context-dose-refinement-v9-qwen38-current-r4"
 FIXTURE = calibration.FIXTURE
 CONTEXT_LINES = {
     "C-1800": 1800,
@@ -94,6 +94,17 @@ def _definition(root: Path) -> tuple[StudyBundle, dict[str, Any], dict[str, dict
     }
     if bundle.settings != expected_settings or bundle.model != expected_model:
         raise ValueError("V9 bundle model or harness settings do not match")
+    expected_architecture = {
+        "id": "deepagents-langchain-tool-loop",
+        "revision": "v1",
+        "configuration_sha256": digest(expected_settings["harness_architecture"]),
+    }
+    expected_tools = {
+        "load_skill": {"name": "load_skill", "arguments": {"name": "string"}},
+        "deepagents_filesystem": {"mode": "default filesystem and TODO tools", "external_tools": []},
+    }
+    if bundle.harness_architecture != expected_architecture or bundle.tool_schemas != expected_tools:
+        raise ValueError("V9 bundle architecture or tool schema does not match")
     if registration.get("registration_sha256") != _file_sha256(root / "experiments" / STUDY / "registration.md"):
         raise ValueError("V9 bundle registration does not match")
     if registration.get("analysis_sha256") != _file_sha256(root / "harness" / "report.py"):
@@ -152,9 +163,8 @@ def render_request_digests(root: Path) -> None:
     """Write V9's sealed post-middleware request map without model calls."""
     with _configured():
         task = core._root_task(root)
-        values = {}
-        for trial in core._schedule():
-            values[trial.sha256] = digest(delivery._rendered_provider_request(
+        values = {
+            trial.sha256: digest(delivery._rendered_provider_request(
                 system_prompt=delivery._system_prompt(core.CONDITION_DELIVERY[trial.condition], core.CONTEXT_LINES[trial.task]),
                 user_prompt=task["user_prompt"],
                 files=task["initial_files"],
@@ -163,6 +173,8 @@ def render_request_digests(root: Path) -> None:
                 temperature=task["decoding"]["temperature"],
                 max_tokens=task["decoding"]["max_tokens"],
             ))
+            for trial in core._schedule()
+        }
     atomic_write(root / "experiments" / STUDY / core.RENDERED_REQUEST_DIGESTS, canonical_json(values) + b"\n")
 
 

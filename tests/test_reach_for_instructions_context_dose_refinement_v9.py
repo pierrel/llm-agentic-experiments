@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from harness.bundle import StudyBundle, digest
 from studies import equipment_return_oracle_calibration_v8 as calibration
@@ -31,6 +32,8 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
         self.assertEqual({trial.task for trial in schedule}, set(runner.CONTEXT_LINES))
         self.assertEqual({trial.condition for trial in schedule}, {"G01", "G02"})
         self.assertEqual({task: sum(trial.task == task for trial in schedule) for task in runner.CONTEXT_LINES}, {task: 24 for task in runner.CONTEXT_LINES})
+        with patch.object(runner, "RANDOMIZATION_SEED", runner.RANDOMIZATION_SEED + 1):
+            self.assertNotEqual(schedule, runner._schedule())
         with runner._configured():
             self.assertEqual(core.CONTEXT_LINES, runner.CONTEXT_LINES)
             command = core._worker_command(Path("root"), Path("workspace"), Path("assist"), Path("python"), Path("descriptor"), Path("result"), Path("marker"))
@@ -75,7 +78,7 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
         self.assertEqual(accepted.sha256, sealed.sha256)
         self.assertEqual(stored.sha256, sealed.sha256)
 
-    def test_definition_rejects_a_self_consistent_reordered_schedule(self) -> None:
+    def _assert_definition_rejects(self, mutate: object, message: str) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             _copy_seal_inputs(root)
@@ -83,7 +86,7 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
             digest_path = root / "experiments" / runner.STUDY / core.RENDERED_REQUEST_DIGESTS
             digest_path.write_text(json.dumps({trial.sha256: "a" * 64 for trial in schedule}))
             sealed = runner.seal(root, source_commit="a" * 40, assist_revision="b" * 40)
-            replace(sealed, schedule=tuple(reversed(sealed.schedule))).write(root / "experiments" / runner.STUDY / "bundle.json")
+            mutate(sealed).write(root / "experiments" / runner.STUDY / "bundle.json")
             for command in (
                 ["git", "init", "--quiet", str(root)],
                 ["git", "-C", str(root), "config", "user.email", "tests@example.invalid"],
@@ -93,8 +96,19 @@ class ReachForInstructionsContextDoseRefinementV9Test(unittest.TestCase):
                 ["git", "-C", str(root), "tag", runner.REGISTRATION_TAG],
             ):
                 subprocess.run(command, check=True, capture_output=True)
-            with runner._configured(), self.assertRaisesRegex(ValueError, "schedule does not match"):
+            with runner._configured(), self.assertRaisesRegex(ValueError, message):
                 core._definition(root)
+
+    def test_definition_rejects_self_consistent_schedule_seed_tag_and_model_changes(self) -> None:
+        self._assert_definition_rejects(lambda bundle: replace(bundle, schedule=tuple(reversed(bundle.schedule))), "schedule does not match")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, registration=bundle.registration | {"randomization_seed": -1}), "seed does not match")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, registration=bundle.registration | {"registration_tag": "other"}), "tag")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, model=bundle.model | {"id": "other"}), "model or harness settings do not match")
+
+    def test_definition_rejects_self_consistent_fixture_architecture_and_tool_changes(self) -> None:
+        self._assert_definition_rejects(lambda bundle: replace(bundle, fixtures=bundle.fixtures | {"C-1800": "0" * 64}), "fixture does not match")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, harness_architecture=bundle.harness_architecture | {"id": "other"}), "architecture or tool schema does not match")
+        self._assert_definition_rejects(lambda bundle: replace(bundle, tool_schemas=bundle.tool_schemas | {"load_skill": {"name": "other", "arguments": {"name": "string"}}}), "architecture or tool schema does not match")
 
 
 if __name__ == "__main__":
