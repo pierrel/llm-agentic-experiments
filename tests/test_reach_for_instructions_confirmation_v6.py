@@ -46,6 +46,15 @@ class ReachForInstructionsConfirmationV6Test(unittest.TestCase):
         self.assertFalse(score.passed)
         self.assertTrue(score.skill_loaded_before_first_read)
 
+    def test_process_metric_ignores_non_source_reads(self) -> None:
+        task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
+        messages = [
+            {"tool_calls": [{"name": "read_file", "args": {"file_path": "notes/scratch.md"}}]},
+            {"tool_calls": [{"name": "load_skill", "args": {"name": runner.SKILL_NAME}}]},
+        ]
+        score = runner._score(task, {"files": task["initial_files"], "messages": messages})
+        self.assertTrue(score.skill_loaded_before_first_read)
+
     def test_fixture_grounded_handoff_passes_the_new_primary_score(self) -> None:
         task = json.loads((ROOT / "fixtures" / runner.FIXTURE).read_text())
         handoff = json.loads((ROOT / "experiments" / calibration.STUDY / "corpus.json").read_text())["accepted"][0]["handoff"]

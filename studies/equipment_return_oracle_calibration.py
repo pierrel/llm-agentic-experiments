@@ -48,7 +48,11 @@ def _uncertainty_is_grounded(value: object) -> bool:
     text = value.lower()
     if "do not establish which" in text and "attached" in text:
         return True
-    return "unresolved" in text and any(term in text for term in ("label", "belongs", "assigned"))
+    return (
+        "unresolved" in text
+        and any(term in text for term in ("whether", "which"))
+        and any(term in text for term in ("label", "belongs", "assigned"))
+    )
 
 
 def handoff_is_grounded(task: dict[str, Any], handoff: object) -> bool:

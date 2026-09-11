@@ -24,7 +24,7 @@ STUDY = "reach-for-instructions-confirmation-v6-qwen38-current"
 MODEL_ID = "Qwen3.8-27B-UD-Q4_K_XL.gguf"
 WEIGHTS_SHA256 = "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e"
 RANDOMIZATION_SEED = 20260911
-REGISTRATION_TAG = "reach-for-instructions-confirmation-v6-qwen38-current-r1"
+REGISTRATION_TAG = "reach-for-instructions-confirmation-v6-qwen38-current-r2"
 FIXTURE = calibration.FIXTURE
 SKILL_NAME = "prepare-equipment-return"
 SKILL_CATALOG = (
@@ -115,7 +115,7 @@ def _worker_command(*args: Any) -> list[str]:
     return ["studies.reach_for_instructions_confirmation_v6.runner" if value in names else value for value in command]
 
 
-def _process_skill_load(messages: object) -> bool:
+def _process_skill_load(messages: object, source_paths: set[str]) -> bool:
     """Measure guide use independently of the primary artifact outcome."""
     if not isinstance(messages, list):
         return False
@@ -129,7 +129,8 @@ def _process_skill_load(messages: object) -> bool:
                 continue
             name = call.get("name")
             arguments = call.get("args", call.get("arguments", {}))
-            if name == "read_file":
+            path = arguments.get("file_path", arguments.get("path")) if isinstance(arguments, dict) else None
+            if name == "read_file" and isinstance(path, str) and path.lstrip("/") in source_paths:
                 first_source_read = True
             elif name == "load_skill" and isinstance(arguments, dict) and arguments.get("name") == SKILL_NAME and not first_source_read:
                 return True
@@ -139,7 +140,7 @@ def _process_skill_load(messages: object) -> bool:
 def _score(task: dict[str, Any], payload: dict[str, Any]) -> core.TrialScore:
     """Score the equipment handoff while retaining process evidence on failure."""
     files, messages = payload.get("files"), payload.get("messages")
-    process_loaded = _process_skill_load(messages)
+    process_loaded = _process_skill_load(messages, set(task["oracle"]["required_reads"]))
     if not isinstance(files, dict) or not isinstance(messages, list):
         return core.TrialScore(False, "worker result is malformed", None, process_loaded)
     first_tokens = core._first_input_tokens(messages)
@@ -259,6 +260,8 @@ def _run_worker(descriptor_path: Path, result_path: Path, marker: Path) -> None:
         raise ValueError("V6 worker files are invalid")
     if not isinstance(descriptor["fixture"], dict) or digest(descriptor["fixture"]) != descriptor["fixture_sha256"]:
         raise ValueError("V6 worker fixture differs from the sealed descriptor")
+    if descriptor["fixture"].get("user_prompt") != descriptor["user_prompt"] or descriptor["fixture"].get("initial_files") != descriptor["files"]:
+        raise ValueError("V6 worker fixture contents differ from the sealed descriptor")
     if descriptor["fixture"].get("decoding") != {"temperature": descriptor["temperature"], "max_tokens": None} or descriptor["max_tokens"] is not None:
         raise ValueError("V6 worker output-token policy differs from the fixture")
     if not isinstance(descriptor["max_turns"], int) or descriptor["max_turns"] < 1 or not isinstance(descriptor["temperature"], (int, float)):
