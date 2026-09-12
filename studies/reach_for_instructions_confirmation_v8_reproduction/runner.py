@@ -692,13 +692,17 @@ def _run_batch_locked(
 ) -> str:
     """Run one inherited bounded invocation or fail closed without reinterpretation."""
     thread_id = manifest["execution"]["coordination_thread_id"]
-    registration = _verify_local_registration(root, manifest)
     if output.is_symlink() or (output.exists() and not output.is_dir()):
         raise ValueError("reproduction output must be a real directory")
     if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
         raise ValueError("reproduction output must have mode 0700")
     if (output / INVALID).exists():
         raise ValueError("reproduction output is quarantined and cannot resume")
+    try:
+        registration = _verify_local_registration(root, manifest)
+    except Exception as error:
+        _quarantine(output, "reproduction registration drifted")
+        raise ValueError("reproduction registration drifted; fresh reproduction required") from error
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)

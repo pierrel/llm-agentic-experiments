@@ -716,6 +716,14 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ), patch.object(
                 runner, "_verify_local_registration", return_value=TEST_REGISTRATION
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
+                with self.subTest(stage="registration-drift"), patch.object(
+                    runner, "_verify_local_registration", side_effect=ValueError("moved tag")
+                ):
+                    with self.assertRaisesRegex(ValueError, "registration drifted"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
                 with self.subTest(stage="pre-attestation"), patch.object(
                     runner, "attest", side_effect=RuntimeError("attestation failed")
                 ):
