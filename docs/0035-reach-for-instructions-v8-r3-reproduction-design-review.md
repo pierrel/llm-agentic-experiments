@@ -55,7 +55,9 @@ The reproduction adds no model-visible treatment. Its wrapper:
    Each batch opens first, verifies through, and addresses that snapshot through a
    directory descriptor held by the wrapper. The parent, exact code checkouts, and
    interpreter environment all execute through similarly verified held descriptors,
-   so no model-capable path is re-resolved after its identity check.
+   including during archive. The inherited parent canonicalizes its descriptor path
+   to that same prepared checkout before work; the cooperative same-UID protocol, not
+   an adversarial local security boundary, protects it after that inherited step.
 4. Attests the interpreter, resolved modules, the full non-extra dependency
    closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
    commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
@@ -67,7 +69,8 @@ The reproduction adds no model-visible treatment. Its wrapper:
    attestation, parent execution, event reconciliation, and cooldown recording;
    the inherited child lock remains separate.
 7. Reconciles parent admission records with the exact same-thread event-log byte
-   slice and requires its ordered, second-granularity events to fall within the
+   slice from one descriptor-bound inode and requires its ordered,
+   second-granularity events to fall within the
    seconds containing the parent invocation's recorded UTC bounds and exact
    admission/outcome count transition. Only a
    corroborated production denial retries; an

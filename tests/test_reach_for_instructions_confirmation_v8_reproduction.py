@@ -777,10 +777,32 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             prefix = b'{"event":"old"}\n'
             appended = b'{"event":"new"}\n'
             events.write_bytes(prefix + appended)
-            self.assertEqual(runner._read_appended_events(events, prefix), [{"event": "new"}])
-            events.write_bytes(b'{"event":"bad"}\n' + appended)
-            with self.assertRaisesRegex(ValueError, "non-append-only"):
-                runner._read_appended_events(events, prefix)
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                self.assertEqual(
+                    runner._read_appended_events(descriptor, prefix), [{"event": "new"}]
+                )
+                events.write_bytes(b'{"event":"bad"}\n' + appended)
+                with self.assertRaisesRegex(ValueError, "non-append-only"):
+                    runner._read_appended_events(descriptor, prefix)
+            finally:
+                os.close(descriptor)
+
+    def test_event_slice_ignores_a_replacement_path(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            prefix = b'{"event":"old"}\n'
+            events.write_bytes(prefix + b'{"event":"real"}\n')
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                replacement = events.with_suffix(".replacement")
+                replacement.write_bytes(prefix + b'{"event":"fabricated"}\n')
+                replacement.replace(events)
+                self.assertEqual(
+                    runner._read_appended_events(descriptor, prefix), [{"event": "real"}]
+                )
+            finally:
+                os.close(descriptor)
 
     def test_event_interval_requires_ordered_events_within_parent_run(self) -> None:
         record = {

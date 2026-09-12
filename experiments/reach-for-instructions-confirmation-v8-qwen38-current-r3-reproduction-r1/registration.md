@@ -153,6 +153,10 @@ then verifies all identities through those descriptors. The inherited parent use
 only `/proc/<wrapper>/fd/<descriptor>` references held open through the batch. The
 gate still reads canonical coordination state through the fixed `AGENTIC_ROOT`;
 only executable, source, and configuration pathname resolution is descriptor-bound.
+The inherited parent canonicalizes its parent-checkout descriptor to the same
+prepared checkout before execution. Preventing a malicious same-UID process from
+rewriting that inode afterward is outside this cooperative protocol's stated
+security boundary. Archive repeats the same open-first descriptor verification.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
@@ -173,7 +177,8 @@ remains before quarantine and lock release. A failure before binding can stop on
 the still-gated bootstrap and can never release the parent payload.
 
 The wrapper hashes that exact shared gate before and after every invocation and
-accepts evidence only from its sibling `.coordination/events.jsonl`. A different
+opens its sibling `.coordination/events.jsonl` once before execution, then reads the
+appended evidence from that same inode. A different
 tool or caller-selected event log cannot authorize an admission or retry. The
 shared workspace itself is derived from the registered worktree's Git common
 directory; a caller-supplied copied workspace cannot substitute its own lock or

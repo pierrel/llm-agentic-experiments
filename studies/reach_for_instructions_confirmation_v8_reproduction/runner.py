@@ -797,9 +797,18 @@ def _prepare_attestation_directory(
     return []
 
 
-def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
-    """Read only complete event records appended to an unchanged exact prefix."""
-    complete = events.read_bytes()
+def _read_event_descriptor(descriptor: int) -> bytes:
+    """Read one stable event-log inode at its current exact length."""
+    size = os.fstat(descriptor).st_size
+    complete = os.pread(descriptor, size, 0)
+    if len(complete) != size:
+        raise ValueError("coordination event log changed while being read")
+    return complete
+
+
+def _read_appended_events(descriptor: int, prefix: bytes) -> list[dict[str, Any]]:
+    """Read complete records appended to an unchanged, already-open inode."""
+    complete = _read_event_descriptor(descriptor)
     if complete[:len(prefix)] != prefix:
         raise ValueError("coordination event log changed non-append-only")
     appended = complete[len(prefix):]
@@ -1241,6 +1250,30 @@ def _bound_invocation_paths(
             os.close(descriptor)
 
 
+def _bound_execution_environment(
+    bound: dict[str, Path], workspace_root: Path, manifest: dict[str, Any], label: str
+) -> dict[str, str]:
+    """Re-attest imports through held paths and return their execution environment."""
+    expected = manifest["runtime"]["expected_attestation"]
+    identity = _environment_identity(
+        assist_python=bound["python"],
+        workspace_root=workspace_root,
+        execution_root=bound["execution"],
+        assist_source=bound["assist"],
+        production_threads_path_sha256=expected["production_threads_path_sha256"],
+        worker_workspace=bound["worker"],
+    )
+    for key in ("distributions", "environment", "modules", "python"):
+        if identity[key] != expected[key]:
+            raise ValueError(f"bound {label} {key} differs from registration")
+    return _execution_environment(
+        workspace_root=workspace_root,
+        execution_root=bound["execution"],
+        assist_source=bound["assist"],
+        production_threads_path_sha256=expected["production_threads_path_sha256"],
+    )
+
+
 def _verify_run_scope(
     root: Path,
     output: Path,
@@ -1369,50 +1402,51 @@ def _run_batch_locked(
     except Exception as error:
         _quarantine(output, "pre-invocation runtime attestation failed")
         raise ValueError("pre-invocation runtime attestation failed") from error
-    if not events.exists() or events.is_symlink():
-        _quarantine(output, "coordination event log is unavailable")
-        raise ValueError("coordination event log is unavailable")
+    event_descriptor = -1
     try:
-        prefix = events.read_bytes()
-    except OSError as error:
+        event_descriptor = os.open(
+            events,
+            os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        )
+        event_metadata = os.fstat(event_descriptor)
+        if not stat.S_ISREG(event_metadata.st_mode):
+            raise ValueError("coordination event log is not a regular file")
+        prefix = _read_event_descriptor(event_descriptor)
+    except (OSError, ValueError) as error:
+        if event_descriptor >= 0:
+            os.close(event_descriptor)
+            event_descriptor = -1
         _quarantine(output, "coordination event log is unavailable")
         raise ValueError("coordination event log is unavailable") from error
     if prefix and not prefix.endswith(b"\n"):
+        os.close(event_descriptor)
+        event_descriptor = -1
         _quarantine(output, "coordination event log has an unterminated prefix")
         raise ValueError("coordination event log has an unterminated prefix")
-    worker_workspace = _verify_worker_workspace(execution_root, manifest)
-    with _bound_invocation_paths(
-        execution_root, assist_source, assist_python, worker_workspace, manifest
-    ) as bound:
-        bound_environment = _environment_identity(
-            assist_python=bound["python"],
-            workspace_root=workspace_root,
-            execution_root=bound["execution"],
-            assist_source=bound["assist"],
-            production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
-            worker_workspace=bound["worker"],
-        )
-        expected_environment = manifest["runtime"]["expected_attestation"]
-        for key in ("distributions", "environment", "modules", "python"):
-            if bound_environment[key] != expected_environment[key]:
-                raise ValueError(f"bound worker {key} differs from registration")
-        env = _execution_environment(
-            workspace_root=workspace_root,
-            execution_root=bound["execution"],
-            assist_source=bound["assist"],
-            production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
-        )
-        command = [
-            str(bound["python"]), "-m",
-            "studies.reach_for_instructions_confirmation_v8.runner", "run",
-            "--root", str(bound["execution"]), "--output", str(output),
-            "--workspace-root", str(bound["worker"]),
-            "--assist-source", str(bound["assist"]),
-            "--assist-python", str(bound["python"]),
-        ]
-        started_at = _time_bound()
-        result = _run_parent(command, cwd=workspace_root, env=env, output=output)
-        finished_at = _time_bound()
+    try:
+        worker_workspace = _verify_worker_workspace(execution_root, manifest)
+        with _bound_invocation_paths(
+            execution_root, assist_source, assist_python, worker_workspace, manifest
+        ) as bound:
+            env = _bound_execution_environment(bound, workspace_root, manifest, "worker")
+            command = [
+                str(bound["python"]), "-m",
+                "studies.reach_for_instructions_confirmation_v8.runner", "run",
+                "--root", str(bound["execution"]), "--output", str(output),
+                "--workspace-root", str(bound["worker"]),
+                "--assist-source", str(bound["assist"]),
+                "--assist-python", str(bound["python"]),
+            ]
+            started_at = _time_bound()
+            result = _run_parent(command, cwd=workspace_root, env=env, output=output)
+            finished_at = _time_bound()
+        new_events = _read_appended_events(event_descriptor, prefix)
+    except (OSError, ValueError):
+        _quarantine(output, "bound runtime or event attestation failed")
+        raise
+    finally:
+        if event_descriptor >= 0:
+            os.close(event_descriptor)
     try:
         after = attest(
             root, execution_root=execution_root, assist_source=assist_source,
@@ -1424,11 +1458,6 @@ def _run_batch_locked(
         atomic_write(attestations / f"{label}-identity-after.json", after)
     except Exception:
         _quarantine(output, "runtime identity changed during the bounded invocation")
-        raise
-    try:
-        new_events = _read_appended_events(events, prefix)
-    except (OSError, ValueError) as error:
-        _quarantine(output, str(error))
         raise
     try:
         admissions, outcomes = _verified_progress(output, bundle)
@@ -1681,17 +1710,18 @@ def _archive_and_analyze_locked(
         schedule_size=len(bundle.schedule),
     )
     expected_metadata = _trial_metadata_from_traces(output, bundle, outcomes)
-    env = _execution_environment(
-        workspace_root=workspace_root,
-        execution_root=execution_root,
-        assist_source=assist_source,
-        production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
-    )
-    command = [
-        str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "archive",
-        "--root", str(execution_root), "--output", str(output), "--archive", str(capsule),
-    ]
-    subprocess.run(command, cwd=workspace_root, env=env, check=True)
+    worker_workspace = _verify_worker_workspace(execution_root, manifest)
+    with _bound_invocation_paths(
+        execution_root, assist_source, assist_python, worker_workspace, manifest
+    ) as bound:
+        env = _bound_execution_environment(bound, workspace_root, manifest, "archive worker")
+        command = [
+            str(bound["python"]), "-m",
+            "studies.reach_for_instructions_confirmation_v8.runner", "archive",
+            "--root", str(bound["execution"]), "--output", str(output),
+            "--archive", str(capsule),
+        ]
+        subprocess.run(command, cwd=workspace_root, env=env, check=True)
     if (capsule / "trial-metadata.json").read_bytes() != expected_metadata:
         raise ValueError("archived trial metadata differs from sealed traces")
     copied_attestations = capsule / "runtime-attestations"
