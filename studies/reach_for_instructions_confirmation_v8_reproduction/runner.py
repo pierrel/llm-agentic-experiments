@@ -608,8 +608,7 @@ def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
 
 
 def _time_bound() -> str:
-    # Shared resource events use second precision, so invocation bounds must too.
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _run_parent(
@@ -727,6 +726,9 @@ def _run_batch_locked(
         attested_batch_not_before = (
             batch_intervals[-1]["next_batch_not_before_unix"] if batch_intervals else None
         )
+        attested_batch_mtime_ns = (
+            batch_intervals[-1]["batch_cooldown_mtime_ns"] if batch_intervals else None
+        )
         attested_batch_boundary = (
             batch_intervals[-1]["outcomes_after"] if batch_intervals else 0
         )
@@ -734,6 +736,7 @@ def _run_batch_locked(
         if not attested_batch_boundary and cooldown.exists():
             raise ValueError("sealed batch cooldown exists before a batch boundary")
         batch_file_not_before: float | int | None = None
+        batch_file_mtime_ns: int | None = None
         if attested_batch_boundary:
             value = _read_batch_cooldown(cooldown)
             if (
@@ -741,11 +744,14 @@ def _run_batch_locked(
             ):
                 raise ValueError("sealed batch cooldown differs from run progress")
             batch_file_not_before = value["not_before_unix"]
+            batch_file_mtime_ns = cooldown.stat().st_mtime_ns
         attested_denial_not_before = (
             prior_intervals[-1]["next_denial_not_before_unix"] if prior_intervals else None
         )
         if batch_file_not_before != attested_batch_not_before:
             raise ValueError("sealed batch cooldown differs from its attestation")
+        if batch_file_mtime_ns != attested_batch_mtime_ns:
+            raise ValueError("sealed batch cooldown timestamp differs from its attestation")
         if denial_not_before != attested_denial_not_before:
             raise ValueError("production-denial cooldown differs from its attestation")
         now = time.time()
@@ -829,10 +835,13 @@ def _run_batch_locked(
         _quarantine(output, "provider-request fidelity failure")
         raise ValueError("provider-request fidelity failure; fresh reproduction required")
     next_batch_not_before: float | int | None = None
+    batch_cooldown_mtime_ns: int | None = None
     if len(new_outcomes) == BATCH_EPISODES and len(outcomes) < len(bundle.schedule):
+        batch_cooldown_path = output / "batch-cooldown.json"
         try:
-            batch_cooldown = _read_batch_cooldown(output / "batch-cooldown.json")
-        except ValueError as error:
+            batch_cooldown = _read_batch_cooldown(batch_cooldown_path)
+            batch_cooldown_mtime_ns = batch_cooldown_path.stat().st_mtime_ns
+        except (OSError, ValueError) as error:
             _quarantine(output, "sealed batch cooldown is missing or malformed")
             raise ValueError("sealed batch cooldown is missing or malformed") from error
         if (
@@ -869,6 +878,7 @@ def _run_batch_locked(
     interval = {
         "admissions_after": len(admissions),
         "admissions_before": len(prior_admissions),
+        "batch_cooldown_mtime_ns": batch_cooldown_mtime_ns,
         "events": attested_events,
         "finished_at": finished_at,
         "next_batch_not_before_unix": next_batch_not_before,
@@ -919,20 +929,25 @@ def run_batch(
     """Serialize and run one inherited bounded invocation."""
     manifest = _verify_run_scope(root, output, workspace_root, events)
     with _wrapper_lock(output):
-        return _run_batch_locked(
-            root,
-            output,
-            attestations,
-            manifest=manifest,
-            execution_root=execution_root,
-            assist_source=assist_source,
-            assist_python=assist_python,
-            workspace_root=workspace_root,
-            model_path=model_path,
-            server_pid=server_pid,
-            llama_source=llama_source,
-            events=events,
-        )
+        try:
+            return _run_batch_locked(
+                root,
+                output,
+                attestations,
+                manifest=manifest,
+                execution_root=execution_root,
+                assist_source=assist_source,
+                assist_python=assist_python,
+                workspace_root=workspace_root,
+                model_path=model_path,
+                server_pid=server_pid,
+                llama_source=llama_source,
+                events=events,
+            )
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                _quarantine(output, "reproduction wrapper was interrupted")
+            raise
 
 
 def _verify_archive_runtime(

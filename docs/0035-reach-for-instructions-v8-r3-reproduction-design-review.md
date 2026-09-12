@@ -53,13 +53,15 @@ The reproduction adds no model-visible treatment. Its wrapper:
    attestation, parent execution, event reconciliation, and cooldown recording;
    the inherited child lock remains separate.
 7. Reconciles parent admission records with the exact same-thread event-log byte
-   slice and requires its ordered events to fall within the parent invocation's
-   recorded UTC bounds and exact admission/outcome count transition. Only a
+   slice and requires its ordered, second-granularity events to fall within the
+   seconds containing the parent invocation's recorded UTC bounds and exact
+   admission/outcome count transition. Only a
    corroborated production denial retries; an
    admitted timeout may omit the finish event when the inherited safety bound
    kills the wrapper. Persisted 600-second denial and 900-second terminal-batch
    boundaries are copied into the interval history and enforced before the next
-   parent invocation; ambiguity quarantines.
+   parent invocation. The exact parent cooldown-file mtime anchors the batch
+   boundary's registered 900-second duration; ambiguity quarantines.
 8. Validates the exact persisted admission/outcome schemas and semantics rather
    than relying on hash-chain continuity alone.
 9. Refuses resume or analysis after any identity, request-fidelity, event,

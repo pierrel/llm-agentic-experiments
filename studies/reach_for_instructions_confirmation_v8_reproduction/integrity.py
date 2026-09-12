@@ -15,6 +15,7 @@ from harness.records import OUTCOME_KINDS
 
 DENIAL_RETRY_SECONDS = 600
 BATCH_EPISODES = 24
+BATCH_PAUSE_SECONDS = 900
 DENIAL = re.compile(
     r"^agentic: production is busy \(.+\); not starting (?:llm|real-llm) work\. "
     r"Run `tools/agentic production status --attempt N`, set its next-probe timer, "
@@ -26,7 +27,8 @@ def verify_event_interval(record: Any) -> list[dict[str, Any]]:
     """Return ordered event records that fall inside their parent invocation."""
     expected = {
         "admissions_after", "admissions_before", "events", "finished_at",
-        "next_batch_not_before_unix", "next_denial_not_before_unix",
+        "batch_cooldown_mtime_ns", "next_batch_not_before_unix",
+        "next_denial_not_before_unix",
         "outcomes_after", "outcomes_before", "started_at",
     }
     if not isinstance(record, dict) or set(record) != expected:
@@ -49,6 +51,13 @@ def verify_event_interval(record: Any) -> list[dict[str, Any]]:
             or not math.isfinite(not_before)
         ):
             raise ValueError("runtime event attestation cadence is malformed")
+    cooldown_mtime = record["batch_cooldown_mtime_ns"]
+    if cooldown_mtime is not None and (
+        not isinstance(cooldown_mtime, int)
+        or isinstance(cooldown_mtime, bool)
+        or cooldown_mtime < 0
+    ):
+        raise ValueError("runtime event attestation cooldown identity is malformed")
     events = record["events"]
     if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
         raise ValueError("runtime event attestation is malformed")
@@ -58,11 +67,13 @@ def verify_event_interval(record: Any) -> list[dict[str, Any]]:
         times = [datetime.fromisoformat(event["at"]) for event in events]
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("runtime event timestamps are malformed") from error
+    event_start = started.replace(microsecond=0)
+    event_finish = finished.replace(microsecond=0)
     if (
         started.tzinfo is None or finished.tzinfo is None
         or any(value.tzinfo is None for value in times)
         or started > finished or times != sorted(times)
-        or any(value < started or value > finished for value in times)
+        or any(value < event_start or value > event_finish for value in times)
     ):
         raise ValueError("runtime events fall outside their ordered invocation interval")
     return events
@@ -230,8 +241,9 @@ def verify_execution_intervals(
         denial_not_before = current["next_denial_not_before_unix"]
         if denied != (denial_not_before is not None):
             raise ValueError("denial attestation differs from its registered cadence")
+        started = datetime.fromisoformat(current["started_at"]).timestamp()
+        finished = datetime.fromisoformat(current["finished_at"]).timestamp()
         if denied:
-            finished = datetime.fromisoformat(current["finished_at"]).timestamp()
             if denial_not_before < finished + DENIAL_RETRY_SECONDS - 1:
                 raise ValueError("production-denial cooldown is shorter than registered")
             if index + 1 < len(intervals):
@@ -241,10 +253,22 @@ def verify_execution_intervals(
         completed = current["outcomes_after"] - current["outcomes_before"]
         requires_pause = completed == BATCH_EPISODES and current["outcomes_after"] < schedule_size
         not_before = current["next_batch_not_before_unix"]
-        if requires_pause != (not_before is not None):
+        cooldown_mtime_ns = current["batch_cooldown_mtime_ns"]
+        if requires_pause != (not_before is not None) or requires_pause != (
+            cooldown_mtime_ns is not None
+        ):
             raise ValueError("terminal-batch attestation differs from its registered cadence")
         if not requires_pause:
             continue
+        recorded = not_before - BATCH_PAUSE_SECONDS
+        cooldown_mtime = cooldown_mtime_ns / 1_000_000_000
+        if (
+            recorded < started
+            or recorded > cooldown_mtime
+            or cooldown_mtime > finished
+            or cooldown_mtime - recorded > 1
+        ):
+            raise ValueError("terminal-batch cooldown is not the registered 900 seconds")
         if index + 1 >= len(intervals):
             continue
         resumed = datetime.fromisoformat(intervals[index + 1]["started_at"]).timestamp()

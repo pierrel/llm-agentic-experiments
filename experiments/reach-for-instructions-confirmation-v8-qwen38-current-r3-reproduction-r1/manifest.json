@@ -18,12 +18,12 @@
       "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "69620a4ba78654bd33d4ca527d29dc46fa4180dfa87bb4b0f97ccaf94d023061",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "43f39df9ab7f0757b87bec61cba8147b0a2697f1916b4d21fbdb12bb5a2a5841",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "8db62c82844f611fb292af6593064924a348c53d7e408ab74bbee42f40297285",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "fab1f51844fe49c93b5769ac6b2c006058c094e0da0d3ff25029e3870dee9449",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "3a4d8a47392fed5caae93557ddd003a4c81a53b46c49fd0d12b848122afadf28",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "b13fde1e6e02912d6afbea7032e97650814a0d66d6128d977cc06f3a62839240",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "eab97ac44ba82e1938cd48c1e3cece66c37c1a9bd23e656a0cdad5e986ad2ed1"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "31f86090995efd13b4db1b4e93b1b732ae205068a67baba30b84b5522aa2e1e0",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "b58b62af047a2837c55bbf52bcf083d1756c2088fbb9d1218c8645a3519f65f2"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -217,5 +217,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "03890647e72e46272ccfd87e1e3ffdac552e0f205a4823ecce28d78f73fbc783"
+  "sha256": "a4f37ab5388f32464580dc676d70982fa397c4a432f421b2a7b075d3e78fb284"
 }

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -74,6 +73,7 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
     for index in range(3):
         started = f"2026-09-12T00:{index * 16:02d}:00+00:00"
         finished = f"2026-09-12T00:{index * 16 + 1:02d}:00+00:00"
+        next_batch_not_before = 1789172160.0 + index * 960 if index < 2 else None
         events = []
         for admission in admissions[index * 24:(index + 1) * 24]:
             self_events = [
@@ -85,11 +85,13 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
         interval = {
             "admissions_after": (index + 1) * 24,
             "admissions_before": index * 24,
+            "batch_cooldown_mtime_ns": (
+                int((next_batch_not_before - 900) * 1_000_000_000)
+                if next_batch_not_before is not None else None
+            ),
             "events": events,
             "finished_at": finished,
-            "next_batch_not_before_unix": (
-                1789172160.0 + index * 960 if index < 2 else None
-            ),
+            "next_batch_not_before_unix": next_batch_not_before,
             "next_denial_not_before_unix": None,
             "outcomes_after": (index + 1) * 24,
             "outcomes_before": index * 24,
@@ -496,8 +498,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         record = {
             "admissions_after": 0,
             "admissions_before": 0,
-            "started_at": "2026-09-12T00:00:00+00:00",
-            "finished_at": "2026-09-12T00:00:02+00:00",
+            "batch_cooldown_mtime_ns": None,
+            "started_at": "2026-09-12T00:00:00.900000+00:00",
+            "finished_at": "2026-09-12T00:00:02.100000+00:00",
             "events": [
                 {"at": "2026-09-12T00:00:00+00:00"},
                 {"at": "2026-09-12T00:00:02+00:00"},
@@ -514,7 +517,6 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             })
         with self.assertRaisesRegex(ValueError, "outside"):
             runner._verify_event_interval(record | {"events": list(reversed(record["events"]))})
-        self.assertEqual(datetime.fromisoformat(runner._time_bound()).microsecond, 0)
 
     def test_batch_cooldown_requires_an_integer_outcome_count(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -527,6 +529,43 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     }) + b"\n")
                     with self.assertRaisesRegex(ValueError, "malformed"):
                         runner._read_batch_cooldown(path)
+
+    def test_batch_pause_is_anchored_to_its_cooldown_file_timestamp(self) -> None:
+        thread = "thread-1"
+        recorded = 1789171260.0
+        interval = {
+            "admissions_after": 24,
+            "admissions_before": 0,
+            "batch_cooldown_mtime_ns": int(recorded * 1_000_000_000),
+            "events": [
+                event
+                for _ in range(24)
+                for event in (
+                    {"at": "2026-09-12T00:00:00+00:00", "event": "resource_started", "resource": "llm", "thread": thread},
+                    {"at": "2026-09-12T00:00:00+00:00", "event": "resource_finished", "exit_code": 0, "resource": "llm", "thread": thread},
+                )
+            ],
+            "finished_at": "2026-09-12T00:01:00+00:00",
+            "next_batch_not_before_unix": recorded + 900,
+            "next_denial_not_before_unix": None,
+            "outcomes_after": 24,
+            "outcomes_before": 0,
+            "started_at": "2026-09-12T00:00:00+00:00",
+        }
+        admissions = [{"admitted": True} for _ in range(24)]
+        outcomes = [{"outcome": "pass"} for _ in range(24)]
+        runner.verify_execution_intervals(
+            [interval], admissions=admissions, outcomes=outcomes,
+            thread_id=thread, schedule_size=72,
+        )
+        with self.assertRaisesRegex(ValueError, "registered 900 seconds"):
+            runner.verify_execution_intervals(
+                [interval | {"next_batch_not_before_unix": recorded + 890}],
+                admissions=admissions,
+                outcomes=outcomes,
+                thread_id=thread,
+                schedule_size=72,
+            )
 
     def test_denial_retry_cadence_is_enforced_and_attested(self) -> None:
         admission = {"admitted": False, "trial_sha256": "trial-1"}
@@ -544,6 +583,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             {
                 "admissions_after": 1,
                 "admissions_before": 0,
+                "batch_cooldown_mtime_ns": None,
                 "events": [{
                     "at": "2026-09-12T00:00:00+00:00",
                     "event": "production_admission_denied",
@@ -560,6 +600,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             {
                 "admissions_after": 2,
                 "admissions_before": 1,
+                "batch_cooldown_mtime_ns": None,
                 "events": [
                     {"at": "2026-09-12T00:10:00+00:00", "event": "resource_started", "resource": "llm", "thread": thread},
                     {"at": "2026-09-12T00:10:00+00:00", "event": "resource_finished", "exit_code": 0, "resource": "llm", "thread": thread},
@@ -719,6 +760,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)
                 ):
                     with self.assertRaisesRegex(RuntimeError, "changed"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                shutil.rmtree(attestations)
+                with self.subTest(stage="wrapper-interrupt"), patch.object(
+                    runner, "attest", side_effect=[b'{}\n', KeyboardInterrupt]
+                ), patch.object(
+                    runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+                ):
+                    with self.assertRaises(KeyboardInterrupt):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())
 
