@@ -1,0 +1,87 @@
+# Design review 0035: exact V8-r3 reproduction
+
+## Lineage
+
+This reproduction preserves the registered design in
+`experiments/reach-for-instructions-confirmation-v8-qwen38-current/registration.md`
+and the completed report in
+`reports/reach-for-instructions-confirmation-v8-qwen38-current.md`. It does not
+revise either historical record. It adds a new preregistered execution and
+stronger administrative identity checks because an exact reproduction must not
+silently inherit a different checkout, runtime, server, or denial classification.
+
+## Authoritative target
+
+The target is exactly the valid, complete, current-profile V8-r3 confirmation at
+lightweight tag `reach-for-instructions-confirmation-v8-qwen38-current-r3`,
+commit `3ac6975e46f6c217feb8237ca15e4c65eea3065d`, tree
+`4754881f77f97dc036ca1bdaa8a568ce45674c94`. Earlier reach confirmations are
+invalid, partial, or use a different registered design. Selecting among them by
+their observed result is prohibited.
+
+## Preserved experimental design
+
+The reproduction uses the parent's exact 72-trial bundle. This preserves the
+hypothesis, G01 handed versus G02 discoverable guidance contrast, 0/900/3,600
+inert-line doses, Northridge Labs fixture, one-turn natural user prompt, full
+system prompts, provider-request digests, schedule and order, V8-r3 semantic and
+ordered-workspace oracle, secondary guide-load measure, Qwen3.8 profile, Assist
+revision, inherited runner, 24-terminal batch bound, 900-second break, no
+result-based stop, and intention-to-treat handling of every admitted terminal
+outcome.
+
+## Reproduction-specific integrity controls
+
+The reproduction adds no model-visible treatment. Its wrapper:
+
+1. Requires a clean checkout of the exact published annotated reproduction tag.
+2. Creates clean detached local clones of the exact parent and Assist commits.
+3. Uses the workspace's shared production-priority gate while preventing the
+   gate's forced working directory from shadowing either clean clone.
+4. Attests the interpreter, resolved modules, installed distribution contents,
+   Assist commit/tree, parent commit/tree/tag/bundle, llama.cpp commit/tree,
+   running server binary/arguments/PID/start identity, and complete model bytes
+   before and after every inherited bounded invocation.
+5. Requires identical attestation bytes across the whole reproduction.
+6. Reconciles parent admission records with the exact same-thread event-log byte
+   slice. Only a corroborated production denial retries; an admitted timeout may
+   omit the finish event when the inherited safety bound kills the wrapper;
+   ambiguity quarantines.
+7. Refuses resume or analysis after any identity, request-fidelity, event,
+   parent-process, or terminal-count failure.
+8. Archives all capsule evidence, analysis, per-invocation identities, and event
+   slices under a final self-digested reproduction seal.
+
+## Analysis and validity boundary
+
+The analysis verifies both immutable capsules before reading trial metadata. It
+then emits only the preregistered descriptive six-cell summaries, within-dose
+delivery contrasts, token diagnostics, guide-load process counts, and pair-
+position diagnostics. The reproduction and the uniquely pinned historical run
+remain separate. No pooling, significance test, threshold selection, or binary
+success criterion is introduced after seeing results.
+
+The server attestation is stronger than the historical bundle, which only bound
+the model/profile and weights. This improves execution identification but cannot
+retroactively prove the historical run used the newly recorded binary and flags.
+That asymmetry is a stated limitation, not a reason to alter either treatment or
+the comparator.
+
+## Independent preregistration review
+
+Before any model admission, independent Terra reviewers examine four lenses:
+
+- Scientific validity: exact target, treatment isolation, fixture, prompts,
+  schedule, oracle, missingness, stopping, and transfer limits.
+- Statistical validity: complete denominators, all reason codes, pair-position
+  diagnostics, fixed comparator, no pooling, and no result-dependent decision.
+- Harness validity: clean checkouts, import and package resolution, shared-gate
+  event corroboration, request fidelity, runtime/server invariants, quarantine,
+  capsule verification, and final evidence sealing.
+- Minimum adequate setup: no smaller design can answer exact reproduction while
+  retaining the parent cohort and integrity requirements; added machinery must
+  remain administrative and non-model-visible.
+
+Each accepted review is recorded against the exact preregistration commit and
+tree in the effort evidence ledger. A changed commit invalidates those approvals
+and requires another review. No model work begins until all four lenses converge.
