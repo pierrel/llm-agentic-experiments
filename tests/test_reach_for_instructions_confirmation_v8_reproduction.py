@@ -456,16 +456,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
     def test_canonical_workspace_is_derived_and_cannot_be_substituted(self) -> None:
         workspace = runner._canonical_workspace_root(ROOT)
         self.assertEqual(workspace, ROOT.parents[2])
-        manifest = {
-            "execution": {
-                "coordination_thread_id": "thread-1",
-                "output_id": runner.STUDY,
-            }
-        }
         with patch.dict(
-            os.environ, {"CODEX_THREAD_ID": "thread-1"}
-        ), patch.object(
-            runner, "_load_manifest", return_value=manifest
+            os.environ, {"CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID}
         ), patch.object(
             runner, "_canonical_workspace_root", return_value=workspace
         ), patch.object(runner.subprocess, "run") as execute:
@@ -681,7 +673,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                         )
 
     def test_execution_exceptions_quarantine_before_resume(self) -> None:
-        thread = "thread-1"
+        thread = runner.COORDINATION_THREAD_ID
         manifest = {
             "execution": {"coordination_thread_id": thread, "output_id": runner.STUDY},
             "parent": {"bundle_path": "bundle.json"},
@@ -716,10 +708,18 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ), patch.object(
                 runner, "_verify_local_registration", return_value=TEST_REGISTRATION
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
+                with self.subTest(stage="registered-input-drift"), patch.object(
+                    runner, "_load_manifest", side_effect=ValueError("changed registration")
+                ):
+                    with self.assertRaisesRegex(ValueError, "registered reproduction inputs drifted"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
                 with self.subTest(stage="registration-drift"), patch.object(
                     runner, "_verify_local_registration", side_effect=ValueError("moved tag")
                 ):
-                    with self.assertRaisesRegex(ValueError, "registration drifted"):
+                    with self.assertRaisesRegex(ValueError, "registered reproduction inputs drifted"):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())
 

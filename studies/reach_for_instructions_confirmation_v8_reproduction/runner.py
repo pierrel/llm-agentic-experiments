@@ -37,6 +37,7 @@ INVALID = "REPRODUCTION_INVALID.json"
 REGISTRATION_TAG = f"{STUDY}"
 PUBLICATION_BRANCH = "reach-experiment-reproduction-v2"
 PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
+COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 
 
@@ -64,6 +65,13 @@ def _load_manifest(root: Path) -> dict[str, Any]:
         raise ValueError("reproduction manifest digest mismatch")
     if manifest.get("study_id") != STUDY:
         raise ValueError("reproduction manifest study identity mismatch")
+    if manifest.get("execution") != {
+        "analysis_file": "reproduction-analysis.json",
+        "capsule_id": STUDY,
+        "coordination_thread_id": COORDINATION_THREAD_ID,
+        "output_id": STUDY,
+    }:
+        raise ValueError("reproduction manifest execution identity mismatch")
     files = manifest.get("files")
     if not isinstance(files, dict) or not files:
         raise ValueError("reproduction manifest file inventory is missing")
@@ -661,18 +669,16 @@ def _fidelity_error(records: list[dict[str, Any]]) -> bool:
 
 def _verify_run_scope(
     root: Path, output: Path, workspace_root: Path, events: Path
-) -> dict[str, Any]:
-    """Validate all caller-selected paths before creating the wrapper lock."""
-    manifest = _load_manifest(root)
-    if output.name != manifest["execution"]["output_id"]:
-        raise ValueError("raw output ID differs from registration")
-    if os.environ.get("CODEX_THREAD_ID", "") != manifest["execution"]["coordination_thread_id"]:
+) -> None:
+    """Validate caller-selected paths before touching reproduction state."""
+    if output.name != STUDY:
+        raise ValueError("raw output ID differs from the fixed reproduction")
+    if os.environ.get("CODEX_THREAD_ID", "") != COORDINATION_THREAD_ID:
         raise ValueError("execution thread identity differs from registration")
     if workspace_root.resolve() != _canonical_workspace_root(root):
         raise ValueError("worker workspace differs from the canonical shared workspace")
     if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
         raise ValueError("coordination event log path differs from the shared gate")
-    return manifest
 
 
 def _run_batch_locked(
@@ -681,6 +687,7 @@ def _run_batch_locked(
     attestations: Path,
     *,
     manifest: dict[str, Any],
+    registration: dict[str, str],
     execution_root: Path,
     assist_source: Path,
     assist_python: Path,
@@ -692,17 +699,6 @@ def _run_batch_locked(
 ) -> str:
     """Run one inherited bounded invocation or fail closed without reinterpretation."""
     thread_id = manifest["execution"]["coordination_thread_id"]
-    if output.is_symlink() or (output.exists() and not output.is_dir()):
-        raise ValueError("reproduction output must be a real directory")
-    if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
-        raise ValueError("reproduction output must have mode 0700")
-    if (output / INVALID).exists():
-        raise ValueError("reproduction output is quarantined and cannot resume")
-    try:
-        registration = _verify_local_registration(root, manifest)
-    except Exception as error:
-        _quarantine(output, "reproduction registration drifted")
-        raise ValueError("reproduction registration drifted; fresh reproduction required") from error
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
@@ -931,14 +927,29 @@ def run_batch(
     events: Path,
 ) -> str:
     """Serialize and run one inherited bounded invocation."""
-    manifest = _verify_run_scope(root, output, workspace_root, events)
+    _verify_run_scope(root, output, workspace_root, events)
     with _wrapper_lock(output):
         try:
+            if output.is_symlink() or (output.exists() and not output.is_dir()):
+                raise ValueError("reproduction output must be a real directory")
+            if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
+                raise ValueError("reproduction output must have mode 0700")
+            if (output / INVALID).exists():
+                raise ValueError("reproduction output is quarantined and cannot resume")
+            try:
+                manifest = _load_manifest(root)
+                registration = _verify_local_registration(root, manifest)
+            except Exception as error:
+                _quarantine(output, "registered reproduction inputs drifted")
+                raise ValueError(
+                    "registered reproduction inputs drifted; fresh reproduction required"
+                ) from error
             return _run_batch_locked(
                 root,
                 output,
                 attestations,
                 manifest=manifest,
+                registration=registration,
                 execution_root=execution_root,
                 assist_source=assist_source,
                 assist_python=assist_python,
