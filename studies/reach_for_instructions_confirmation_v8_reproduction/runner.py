@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import pwd
+import select
 import shutil
 import shlex
 import signal
@@ -45,6 +46,11 @@ PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
 COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
 RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
+_SCOPE_BOOTSTRAP = (
+    'ready="$1"; release="$2"; shift 2; printf R >&"$ready"; '
+    'IFS= read -r token <&"$release" && [ "$token" = R ] || exit 125; '
+    'exec "$@"'
+)
 
 
 def _sha256(path: Path) -> str:
@@ -768,6 +774,37 @@ def _scope_cgroup(unit: str) -> Path:
     )
 
 
+def _bind_scope(process: subprocess.Popen[str], unit: str, ready: int) -> Path:
+    """Observe the gated payload inside its exact live transient cgroup."""
+    readable, _, _ = select.select([ready], [], [], 10)
+    if not readable or os.read(ready, 1) != b"R":
+        raise RuntimeError("parent process scope did not become ready")
+    scope = _scope_cgroup(unit)
+    control = scope / "cgroup.kill"
+    members = scope / "cgroup.procs"
+    try:
+        scope_metadata = scope.lstat()
+        control_metadata = control.stat()
+        member_pids = members.read_text().split()
+    except OSError as error:
+        raise RuntimeError("parent process scope could not be bound") from error
+    if (
+        not stat.S_ISDIR(scope_metadata.st_mode)
+        or scope.is_symlink()
+        or not stat.S_ISREG(control_metadata.st_mode)
+        or control_metadata.st_uid != os.getuid()
+        or not stat.S_IMODE(control_metadata.st_mode) & stat.S_IWUSR
+        or str(process.pid) not in member_pids
+    ):
+        raise RuntimeError("parent process scope identity differs from registration")
+    return scope
+
+
+def _release_scope(descriptor: int) -> None:
+    """Release the bound startup gate so the registered payload can exec."""
+    os.write(descriptor, b"R\n")
+
+
 def _scope_capability() -> dict[str, str]:
     """Verify the user slice exposes its owner-writable atomic kill control."""
     uid = os.getuid()
@@ -789,52 +826,68 @@ def _scope_capability() -> dict[str, str]:
     }
 
 
-def _kill_scope(process: subprocess.Popen[str], unit: str) -> None:
-    """Atomically kill the complete transient cgroup and prove it is empty."""
-    scope = _scope_cgroup(unit)
+def _verify_scope_empty(scope: Path) -> None:
+    """Prove a previously bound cgroup is now empty or has been removed."""
+    try:
+        members = (scope / "cgroup.procs").read_text().strip()
+    except FileNotFoundError:
+        return
+    if members:
+        raise RuntimeError("parent process scope still contains live members")
 
-    def kill_members() -> bool:
+
+def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
+    """Atomically kill the complete transient cgroup and prove it is empty."""
+    def kill_members() -> None:
         path = scope / "cgroup.kill"
         try:
             descriptor = os.open(
                 path,
                 os.O_WRONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
             )
-        except FileNotFoundError:
-            return False
+        except OSError as error:
+            raise RuntimeError("bound scope kill control is unavailable") from error
         try:
             if not stat.S_ISREG(os.fstat(descriptor).st_mode):
                 raise RuntimeError("scope kill control is not a regular cgroup file")
             os.write(descriptor, b"1")
         finally:
             os.close(descriptor)
-        return True
 
-    killed_scope = kill_members()
-    if not killed_scope:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    kill_members()
     try:
         process.communicate(timeout=10)
     except subprocess.TimeoutExpired:
         kill_members()
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        try:
             process.communicate(timeout=10)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("parent process scope launcher could not be reaped") from error
-    kill_members()
+    _verify_scope_empty(scope)
+
+
+def _kill_unbound_scope(
+    process: subprocess.Popen[str], unit: str, env: dict[str, str]
+) -> None:
+    """Stop a startup-gated launcher before any payload command can begin."""
+    subprocess.run(
+        [
+            "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
+            "--signal=SIGKILL", f"{unit}.scope",
+        ],
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
     try:
-        members = (scope / "cgroup.procs").read_text().strip()
-    except FileNotFoundError:
-        members = ""
-    if members:
-        raise RuntimeError("parent process scope still contains live members")
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.communicate(timeout=10)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("startup-gated scope launcher could not be reaped") from error
 
 
 def _run_parent(
@@ -843,29 +896,46 @@ def _run_parent(
     """Run the exact parent in a killable user scope and reap it on interruption."""
     _scope_capability()
     unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
+    ready_read, ready_write = os.pipe()
+    release_read, release_write = os.pipe()
     scoped_command = [
         "/usr/bin/systemd-run", "--user", "--scope", "--quiet", "--collect",
-        "--slice=app.slice", f"--unit={unit}", "--", *command,
+        "--slice=app.slice", f"--unit={unit}", "--", "/bin/sh", "-c",
+        _SCOPE_BOOTSTRAP, "sh", str(ready_write), str(release_read), *command,
     ]
     process: subprocess.Popen[str] | None = None
+    scope: Path | None = None
     try:
-        process = subprocess.Popen(
-            scoped_command,
-            cwd=cwd,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-        )
         with _termination_interrupts():
+            process = subprocess.Popen(
+                scoped_command,
+                cwd=cwd,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                pass_fds=(ready_write, release_read),
+            )
+            os.close(ready_write)
+            ready_write = -1
+            os.close(release_read)
+            release_read = -1
+            scope = _bind_scope(process, unit, ready_read)
+            _release_scope(release_write)
+            os.close(release_write)
+            release_write = -1
             stdout, stderr = process.communicate()
+        _verify_scope_empty(scope)
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
         cleanup_error: Exception | None = None
         if process is not None:
             try:
-                _kill_scope(process, unit)
+                if scope is None:
+                    _kill_unbound_scope(process, unit, env)
+                else:
+                    _kill_scope(process, scope)
             except Exception as scope_error:
                 cleanup_error = scope_error
         _quarantine(output, "parent runner could not be launched or was interrupted")
@@ -874,6 +944,10 @@ def _run_parent(
         if not isinstance(error, Exception):
             raise
         raise ValueError("parent runner could not be launched") from error
+    finally:
+        for descriptor in (ready_read, ready_write, release_read, release_write):
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 def _read_batch_cooldown(path: Path) -> dict[str, int | float]:

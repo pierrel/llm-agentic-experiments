@@ -73,8 +73,10 @@ The reproduction adds no model-visible treatment. Its wrapper:
 8. Validates the exact persisted admission/outcome schemas and semantics rather
    than relying on hash-chain continuity alone.
 9. Contains the inherited parent and every descendant in one transient systemd
-   scope, atomically kills its complete cgroup, reaps the launcher, proves the
-   scope empty on wrapper interruption, and refuses
+   scope. A startup handshake keeps the parent payload gated until that exact
+   live cgroup is observed. The wrapper proves it empty after normal completion;
+   on interruption it atomically kills the complete bound cgroup, reaps the
+   launcher, proves the scope empty, and refuses
    resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and

@@ -482,7 +482,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             output.mkdir(mode=0o700)
             with patch.object(
                 runner.subprocess, "Popen", return_value=process
-            ) as launch, patch.object(runner, "_kill_scope") as terminate:
+            ) as launch, patch.object(
+                runner, "_bind_scope", return_value=Path(temporary) / "scope"
+            ), patch.object(runner, "_release_scope"), patch.object(
+                runner, "_kill_scope"
+            ) as terminate:
                 with self.assertRaises(KeyboardInterrupt):
                     runner._run_parent(
                         ["/unused-parent"], cwd=Path(temporary), env={}, output=output
@@ -491,7 +495,48 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
             terminate.assert_called_once()
             self.assertIs(terminate.call_args.args[0], process)
-            self.assertTrue(terminate.call_args.args[1].startswith("reach-v8-r1-"))
+            self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
+
+    def test_bound_scope_cleanup_rejects_a_missing_atomic_kill_control(self) -> None:
+        process = Mock()
+        with TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(RuntimeError, "kill control is unavailable"):
+                runner._kill_scope(process, Path(temporary) / "missing-scope")
+        process.communicate.assert_not_called()
+
+    def test_scope_binding_failure_kills_the_still_gated_launcher(self) -> None:
+        process = Mock()
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / runner.STUDY
+            output.mkdir(mode=0o700)
+            with patch.object(
+                runner.subprocess, "Popen", return_value=process
+            ), patch.object(
+                runner, "_bind_scope", side_effect=RuntimeError("scope absent")
+            ), patch.object(runner, "_kill_unbound_scope") as terminate:
+                with self.assertRaisesRegex(ValueError, "could not be launched"):
+                    runner._run_parent(
+                        ["/unused-parent"], cwd=Path(temporary), env={}, output=output
+                    )
+            self.assertTrue((output / runner.INVALID).exists())
+            terminate.assert_called_once()
+            self.assertIs(terminate.call_args.args[0], process)
+
+    def test_scope_bootstrap_never_releases_payload_on_pipe_eof(self) -> None:
+        with TemporaryDirectory() as temporary:
+            marker = Path(temporary) / "payload-ran"
+            result = subprocess.run(
+                [
+                    "/bin/sh", "-c", runner._SCOPE_BOOTSTRAP, "sh", "1", "0",
+                    "/usr/bin/touch", str(marker),
+                ],
+                input="",
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(result.returncode, 125)
+            self.assertEqual(result.stdout, "R")
+            self.assertFalse(marker.exists())
 
     def test_execution_environment_cannot_redirect_the_shared_gate(self) -> None:
         with patch.dict(
@@ -932,7 +977,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     runner, "attest", return_value=b'{}\n'
                 ), patch.object(
                     runner.subprocess, "Popen", return_value=interrupted
-                ), patch.object(runner, "_kill_scope"):
+                ), patch.object(
+                    runner, "_bind_scope", return_value=workspace / "scope"
+                ), patch.object(runner, "_release_scope"), patch.object(runner, "_kill_scope"):
                     with self.assertRaises(KeyboardInterrupt):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())

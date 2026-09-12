@@ -156,9 +156,13 @@ transaction from persisted-progress inspection through before/after identity,
 parent execution, event reconciliation, and cooldown recording. It does not
 reuse the inherited parent output lock.
 The inherited parent and every descendant, including workers that start their own
-sessions, run inside one transient user-systemd scope. Wrapper interruption kills
-that complete scope through the cgroup's atomic `cgroup.kill` control, reaps its
-launcher, and verifies no scope member remains before quarantine and lock release.
+sessions, run inside one transient user-systemd scope. A pipe handshake prevents
+the parent payload from starting until the wrapper observes and validates that
+exact live cgroup. Normal completion requires the previously bound scope to be
+empty. Wrapper interruption kills the complete bound scope through the cgroup's
+atomic `cgroup.kill` control, reaps its launcher, and verifies no scope member
+remains before quarantine and lock release. A failure before binding can stop only
+the still-gated bootstrap and can never release the parent payload.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 accepts evidence only from its sibling `.coordination/events.jsonl`. A different
