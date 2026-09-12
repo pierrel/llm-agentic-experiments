@@ -18,12 +18,12 @@
       "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "a7f426107dc0b299f6b5f760ca79480b7105abebbc94340a34ee86bfd68f852b",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "b24c3098af5c6d4f23a3e2eb1af7ad925cd7bb69ceeaa73e0ce3d4931b288d29",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "69620a4ba78654bd33d4ca527d29dc46fa4180dfa87bb4b0f97ccaf94d023061",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "4b0f58b280008e36e43ff464df79f56fc2eafe473ca05a3d9a33688044b304b8",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "108683072e11da1732f3e2b96b109612caddc36302d5d63218f07c829f68ffa6",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "154c846832e87277a1e04f0417dcfc11f1c143058254fcd9a985ae6d1943708d",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "d40152dbf907c024d6838b14299dcc9b8abc9e23e128ccae55fdf71dead438df"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "813f76f00f7b5621bc04d276c173e7db0ae373cdbbf34afaac4f0a60126d94a5",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "817c25ecf7142f13a087e35500c0048cc23fa9fb0000e10eadd1da83588e5faf",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "6218049937652b718a32457f0d846312e12b1a4ff8a354494679946560195438"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -217,5 +217,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "a0a2d6ae1a137e7883b6baee1026fa5dfdf05a6a64de01e98000f2c3fb7a6a8a"
+  "sha256": "44d18593d27b01fcd5da273c5734062bcefad929f4c0c6ef7bd88b75eb31ea54"
 }

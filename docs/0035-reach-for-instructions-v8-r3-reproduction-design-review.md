@@ -49,17 +49,27 @@ The reproduction adds no model-visible treatment. Its wrapper:
    PID/start identity, and complete model bytes before and after every inherited
    bounded invocation.
 5. Requires identical attestation bytes across the whole reproduction.
-6. Reconciles parent admission records with the exact same-thread event-log byte
+6. Holds a distinct nonblocking wrapper lock across progress inspection,
+   attestation, parent execution, event reconciliation, and cooldown recording;
+   the inherited child lock remains separate.
+7. Reconciles parent admission records with the exact same-thread event-log byte
    slice and requires its ordered events to fall within the parent invocation's
-   recorded UTC bounds. Only a corroborated production denial retries; an
+   recorded UTC bounds and exact admission/outcome count transition. Only a
+   corroborated production denial retries; an
    admitted timeout may omit the finish event when the inherited safety bound
-   kills the wrapper. A persisted 600-second denial cooldown and the final
-   interval history both enforce the retry cadence; ambiguity quarantines.
-7. Refuses resume or analysis after any identity, request-fidelity, event,
+   kills the wrapper. Persisted 600-second denial and 900-second terminal-batch
+   boundaries are copied into the interval history and enforced before the next
+   parent invocation; ambiguity quarantines.
+8. Validates the exact persisted admission/outcome schemas and semantics rather
+   than relying on hash-chain continuity alone.
+9. Refuses resume or analysis after any identity, request-fidelity, event,
    parent-process, or terminal-count failure.
-8. Verifies and copies every per-invocation identity and event slice, binds them
-   to the run and manifest in reproduction provenance before analysis, then
-   archives all capsule evidence and analysis under a final self-digested seal.
+10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and
+   gate before archival. It verifies and copies every per-invocation identity
+   and event slice, binds them to the run and manifest in reproduction provenance
+   before analysis, then archives the fixed capsule evidence and analysis under
+   a final self-digested seal. Later interpretive `learning.md` and Assist
+   proposal files remain deliberately outside that data seal.
 
 ## Analysis and validity boundary
 
@@ -77,6 +87,13 @@ the model/profile and weights. This improves execution identification but cannot
 retroactively prove the historical run used the newly recorded binary and flags.
 That asymmetry is a stated limitation, not a reason to alter either treatment or
 the comparator.
+
+The workspace and capsule protocol is cooperative local integrity, not a
+cryptographic security boundary against another same-UID process that can rewrite
+all files and recompute unkeyed hashes. The immutable runner, exact coordinator,
+published registration, private directories, wrapper lock, append-only event
+slices, and final seals prevent accidental or ordinary operator substitution.
+They do not claim to prove provenance against a malicious local administrator.
 
 ## Independent preregistration review
 

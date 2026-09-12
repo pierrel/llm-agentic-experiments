@@ -11,10 +11,9 @@ from typing import Any
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
-    DENIAL_RETRY_SECONDS,
-    events_match_admissions,
-    verify_denial_retry_cadence,
-    verify_event_interval,
+    verify_attestation_inventory,
+    verify_execution_intervals,
+    verify_records,
 )
 
 
@@ -118,6 +117,7 @@ def _verify_capsule(
     outcomes.verify_finalized(bundle.schedule, admissions, artifacts)
     admission_records = admissions.read_verified()
     outcome_records = outcomes.read_verified()
+    verify_records(bundle.schedule, admission_records, outcome_records)
     metadata = _json(metadata_path)
     if not isinstance(metadata, list) or len(metadata) != len(bundle.schedule):
         raise ValueError("capsule trial metadata is incomplete")
@@ -208,6 +208,7 @@ def _verify_reproduction_provenance(
     capsule: Path,
     admissions: list[dict[str, Any]],
     outcomes: list[dict[str, Any]],
+    registration: dict[str, str],
 ) -> None:
     """Require the wrapper-produced capsule and attestation binding before analysis."""
     if capsule.name != manifest["execution"]["capsule_id"]:
@@ -222,37 +223,17 @@ def _verify_reproduction_provenance(
     attestations = capsule / "runtime-attestations"
     if attestations.is_symlink() or not attestations.is_dir():
         raise ValueError("reproduction runtime attestations are missing")
-    paths = sorted(attestations.iterdir())
-    if not paths or any(
-        item.is_symlink() or not item.is_file() or item.suffix != ".json"
-        for item in paths
-    ):
-        raise ValueError("reproduction provenance contains unsafe attestations")
-    invocations = len(paths) // 3
-    expected_names = {
-        f"{index:03d}-{suffix}.json"
-        for index in range(invocations)
-        for suffix in ("events", "identity-after", "identity-before")
-    }
-    if {item.name for item in paths} != expected_names:
-        raise ValueError("reproduction attestation inventory is incomplete or unexpected")
-    identity = (attestations / "000-identity-before.json").read_bytes()
-    if any(item.read_bytes() != identity for item in paths if "-identity-" in item.name):
-        raise ValueError("reproduction runtime identity differs across attestations")
-    intervals = [
-        _json(attestations / f"{index:03d}-events.json")
-        for index in range(invocations)
-    ]
-    execution_events = [event for interval in intervals for event in verify_event_interval(interval)]
-    verify_denial_retry_cadence(intervals, DENIAL_RETRY_SECONDS)
+    paths, intervals = verify_attestation_inventory(
+        attestations, manifest=manifest, registration=registration
+    )
     thread_id = manifest["execution"]["coordination_thread_id"]
-    if not events_match_admissions(
-        new_admissions=admissions,
-        new_outcomes=outcomes,
-        new_events=execution_events,
+    execution_events = verify_execution_intervals(
+        intervals,
+        admissions=admissions,
+        outcomes=outcomes,
         thread_id=thread_id,
-    ):
-        raise ValueError("reproduction events do not witness its admissions and outcomes")
+        schedule_size=72,
+    )
     files = {
         item.name: _sha256(item) for item in paths
     }
@@ -270,6 +251,7 @@ def _verify_reproduction_provenance(
         "coordination_thread_id": thread_id,
         "execution_witness": witness,
         "manifest_sha256": digest(manifest),
+        "registration": registration,
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }
     if provenance != expected or not files:
@@ -281,6 +263,7 @@ def analyze(
     reproduction_capsule: Path,
     historical_capsule: Path,
     output: Path,
+    registration: dict[str, str],
 ) -> Path:
     """Write the locked, separate descriptive reproduction comparison."""
     if reproduction_capsule.resolve() == historical_capsule.resolve():
@@ -291,7 +274,11 @@ def analyze(
         reproduction_capsule, bundle_sha256=parent["bundle_sha256"]
     )
     _verify_reproduction_provenance(
-        manifest, reproduction_capsule, reproduction_admissions, reproduction_outcomes
+        manifest,
+        reproduction_capsule,
+        reproduction_admissions,
+        reproduction_outcomes,
+        registration,
     )
     historical_bundle, _, _, historical_metadata = _verify_capsule(
         historical_capsule,

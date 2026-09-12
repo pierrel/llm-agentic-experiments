@@ -19,6 +19,43 @@ from studies.reach_for_instructions_confirmation_v8_reproduction import analysis
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORICAL = ROOT / "results" / "reach-for-instructions-confirmation-v8-qwen38-current-r3"
+TEST_REGISTRATION = {
+    "commit": "1" * 40,
+    "tag_object": "2" * 40,
+    "tree": "3" * 40,
+}
+
+
+def _identity(manifest: dict[str, object]) -> bytes:
+    runtime = manifest["runtime"]
+    parent = manifest["parent"]
+    publication = manifest["registration"]
+    assert isinstance(runtime, dict) and isinstance(parent, dict) and isinstance(publication, dict)
+    expected = runtime["expected_attestation"]
+    assert isinstance(expected, dict)
+    value = {
+        "assist": {
+            "commit": runtime["assist_commit"], "status": "", "tree": runtime["assist_tree"],
+        },
+        "environment": {
+            key: expected[key] for key in ("distributions", "environment", "modules", "python")
+        },
+        "execution": {
+            "commit": parent["commit"], "status": "", "tree": parent["tree"],
+        },
+        "manifest_sha256": digest(manifest),
+        "publication": {
+            "manifest_sha256": digest(manifest),
+            "publication_branch": publication["publication_branch"],
+            "publication_remote": publication["publication_remote"],
+            "registration": TEST_REGISTRATION,
+        },
+        "registered_model": runtime["model"],
+        "registration": TEST_REGISTRATION,
+        "server": expected["server"] | {"pid": 123, "start_ticks": "456"},
+        "shared_gate": expected["shared_gate"],
+    }
+    return canonical_json(value) + b"\n"
 
 
 def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
@@ -28,36 +65,38 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
     shutil.copytree(HISTORICAL, capsule)
     attestations = capsule / "runtime-attestations"
     attestations.mkdir()
-    identity = b'{"identity":"test"}\n'
-    (attestations / "000-identity-before.json").write_bytes(identity)
-    (attestations / "000-identity-after.json").write_bytes(identity)
+    identity = _identity(manifest)
     thread_id = str(execution["coordination_thread_id"])
     admissions = [json.loads(line) for line in (capsule / "admissions.jsonl").read_text().splitlines()]
     outcomes = [json.loads(line) for line in (capsule / "outcomes.jsonl").read_text().splitlines()]
-    events = []
-    for admission in admissions:
-        if admission["admitted"]:
-            events.extend([
-                {
-                    "at": "2026-09-12T00:00:00+00:00", "event": "resource_started",
-                    "resource": "llm", "thread": thread_id,
-                },
-                {
-                    "at": "2026-09-12T00:00:00+00:00", "event": "resource_finished",
-                    "exit_code": 0, "resource": "llm", "thread": thread_id,
-                },
-            ])
-        else:
-            events.append({
-                "at": "2026-09-12T00:00:00+00:00",
-                "event": "production_admission_denied", "resource": "llm", "thread": thread_id,
-            })
-    interval = {
-        "events": events,
-        "finished_at": "2026-09-12T00:00:00+00:00",
-        "started_at": "2026-09-12T00:00:00+00:00",
-    }
-    (attestations / "000-events.json").write_bytes(canonical_json(interval) + b"\n")
+    all_events = []
+    for index in range(3):
+        started = f"2026-09-12T00:{index * 16:02d}:00+00:00"
+        finished = f"2026-09-12T00:{index * 16 + 1:02d}:00+00:00"
+        events = []
+        for admission in admissions[index * 24:(index + 1) * 24]:
+            self_events = [
+                {"at": started, "event": "resource_started", "resource": "llm", "thread": thread_id},
+                {"at": started, "event": "resource_finished", "exit_code": 0, "resource": "llm", "thread": thread_id},
+            ]
+            events.extend(self_events)
+        all_events.extend(events)
+        interval = {
+            "admissions_after": (index + 1) * 24,
+            "admissions_before": index * 24,
+            "events": events,
+            "finished_at": finished,
+            "next_batch_not_before_unix": (
+                1789172160.0 + index * 960 if index < 2 else None
+            ),
+            "next_denial_not_before_unix": None,
+            "outcomes_after": (index + 1) * 24,
+            "outcomes_before": index * 24,
+            "started_at": started,
+        }
+        (attestations / f"{index:03d}-identity-before.json").write_bytes(identity)
+        (attestations / f"{index:03d}-identity-after.json").write_bytes(identity)
+        (attestations / f"{index:03d}-events.json").write_bytes(canonical_json(interval) + b"\n")
     provenance = {
         "attestation_files": {
             path.name: runner._sha256(path) for path in sorted(attestations.iterdir())
@@ -67,12 +106,13 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
         "execution_witness": {
             "admission_count": len(admissions),
             "admissions_file_sha256": runner._sha256(capsule / "admissions.jsonl"),
-            "event_count": len(events),
-            "events_sha256": digest(events),
+            "event_count": len(all_events),
+            "events_sha256": digest(all_events),
             "outcome_count": len(outcomes),
             "outcomes_file_sha256": runner._sha256(capsule / "outcomes.jsonl"),
         },
         "manifest_sha256": digest(manifest),
+        "registration": TEST_REGISTRATION,
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }
     (capsule / "reproduction-provenance.json").write_bytes(
@@ -99,7 +139,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             reproduction = _reproduction_fixture(Path(temporary), manifest)
             output = Path(temporary) / "analysis.json"
-            analysis.analyze(manifest, reproduction, HISTORICAL, output)
+            analysis.analyze(manifest, reproduction, HISTORICAL, output, TEST_REGISTRATION)
             report = json.loads(output.read_text())
 
         self.assertEqual(set(report), {"analysis", "bundle_sha256", "historical", "reproduction"})
@@ -119,14 +159,41 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             with self.assertRaisesRegex(ValueError, "cannot substitute"):
                 analysis.analyze(
-                    manifest, HISTORICAL, HISTORICAL, Path(temporary) / "analysis.json"
+                    manifest, HISTORICAL, HISTORICAL, Path(temporary) / "analysis.json",
+                    TEST_REGISTRATION,
                 )
 
             copied = Path(temporary) / manifest["execution"]["capsule_id"]
             shutil.copytree(HISTORICAL, copied)
             with self.assertRaisesRegex(ValueError, "provenance"):
                 analysis.analyze(
-                    manifest, copied, HISTORICAL, Path(temporary) / "copied-analysis.json"
+                    manifest, copied, HISTORICAL, Path(temporary) / "copied-analysis.json",
+                    TEST_REGISTRATION,
+                )
+
+    def test_reproduction_identity_cannot_be_an_opaque_fabrication(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = _reproduction_fixture(Path(temporary), manifest)
+            attestations = capsule / "runtime-attestations"
+            for path in attestations.glob("*-identity-*.json"):
+                path.write_bytes(b'{"identity":"fabricated"}\n')
+            provenance_path = capsule / "reproduction-provenance.json"
+            provenance = json.loads(provenance_path.read_text())
+            provenance.pop("record_sha256")
+            provenance["attestation_files"] = {
+                path.name: runner._sha256(path) for path in sorted(attestations.iterdir())
+            }
+            provenance_path.write_bytes(
+                canonical_json(provenance | {"record_sha256": digest(provenance)}) + b"\n"
+            )
+            with self.assertRaisesRegex(ValueError, "identity attestation"):
+                analysis.analyze(
+                    manifest,
+                    capsule,
+                    HISTORICAL,
+                    Path(temporary) / "analysis.json",
+                    TEST_REGISTRATION,
                 )
 
     def test_locked_analysis_rejects_changed_historical_metadata(self) -> None:
@@ -138,7 +205,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             metadata = capsule / "trial-metadata.json"
             metadata.write_bytes(metadata.read_bytes() + b"\n")
             with self.assertRaisesRegex(ValueError, "trial metadata"):
-                analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
+                analysis.analyze(
+                    manifest, reproduction, capsule, Path(temporary) / "analysis.json",
+                    TEST_REGISTRATION,
+                )
 
     def test_locked_analysis_rejects_undeclared_response_surface_changes(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -192,7 +262,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 stored["sha256"] = digest(stored["bundle"])
                 bundle_path.write_bytes(canonical_json(stored) + b"\n")
                 with self.assertRaises(ValueError):
-                    analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
+                    analysis.analyze(
+                        manifest, reproduction, capsule, Path(temporary) / "analysis.json",
+                        TEST_REGISTRATION,
+                    )
 
     def test_locked_analysis_rejects_an_altered_result_record(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -207,7 +280,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             records[0] = canonical_json(first).decode()
             outcomes.write_text("\n".join(records) + "\n")
             with self.assertRaises(ValueError):
-                analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
+                analysis.analyze(
+                    manifest, reproduction, capsule, Path(temporary) / "analysis.json",
+                    TEST_REGISTRATION,
+                )
 
     def test_progress_guard_rejects_an_omitted_scheduled_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
@@ -217,6 +293,28 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             records = (HISTORICAL / "outcomes.jsonl").read_text().splitlines()
             (output / "outcomes.jsonl").write_text("\n".join(records[:-1]) + "\n")
             with self.assertRaisesRegex(ValueError, "progress differs"):
+                runner._verified_progress(output, bundle)
+
+    def test_progress_guard_rejects_a_rechained_invalid_outcome(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            shutil.copy2(HISTORICAL / "admissions.jsonl", output / "admissions.jsonl")
+            records = [
+                json.loads(line)
+                for line in (HISTORICAL / "outcomes.jsonl").read_text().splitlines()
+            ]
+            previous = bundle.sha256
+            encoded = []
+            for index, record in enumerate(records):
+                record.pop("record_sha256")
+                record["previous_sha256"] = previous
+                if index == 0:
+                    record["outcome"] = "invented"
+                previous = digest(record)
+                encoded.append(canonical_json(record | {"record_sha256": previous}))
+            (output / "outcomes.jsonl").write_bytes(b"\n".join(encoded) + b"\n")
+            with self.assertRaisesRegex(ValueError, "outcome record"):
                 runner._verified_progress(output, bundle)
 
     def test_opaque_condition_labels_never_reach_model_prompts(self) -> None:
@@ -294,22 +392,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         ))
 
     def test_attestation_inventory_is_complete_and_invariant(self) -> None:
+        manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            identity = b'{"identity":1}\n'
-            interval = canonical_json({
-                "events": [],
-                "finished_at": "2026-09-12T00:00:00+00:00",
-                "started_at": "2026-09-12T00:00:00+00:00",
-            }) + b"\n"
-            for index in range(2):
-                (root / f"{index:03d}-identity-before.json").write_bytes(identity)
-                (root / f"{index:03d}-identity-after.json").write_bytes(identity)
-                (root / f"{index:03d}-events.json").write_bytes(interval)
-            self.assertEqual(len(runner._verified_attestation_files(root)), 6)
+            capsule = _reproduction_fixture(Path(temporary), manifest)
+            root = capsule / "runtime-attestations"
+            paths, intervals = runner._verified_attestation_files(
+                root, manifest=manifest, registration=TEST_REGISTRATION
+            )
+            self.assertEqual((len(paths), len(intervals)), (9, 3))
             (root / "001-identity-after.json").write_bytes(b'{"identity":2}\n')
             with self.assertRaisesRegex(ValueError, "identity differs"):
-                runner._verified_attestation_files(root)
+                runner._verified_attestation_files(
+                    root, manifest=manifest, registration=TEST_REGISTRATION
+                )
 
     def test_wrong_coordinator_identity_rejects_before_any_subprocess(self) -> None:
         output = Path("/tmp") / runner.STUDY
@@ -329,6 +424,14 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     events=Path("/unused-events"),
                 )
         execute.assert_not_called()
+
+    def test_wrapper_lock_rejects_a_concurrent_invocation(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / runner.STUDY
+            with runner._wrapper_lock(output):
+                with self.assertRaisesRegex(ValueError, "invocation is active"):
+                    with runner._wrapper_lock(output):
+                        self.fail("concurrent wrapper lock unexpectedly succeeded")
 
     def test_canonical_workspace_is_derived_and_cannot_be_substituted(self) -> None:
         workspace = runner._canonical_workspace_root(ROOT)
@@ -373,12 +476,18 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
     def test_event_interval_requires_ordered_events_within_parent_run(self) -> None:
         record = {
+            "admissions_after": 0,
+            "admissions_before": 0,
             "started_at": "2026-09-12T00:00:00+00:00",
             "finished_at": "2026-09-12T00:00:02+00:00",
             "events": [
                 {"at": "2026-09-12T00:00:00+00:00"},
                 {"at": "2026-09-12T00:00:02+00:00"},
             ],
+            "next_batch_not_before_unix": None,
+            "next_denial_not_before_unix": None,
+            "outcomes_after": 0,
+            "outcomes_before": 0,
         }
         self.assertEqual(runner._verify_event_interval(record), record["events"])
         with self.assertRaisesRegex(ValueError, "outside"):
@@ -398,27 +507,56 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 "trial_sha256": "trial-1",
             }
             (output / "denial-cooldown.json").write_bytes(canonical_json(cooldown) + b"\n")
-            self.assertTrue(runner._denial_retry_pending(output, [admission], now=699.0))
-            self.assertFalse(runner._denial_retry_pending(output, [admission], now=700.0))
+            self.assertEqual(runner._denial_retry_not_before(output, [admission]), 700.0)
+        thread = "thread-1"
         intervals = [
             {
+                "admissions_after": 1,
+                "admissions_before": 0,
                 "events": [{
                     "at": "2026-09-12T00:00:00+00:00",
                     "event": "production_admission_denied",
+                    "resource": "llm",
+                    "thread": thread,
                 }],
                 "finished_at": "2026-09-12T00:00:00+00:00",
+                "next_batch_not_before_unix": None,
+                "next_denial_not_before_unix": 1789171800.0,
+                "outcomes_after": 0,
+                "outcomes_before": 0,
                 "started_at": "2026-09-12T00:00:00+00:00",
             },
             {
-                "events": [],
+                "admissions_after": 2,
+                "admissions_before": 1,
+                "events": [
+                    {"at": "2026-09-12T00:10:00+00:00", "event": "resource_started", "resource": "llm", "thread": thread},
+                    {"at": "2026-09-12T00:10:00+00:00", "event": "resource_finished", "exit_code": 0, "resource": "llm", "thread": thread},
+                ],
                 "finished_at": "2026-09-12T00:10:00+00:00",
+                "next_batch_not_before_unix": None,
+                "next_denial_not_before_unix": None,
+                "outcomes_after": 1,
+                "outcomes_before": 0,
                 "started_at": "2026-09-12T00:10:00+00:00",
             },
         ]
-        runner._verify_denial_retry_cadence(intervals, 600)
+        runner.verify_execution_intervals(
+            intervals,
+            admissions=[admission, {"admitted": True}],
+            outcomes=[{"outcome": "pass"}],
+            thread_id=thread,
+            schedule_size=1,
+        )
         intervals[1]["started_at"] = "2026-09-12T00:09:59+00:00"
         with self.assertRaisesRegex(ValueError, "cadence"):
-            runner._verify_denial_retry_cadence(intervals, 600)
+            runner.verify_execution_intervals(
+                intervals,
+                admissions=[admission, {"admitted": True}],
+                outcomes=[{"outcome": "pass"}],
+                thread_id=thread,
+                schedule_size=1,
+            )
 
     def test_process_rate_uses_only_observed_secondary_measurements(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -479,6 +617,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner.StudyBundle, "read_verified", return_value=bundle
             ), patch.object(
                 runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(
+                runner, "_verify_local_registration", return_value=TEST_REGISTRATION
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="pre-attestation"), patch.object(
                     runner, "attest", side_effect=RuntimeError("attestation failed")
@@ -515,6 +655,47 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertFalse(runner._fidelity_error([
             {"outcome": "provider_error", "detail": "provider was temporarily unavailable"}
         ]))
+
+    def test_archive_integrity_failure_quarantines_the_raw_cohort(self) -> None:
+        thread = "thread-1"
+        manifest = {
+            "execution": {
+                "analysis_file": "reproduction-analysis.json",
+                "capsule_id": runner.STUDY,
+                "coordination_thread_id": thread,
+                "output_id": runner.STUDY,
+            }
+        }
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            output = parent / runner.STUDY
+            output.mkdir(mode=0o700)
+            capsule = parent / "capsules" / runner.STUDY
+            analysis_output = capsule / "reproduction-analysis.json"
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": thread}
+            ), patch.object(
+                runner, "_load_manifest", return_value=manifest
+            ), patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(
+                runner, "_archive_and_analyze_locked", side_effect=ValueError("bad attestation")
+            ):
+                with self.assertRaisesRegex(ValueError, "reproduction quarantined"):
+                    runner.archive_and_analyze(
+                        ROOT,
+                        output,
+                        capsule,
+                        analysis_output,
+                        parent / "attestations",
+                        execution_root=parent / "experiment",
+                        assist_source=parent / "assist",
+                        assist_python=parent / "python",
+                        workspace_root=workspace,
+                    )
+            self.assertTrue((output / runner.INVALID).exists())
 
     def test_final_reproduction_seal_rejects_changed_evidence(self) -> None:
         with TemporaryDirectory() as temporary:

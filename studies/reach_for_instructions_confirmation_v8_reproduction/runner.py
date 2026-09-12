@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
-import re
 import stat
 import subprocess
 import time
@@ -18,10 +20,14 @@ from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction import analysis
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    BATCH_EPISODES,
+    DENIAL,
     DENIAL_RETRY_SECONDS,
     events_match_admissions as _events_match_admissions,
-    verify_denial_retry_cadence as _verify_denial_retry_cadence,
+    verify_attestation_inventory,
+    verify_execution_intervals,
     verify_event_interval as _verify_event_interval,
+    verify_records,
 )
 
 
@@ -31,11 +37,6 @@ INVALID = "REPRODUCTION_INVALID.json"
 REGISTRATION_TAG = f"{STUDY}"
 PUBLICATION_BRANCH = "reach-experiment-reproduction-v2"
 PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
-DENIAL = re.compile(
-    r"^agentic: production is busy \(.+\); not starting (?:llm|real-llm) work\. "
-    r"Run `tools/agentic production status --attempt N`, set its next-probe timer, "
-    r"and continue other work\.$"
-)
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 
 
@@ -448,6 +449,29 @@ def _quarantine(output: Path, reason: str) -> None:
     atomic_write(output / INVALID, canonical_json({"reason": reason, "resume": False}) + b"\n")
 
 
+@contextmanager
+def _wrapper_lock(output: Path):
+    """Serialize the full administrative wrapper without deadlocking its child."""
+    parent = output.parent
+    if parent.is_symlink() or not parent.is_dir():
+        raise ValueError("reproduction output parent must be a real directory")
+    lock = parent / f".{output.name}.reproduction.lock"
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock, flags, 0o600)
+    try:
+        metadata = os.fstat(descriptor)
+        mode = stat.S_IMODE(metadata.st_mode)
+        if not stat.S_ISREG(metadata.st_mode) or mode != 0o600:
+            raise ValueError("reproduction wrapper lock must be a mode-0600 file")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("another reproduction wrapper invocation is active") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def _verified_progress(
     output: Path, bundle: StudyBundle
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -455,6 +479,7 @@ def _verified_progress(
     admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
     outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256).read_verified()
     admission_records = admissions.read_verified()
+    verify_records(bundle.schedule, admission_records, outcomes)
     index = admissions.progress_index(bundle.schedule)
     admitted = [record["trial_sha256"] for record in admission_records if record["admitted"]]
     completed = [record["trial_sha256"] for record in outcomes]
@@ -463,13 +488,15 @@ def _verified_progress(
     return admission_records, outcomes
 
 
-def _denial_retry_pending(output: Path, admissions: list[dict[str, Any]], *, now: float) -> bool:
-    """Validate the latest denial record and report whether its retry is still early."""
+def _denial_retry_not_before(
+    output: Path, admissions: list[dict[str, Any]]
+) -> float | int | None:
+    """Validate and return the latest still-applicable denial boundary."""
     path = output / "denial-cooldown.json"
     if not path.exists():
         if admissions and admissions[-1].get("admitted") is False:
             raise ValueError("production-denial cooldown is missing")
-        return False
+        return None
     try:
         record = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
@@ -478,7 +505,10 @@ def _denial_retry_pending(output: Path, admissions: list[dict[str, Any]], *, now
         not isinstance(record, dict)
         or set(record) != {"admission_count", "not_before_unix", "trial_sha256"}
         or not isinstance(record["admission_count"], int)
+        or isinstance(record["admission_count"], bool)
         or not isinstance(record["not_before_unix"], (int, float))
+        or isinstance(record["not_before_unix"], bool)
+        or not math.isfinite(record["not_before_unix"])
         or not isinstance(record["trial_sha256"], str)
         or not 1 <= record["admission_count"] <= len(admissions)
     ):
@@ -486,7 +516,9 @@ def _denial_retry_pending(output: Path, admissions: list[dict[str, Any]], *, now
     denial = admissions[record["admission_count"] - 1]
     if denial.get("admitted") is not False or denial.get("trial_sha256") != record["trial_sha256"]:
         raise ValueError("production-denial cooldown differs from admissions")
-    return record["admission_count"] == len(admissions) and now < record["not_before_unix"]
+    if record["admission_count"] == len(admissions):
+        return record["not_before_unix"]
+    return None
 
 
 def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
@@ -537,47 +569,35 @@ def _true_denial(
     ]
 
 
-def _verified_attestation_files(attestations: Path) -> list[Path]:
-    """Verify the complete, immutable per-invocation attestation inventory."""
-    paths = sorted(attestations.iterdir())
-    if not paths:
-        raise ValueError("runtime attestations are missing")
-    if any(path.is_symlink() or not path.is_file() or path.suffix != ".json" for path in paths):
-        raise ValueError("runtime attestation inventory contains an unexpected entry")
-    names = {path.name for path in paths}
-    invocations = len(paths) // 3
-    expected = {
-        f"{index:03d}-{suffix}.json"
-        for index in range(invocations)
-        for suffix in ("events", "identity-after", "identity-before")
-    }
-    if names != expected:
-        raise ValueError("runtime attestation inventory is incomplete or unexpected")
-    identity = (attestations / "000-identity-before.json").read_bytes()
-    if any(
-        path.read_bytes() != identity
-        for path in paths
-        if "-identity-" in path.name
-    ):
-        raise ValueError("runtime identity differs across attestations")
-    intervals = [
-        json.loads((attestations / f"{index:03d}-events.json").read_text())
-        for index in range(invocations)
-    ]
-    for interval in intervals:
-        _verify_event_interval(interval)
-    _verify_denial_retry_cadence(intervals, DENIAL_RETRY_SECONDS)
-    return paths
+def _verified_attestation_files(
+    attestations: Path,
+    *,
+    manifest: dict[str, Any],
+    registration: dict[str, str],
+) -> tuple[list[Path], list[dict[str, Any]]]:
+    """Verify the shared exact attestation-inventory contract."""
+    return verify_attestation_inventory(
+        attestations, manifest=manifest, registration=registration
+    )
 
 
-def _prepare_attestation_directory(attestations: Path) -> None:
+def _prepare_attestation_directory(
+    attestations: Path,
+    *,
+    manifest: dict[str, Any],
+    registration: dict[str, str],
+) -> list[dict[str, Any]]:
     if attestations.is_symlink() or (attestations.exists() and not attestations.is_dir()):
         raise ValueError("runtime attestations must be a real directory")
     attestations.mkdir(mode=0o700, parents=True, exist_ok=True)
     if stat.S_IMODE(attestations.stat().st_mode) != 0o700:
         raise ValueError("runtime attestations must have mode 0700")
     if any(attestations.iterdir()):
-        _verified_attestation_files(attestations)
+        _, intervals = _verified_attestation_files(
+            attestations, manifest=manifest, registration=registration
+        )
+        return intervals
+    return []
 
 
 def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
@@ -598,7 +618,7 @@ def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
 
 
 def _time_bound() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _fidelity_error(records: list[dict[str, Any]]) -> bool:
@@ -614,11 +634,28 @@ def _fidelity_error(records: list[dict[str, Any]]) -> bool:
     )
 
 
-def run_batch(
+def _verify_run_scope(
+    root: Path, output: Path, workspace_root: Path, events: Path
+) -> dict[str, Any]:
+    """Validate all caller-selected paths before creating the wrapper lock."""
+    manifest = _load_manifest(root)
+    if output.name != manifest["execution"]["output_id"]:
+        raise ValueError("raw output ID differs from registration")
+    if os.environ.get("CODEX_THREAD_ID", "") != manifest["execution"]["coordination_thread_id"]:
+        raise ValueError("execution thread identity differs from registration")
+    if workspace_root.resolve() != _canonical_workspace_root(root):
+        raise ValueError("worker workspace differs from the canonical shared workspace")
+    if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
+        raise ValueError("coordination event log path differs from the shared gate")
+    return manifest
+
+
+def _run_batch_locked(
     root: Path,
     output: Path,
     attestations: Path,
     *,
+    manifest: dict[str, Any],
     execution_root: Path,
     assist_source: Path,
     assist_python: Path,
@@ -629,16 +666,8 @@ def run_batch(
     events: Path,
 ) -> str:
     """Run one inherited bounded invocation or fail closed without reinterpretation."""
-    manifest = _load_manifest(root)
-    if output.name != manifest["execution"]["output_id"]:
-        raise ValueError("raw output ID differs from registration")
-    thread_id = os.environ.get("CODEX_THREAD_ID", "")
-    if thread_id != manifest["execution"]["coordination_thread_id"]:
-        raise ValueError("execution thread identity differs from registration")
-    if workspace_root.resolve() != _canonical_workspace_root(root):
-        raise ValueError("worker workspace differs from the canonical shared workspace")
-    if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
-        raise ValueError("coordination event log path differs from the shared gate")
+    thread_id = manifest["execution"]["coordination_thread_id"]
+    registration = _verify_local_registration(root, manifest)
     if output.is_symlink() or (output.exists() and not output.is_dir()):
         raise ValueError("reproduction output must be a real directory")
     if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
@@ -648,37 +677,72 @@ def run_batch(
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
-        denial_retry_pending = _denial_retry_pending(output, prior_admissions, now=time.time())
+        denial_not_before = _denial_retry_not_before(output, prior_admissions)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         _quarantine(output, "persisted reproduction progress is invalid")
         raise ValueError("persisted reproduction progress is invalid") from error
     remaining = len(bundle.schedule) - len(existing_outcomes)
-    if denial_retry_pending:
-        return "denial-cooldown"
-    if remaining and len(existing_outcomes):
+    try:
+        prior_intervals = _prepare_attestation_directory(
+            attestations, manifest=manifest, registration=registration
+        )
+        if prior_intervals:
+            verify_execution_intervals(
+                prior_intervals,
+                admissions=prior_admissions,
+                outcomes=existing_outcomes,
+                thread_id=thread_id,
+                schedule_size=len(bundle.schedule),
+            )
+        batch_intervals = [
+            interval for interval in prior_intervals
+            if interval["next_batch_not_before_unix"] is not None
+        ]
+        attested_batch_not_before = (
+            batch_intervals[-1]["next_batch_not_before_unix"] if batch_intervals else None
+        )
+        attested_batch_boundary = (
+            batch_intervals[-1]["outcomes_after"] if batch_intervals else 0
+        )
         cooldown = output / "batch-cooldown.json"
-        if cooldown.exists():
+        if not attested_batch_boundary and cooldown.exists():
+            raise ValueError("sealed batch cooldown exists before a batch boundary")
+        batch_file_not_before: float | int | None = None
+        if attested_batch_boundary:
             try:
                 value = json.loads(cooldown.read_text())
             except (OSError, json.JSONDecodeError) as error:
-                _quarantine(output, "sealed batch cooldown is malformed")
-                raise ValueError("sealed batch cooldown is malformed") from error
+                raise ValueError("sealed batch cooldown is missing or malformed") from error
             if (
                 not isinstance(value, dict)
                 or set(value) != {"completed_outcomes", "not_before_unix"}
                 or not isinstance(value["completed_outcomes"], int)
+                or isinstance(value["completed_outcomes"], bool)
                 or not isinstance(value["not_before_unix"], (int, float))
-                or value["completed_outcomes"] > len(existing_outcomes)
+                or isinstance(value["not_before_unix"], bool)
+                or not math.isfinite(value["not_before_unix"])
+                or value["completed_outcomes"] != attested_batch_boundary
             ):
-                _quarantine(output, "sealed batch cooldown differs from run progress")
                 raise ValueError("sealed batch cooldown differs from run progress")
-            if (
-                value["completed_outcomes"] == len(existing_outcomes)
-                and value["not_before_unix"] > time.time()
-            ):
-                return "cooldown"
-    try:
-        _prepare_attestation_directory(attestations)
+            batch_file_not_before = value["not_before_unix"]
+        attested_denial_not_before = (
+            prior_intervals[-1]["next_denial_not_before_unix"] if prior_intervals else None
+        )
+        if batch_file_not_before != attested_batch_not_before:
+            raise ValueError("sealed batch cooldown differs from its attestation")
+        if denial_not_before != attested_denial_not_before:
+            raise ValueError("production-denial cooldown differs from its attestation")
+        now = time.time()
+        if attested_denial_not_before is not None and now < attested_denial_not_before:
+            return "denial-cooldown"
+        if (
+            prior_intervals
+            and batch_intervals
+            and prior_intervals[-1] is batch_intervals[-1]
+            and attested_batch_not_before is not None
+            and now < attested_batch_not_before
+        ):
+            return "cooldown"
         before = attest(
             root, execution_root=execution_root, assist_source=assist_source,
             assist_python=assist_python, workspace_root=workspace_root,
@@ -739,18 +803,6 @@ def run_batch(
     except (OSError, ValueError) as error:
         _quarantine(output, str(error))
         raise
-    attested_events = [
-        event for event in new_events
-        if event.get("thread") == thread_id and event.get("resource") == "llm"
-        and event.get("event") in {"production_admission_denied", "resource_started", "resource_finished"}
-    ]
-    interval = {"events": attested_events, "finished_at": finished_at, "started_at": started_at}
-    try:
-        _verify_event_interval(interval)
-        atomic_write(attestations / f"{label}-events.json", canonical_json(interval) + b"\n")
-    except Exception as error:
-        _quarantine(output, "runtime event attestation failed")
-        raise ValueError("runtime event attestation failed") from error
     try:
         admissions, outcomes = _verified_progress(output, bundle)
     except (OSError, ValueError, json.JSONDecodeError) as error:
@@ -764,20 +816,37 @@ def run_batch(
     if _fidelity_error(new_outcomes):
         _quarantine(output, "provider-request fidelity failure")
         raise ValueError("provider-request fidelity failure; fresh reproduction required")
-    if not thread_id or not _events_match_admissions(
-        new_admissions=new_admissions, new_outcomes=new_outcomes,
-        new_events=new_events, thread_id=thread_id
-    ):
-        _quarantine(output, "shared-resource events do not match admission records")
-        raise ValueError("shared-resource event/admission mismatch; reproduction quarantined")
-    if any(record.get("admitted") is False for record in new_admissions):
-        if not _true_denial(new_admissions=new_admissions, new_events=new_events, thread_id=thread_id):
+    next_batch_not_before: float | int | None = None
+    if len(new_outcomes) == BATCH_EPISODES and len(outcomes) < len(bundle.schedule):
+        try:
+            batch_cooldown = json.loads((output / "batch-cooldown.json").read_text())
+        except (OSError, json.JSONDecodeError) as error:
+            _quarantine(output, "sealed batch cooldown is missing or malformed")
+            raise ValueError("sealed batch cooldown is missing or malformed") from error
+        if (
+            not isinstance(batch_cooldown, dict)
+            or set(batch_cooldown) != {"completed_outcomes", "not_before_unix"}
+            or batch_cooldown["completed_outcomes"] != len(outcomes)
+            or not isinstance(batch_cooldown["not_before_unix"], (int, float))
+            or isinstance(batch_cooldown["not_before_unix"], bool)
+            or not math.isfinite(batch_cooldown["not_before_unix"])
+        ):
+            _quarantine(output, "sealed batch cooldown differs from run progress")
+            raise ValueError("sealed batch cooldown differs from run progress")
+        next_batch_not_before = batch_cooldown["not_before_unix"]
+    denied = any(record.get("admitted") is False for record in new_admissions)
+    next_denial_not_before: float | int | None = None
+    if denied:
+        if not _true_denial(
+            new_admissions=new_admissions, new_events=new_events, thread_id=thread_id
+        ):
             _quarantine(output, "ambiguous pre-request failure")
             raise ValueError("ambiguous pre-request failure; reproduction quarantined")
+        next_denial_not_before = time.time() + DENIAL_RETRY_SECONDS
         denial = new_admissions[-1]
         cooldown = {
             "admission_count": len(admissions),
-            "not_before_unix": time.time() + DENIAL_RETRY_SECONDS,
+            "not_before_unix": next_denial_not_before,
             "trial_sha256": denial["trial_sha256"],
         }
         try:
@@ -785,15 +854,115 @@ def run_batch(
         except Exception as error:
             _quarantine(output, "production-denial cooldown could not be recorded")
             raise ValueError("production-denial cooldown could not be recorded") from error
+    attested_events = [
+        event for event in new_events
+        if event.get("thread") == thread_id and event.get("resource") == "llm"
+        and event.get("event") in {"production_admission_denied", "resource_started", "resource_finished"}
+    ]
+    interval = {
+        "admissions_after": len(admissions),
+        "admissions_before": len(prior_admissions),
+        "events": attested_events,
+        "finished_at": finished_at,
+        "next_batch_not_before_unix": next_batch_not_before,
+        "next_denial_not_before_unix": next_denial_not_before,
+        "outcomes_after": len(outcomes),
+        "outcomes_before": len(existing_outcomes),
+        "started_at": started_at,
+    }
+    try:
+        _verify_event_interval(interval)
+        atomic_write(attestations / f"{label}-events.json", canonical_json(interval) + b"\n")
+        _, complete_intervals = _verified_attestation_files(
+            attestations, manifest=manifest, registration=registration
+        )
+        verify_execution_intervals(
+            complete_intervals,
+            admissions=admissions,
+            outcomes=outcomes,
+            thread_id=thread_id,
+            schedule_size=len(bundle.schedule),
+        )
+    except Exception as error:
+        _quarantine(output, "runtime event attestation failed")
+        raise ValueError("runtime event attestation failed") from error
+    if denied:
         return "denied"
-    expected = min(24, remaining)
+    expected = min(BATCH_EPISODES, remaining)
     if len(new_outcomes) != expected:
         _quarantine(output, "bounded invocation ended without its registered outcomes")
         raise ValueError("bounded invocation ended early; reproduction quarantined")
     return "complete" if len(outcomes) == len(bundle.schedule) else "batch-complete"
 
 
-def archive_and_analyze(
+def run_batch(
+    root: Path,
+    output: Path,
+    attestations: Path,
+    *,
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    workspace_root: Path,
+    model_path: Path,
+    server_pid: int,
+    llama_source: Path,
+    events: Path,
+) -> str:
+    """Serialize and run one inherited bounded invocation."""
+    manifest = _verify_run_scope(root, output, workspace_root, events)
+    with _wrapper_lock(output):
+        return _run_batch_locked(
+            root,
+            output,
+            attestations,
+            manifest=manifest,
+            execution_root=execution_root,
+            assist_source=assist_source,
+            assist_python=assist_python,
+            workspace_root=workspace_root,
+            model_path=model_path,
+            server_pid=server_pid,
+            llama_source=llama_source,
+            events=events,
+        )
+
+
+def _verify_archive_runtime(
+    *,
+    manifest: dict[str, Any],
+    registration: dict[str, str],
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    workspace_root: Path,
+) -> None:
+    """Re-establish trusted code and interpreter identity before archival."""
+    _read_publication_proof(
+        execution_root.parent / "publication.json", manifest, registration
+    )
+    _verify_execution(execution_root, manifest)
+    if _git_identity(assist_source) != {
+        "commit": manifest["runtime"]["assist_commit"],
+        "tree": manifest["runtime"]["assist_tree"],
+        "status": "",
+    }:
+        raise ValueError("Assist archive runtime differs from registration")
+    environment = _environment_identity(
+        assist_python=assist_python,
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+    )
+    expected = manifest["runtime"]["expected_attestation"]
+    for key in ("distributions", "environment", "modules", "python"):
+        if environment[key] != expected[key]:
+            raise ValueError(f"archive worker {key} differs from registration")
+    if _sha256(workspace_root / "tools" / "agentic") != expected["shared_gate"]["sha256"]:
+        raise ValueError("shared LLM gate differs before archival")
+
+
+def _archive_and_analyze_locked(
     root: Path,
     output: Path,
     capsule: Path,
@@ -805,12 +974,19 @@ def archive_and_analyze(
     assist_python: Path,
     workspace_root: Path,
 ) -> None:
-    """Archive the verified parent run, then perform the locked separate analysis."""
+    """Archive the verified reproduction, then perform the locked separate analysis."""
     manifest = _load_manifest(root)
     if workspace_root.resolve() != _canonical_workspace_root(root):
         raise ValueError("archive workspace differs from the canonical shared workspace")
     registration = _verify_local_registration(root, manifest)
-    _read_publication_proof(execution_root.parent / "publication.json", manifest, registration)
+    _verify_archive_runtime(
+        manifest=manifest,
+        registration=registration,
+        execution_root=execution_root,
+        assist_source=assist_source,
+        assist_python=assist_python,
+        workspace_root=workspace_root,
+    )
     if capsule.name != manifest["execution"]["capsule_id"]:
         raise ValueError("capsule ID differs from registration")
     registered_analysis = capsule / manifest["execution"]["analysis_file"]
@@ -820,23 +996,20 @@ def archive_and_analyze(
         raise ValueError("archive coordinator identity differs from registration")
     if (output / INVALID).exists():
         raise ValueError("a quarantined reproduction cannot be archived")
-    attestation_files = _verified_attestation_files(attestations)
+    attestation_files, intervals = _verified_attestation_files(
+        attestations, manifest=manifest, registration=registration
+    )
     bundle = StudyBundle.read_verified(output / "bundle.json")
     admissions, outcomes = _verified_progress(output, bundle)
     if len(outcomes) != len(bundle.schedule):
         raise ValueError("incomplete reproduction cannot be archived")
-    execution_events = [
-        event
-        for path in sorted(attestations.glob("*-events.json"))
-        for event in _verify_event_interval(json.loads(path.read_text()))
-    ]
-    if not _events_match_admissions(
-        new_admissions=admissions,
-        new_outcomes=outcomes,
-        new_events=execution_events,
+    execution_events = verify_execution_intervals(
+        intervals,
+        admissions=admissions,
+        outcomes=outcomes,
         thread_id=manifest["execution"]["coordination_thread_id"],
-    ):
-        raise ValueError("shared-resource events do not match the complete run")
+        schedule_size=len(bundle.schedule),
+    )
     env = os.environ.copy()
     env.update({"PYTHONPATH": f"{execution_root}:{assist_source}", "PYTHONSAFEPATH": "1", "PYTHONNOUSERSITE": "1"})
     command = [
@@ -862,6 +1035,7 @@ def archive_and_analyze(
         "coordination_thread_id": manifest["execution"]["coordination_thread_id"],
         "execution_witness": witness,
         "manifest_sha256": digest(manifest),
+        "registration": registration,
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }
     atomic_write(
@@ -869,7 +1043,7 @@ def archive_and_analyze(
         canonical_json(provenance | {"record_sha256": digest(provenance)}) + b"\n",
     )
     historical = root / manifest["historical_comparator"]["capsule"]
-    analysis.analyze(manifest, capsule, historical, analysis_output)
+    analysis.analyze(manifest, capsule, historical, analysis_output, registration)
     sealed_files = {
         path.relative_to(capsule).as_posix(): _sha256(path)
         for path in sorted(capsule.rglob("*"))
@@ -882,6 +1056,52 @@ def archive_and_analyze(
     }
     atomic_write(capsule / "reproduction-seal.json", canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
     verify_reproduction_seal(capsule, manifest)
+
+
+def archive_and_analyze(
+    root: Path,
+    output: Path,
+    capsule: Path,
+    analysis_output: Path,
+    attestations: Path,
+    *,
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    workspace_root: Path,
+) -> None:
+    """Serialize archival and permanently quarantine integrity failures."""
+    manifest = _load_manifest(root)
+    if output.name != manifest["execution"]["output_id"]:
+        raise ValueError("raw output ID differs from registration")
+    if capsule.name != manifest["execution"]["capsule_id"]:
+        raise ValueError("capsule ID differs from registration")
+    if analysis_output.resolve() != (
+        capsule / manifest["execution"]["analysis_file"]
+    ).resolve():
+        raise ValueError("analysis output path differs from registration")
+    if os.environ.get("CODEX_THREAD_ID") != manifest["execution"]["coordination_thread_id"]:
+        raise ValueError("archive coordinator identity differs from registration")
+    if workspace_root.resolve() != _canonical_workspace_root(root):
+        raise ValueError("archive workspace differs from the canonical shared workspace")
+    with _wrapper_lock(output):
+        if (output / INVALID).exists():
+            raise ValueError("a quarantined reproduction cannot be archived")
+        try:
+            _archive_and_analyze_locked(
+                root,
+                output,
+                capsule,
+                analysis_output,
+                attestations,
+                execution_root=execution_root,
+                assist_source=assist_source,
+                assist_python=assist_python,
+                workspace_root=workspace_root,
+            )
+        except Exception as error:
+            _quarantine(output, "archive or analysis integrity failed")
+            raise ValueError("archive or analysis integrity failed; reproduction quarantined") from error
 
 
 def main() -> None:

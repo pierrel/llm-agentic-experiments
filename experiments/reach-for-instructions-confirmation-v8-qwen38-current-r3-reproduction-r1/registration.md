@@ -117,6 +117,10 @@ Every model-capable worker remains inside the shared workspace
 terminal episodes. Any invocation that records 24 terminal episodes while the
 schedule remains incomplete keeps the parent's recorded 900-second cooldown.
 There is no result-based stop and no replacement of admitted outcomes.
+One separate nonblocking reproduction lock covers the complete wrapper
+transaction from persisted-progress inspection through before/after identity,
+parent execution, event reconciliation, and cooldown recording. It does not
+reuse the inherited parent output lock.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 accepts evidence only from its sibling `.coordination/events.jsonl`. A different
@@ -134,11 +138,15 @@ ten-minute cadence without changing the trial. Every admitted episode must
 instead match one same-thread `resource_started` and `resource_finished` pair;
 a parent-recorded timeout may lack the finish event because the inherited runner
 terminates the admitted process group at its safety limit. Each retained event
-slice also records the parent invocation's UTC start and finish bounds; all
-resource events must be ordered and fall within those bounds.
-The wrapper persists a 600-second `not_before` record after each corroborated
-denial, refuses an earlier attempt, and verifies the same interval in the final
-attestation history.
+slice records the parent invocation's UTC bounds and exact admission/outcome
+counts before and after it; all resource events must be ordered and fall within
+those bounds. The wrapper persists a 600-second `not_before` record after each
+corroborated denial and the parent's 900-second boundary after each full
+incomplete batch. It copies both applicable boundaries into the immutable
+interval history, requires the live files to match that history, refuses an
+earlier attempt, and verifies the same cadence in the final capsule. Admission
+and outcome records must also retain the exact parent schemas, scheduled trial
+identity, field types, and outcome semantics in addition to valid hash chains.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
 request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
@@ -170,6 +178,10 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
+Immediately before the parent archive command, the wrapper re-verifies the exact
+parent and Assist checkouts, interpreter, imported modules, full dependency
+closure, environment, and shared gate. An archive-stage reproduction-integrity
+failure permanently quarantines the raw cohort.
 Before locked analysis summarizes an outcome, the wrapper copies the verified attestation
 inventory into the capsule and writes a self-digested provenance record binding
 every copied file, the capsule run record, manifest, and coordinator identity.
