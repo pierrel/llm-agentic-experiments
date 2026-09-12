@@ -342,6 +342,4 @@ def verify_attestation_inventory(
         json.loads((attestations / f"{index:03d}-events.json").read_text())
         for index in range(invocations)
     ]
-    for interval in intervals:
-        verify_event_interval(interval)
     return paths, intervals

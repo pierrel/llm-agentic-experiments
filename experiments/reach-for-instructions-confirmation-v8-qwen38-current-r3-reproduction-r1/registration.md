@@ -141,8 +141,8 @@ terminates the admitted process group at its safety limit. Each retained event
 slice records the parent invocation's UTC bounds and exact admission/outcome
 counts before and after it; all resource events must be ordered and fall within
 those bounds. The wrapper persists a 600-second `not_before` record after each
-corroborated denial and the parent's 900-second boundary after each full
-incomplete batch. It copies both applicable boundaries into the immutable
+corroborated denial and inherits the parent's persisted 900-second boundary
+after each full incomplete batch. It copies both applicable boundaries into the immutable
 interval history, requires the live files to match that history, refuses an
 earlier attempt, and verifies the same cadence in the final capsule. Admission
 and outcome records must also retain the exact parent schemas, scheduled trial

@@ -523,6 +523,8 @@ def _denial_retry_not_before(
 
 def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
     """Verify the final immutable reproduction evidence inventory."""
+    if capsule.is_symlink() or not capsule.is_dir():
+        raise ValueError("reproduction capsule must be a real directory")
     path = capsule / "reproduction-seal.json"
     try:
         seal = json.loads(path.read_text())
@@ -569,18 +571,6 @@ def _true_denial(
     ]
 
 
-def _verified_attestation_files(
-    attestations: Path,
-    *,
-    manifest: dict[str, Any],
-    registration: dict[str, str],
-) -> tuple[list[Path], list[dict[str, Any]]]:
-    """Verify the shared exact attestation-inventory contract."""
-    return verify_attestation_inventory(
-        attestations, manifest=manifest, registration=registration
-    )
-
-
 def _prepare_attestation_directory(
     attestations: Path,
     *,
@@ -593,7 +583,7 @@ def _prepare_attestation_directory(
     if stat.S_IMODE(attestations.stat().st_mode) != 0o700:
         raise ValueError("runtime attestations must have mode 0700")
     if any(attestations.iterdir()):
-        _, intervals = _verified_attestation_files(
+        _, intervals = verify_attestation_inventory(
             attestations, manifest=manifest, registration=registration
         )
         return intervals
@@ -618,7 +608,43 @@ def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
 
 
 def _time_bound() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    # Shared resource events use second precision, so invocation bounds must too.
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _run_parent(
+    command: list[str], *, cwd: Path, env: dict[str, str], output: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run the exact parent and quarantine even when the wrapper is interrupted."""
+    try:
+        return subprocess.run(
+            command, cwd=cwd, env=env, text=True, capture_output=True
+        )
+    except BaseException as error:
+        _quarantine(output, "parent runner could not be launched or was interrupted")
+        if not isinstance(error, Exception):
+            raise
+        raise ValueError("parent runner could not be launched") from error
+
+
+def _read_batch_cooldown(path: Path) -> dict[str, int | float]:
+    """Read the exact inherited batch-cooldown record shape."""
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("sealed batch cooldown is missing or malformed") from error
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"completed_outcomes", "not_before_unix"}
+        or not isinstance(value["completed_outcomes"], int)
+        or isinstance(value["completed_outcomes"], bool)
+        or value["completed_outcomes"] < 0
+        or not isinstance(value["not_before_unix"], (int, float))
+        or isinstance(value["not_before_unix"], bool)
+        or not math.isfinite(value["not_before_unix"])
+    ):
+        raise ValueError("sealed batch cooldown is missing or malformed")
+    return value
 
 
 def _fidelity_error(records: list[dict[str, Any]]) -> bool:
@@ -678,7 +704,7 @@ def _run_batch_locked(
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
         denial_not_before = _denial_retry_not_before(output, prior_admissions)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except Exception as error:
         _quarantine(output, "persisted reproduction progress is invalid")
         raise ValueError("persisted reproduction progress is invalid") from error
     remaining = len(bundle.schedule) - len(existing_outcomes)
@@ -709,19 +735,9 @@ def _run_batch_locked(
             raise ValueError("sealed batch cooldown exists before a batch boundary")
         batch_file_not_before: float | int | None = None
         if attested_batch_boundary:
-            try:
-                value = json.loads(cooldown.read_text())
-            except (OSError, json.JSONDecodeError) as error:
-                raise ValueError("sealed batch cooldown is missing or malformed") from error
+            value = _read_batch_cooldown(cooldown)
             if (
-                not isinstance(value, dict)
-                or set(value) != {"completed_outcomes", "not_before_unix"}
-                or not isinstance(value["completed_outcomes"], int)
-                or isinstance(value["completed_outcomes"], bool)
-                or not isinstance(value["not_before_unix"], (int, float))
-                or isinstance(value["not_before_unix"], bool)
-                or not math.isfinite(value["not_before_unix"])
-                or value["completed_outcomes"] != attested_batch_boundary
+                value["completed_outcomes"] != attested_batch_boundary
             ):
                 raise ValueError("sealed batch cooldown differs from run progress")
             batch_file_not_before = value["not_before_unix"]
@@ -780,11 +796,7 @@ def _run_batch_locked(
         "--assist-python", str(assist_python),
     ]
     started_at = _time_bound()
-    try:
-        result = subprocess.run(command, cwd=workspace_root, env=env, text=True, capture_output=True)
-    except Exception as error:
-        _quarantine(output, "parent runner could not be launched")
-        raise ValueError("parent runner could not be launched") from error
+    result = _run_parent(command, cwd=workspace_root, env=env, output=output)
     finished_at = _time_bound()
     try:
         after = attest(
@@ -805,7 +817,7 @@ def _run_batch_locked(
         raise
     try:
         admissions, outcomes = _verified_progress(output, bundle)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except Exception as error:
         _quarantine(output, "persisted reproduction progress became invalid")
         raise ValueError("persisted reproduction progress became invalid") from error
     new_admissions = admissions[len(prior_admissions):]
@@ -819,17 +831,12 @@ def _run_batch_locked(
     next_batch_not_before: float | int | None = None
     if len(new_outcomes) == BATCH_EPISODES and len(outcomes) < len(bundle.schedule):
         try:
-            batch_cooldown = json.loads((output / "batch-cooldown.json").read_text())
-        except (OSError, json.JSONDecodeError) as error:
+            batch_cooldown = _read_batch_cooldown(output / "batch-cooldown.json")
+        except ValueError as error:
             _quarantine(output, "sealed batch cooldown is missing or malformed")
             raise ValueError("sealed batch cooldown is missing or malformed") from error
         if (
-            not isinstance(batch_cooldown, dict)
-            or set(batch_cooldown) != {"completed_outcomes", "not_before_unix"}
-            or batch_cooldown["completed_outcomes"] != len(outcomes)
-            or not isinstance(batch_cooldown["not_before_unix"], (int, float))
-            or isinstance(batch_cooldown["not_before_unix"], bool)
-            or not math.isfinite(batch_cooldown["not_before_unix"])
+            batch_cooldown["completed_outcomes"] != len(outcomes)
         ):
             _quarantine(output, "sealed batch cooldown differs from run progress")
             raise ValueError("sealed batch cooldown differs from run progress")
@@ -873,7 +880,7 @@ def _run_batch_locked(
     try:
         _verify_event_interval(interval)
         atomic_write(attestations / f"{label}-events.json", canonical_json(interval) + b"\n")
-        _, complete_intervals = _verified_attestation_files(
+        _, complete_intervals = verify_attestation_inventory(
             attestations, manifest=manifest, registration=registration
         )
         verify_execution_intervals(
@@ -996,7 +1003,7 @@ def _archive_and_analyze_locked(
         raise ValueError("archive coordinator identity differs from registration")
     if (output / INVALID).exists():
         raise ValueError("a quarantined reproduction cannot be archived")
-    attestation_files, intervals = _verified_attestation_files(
+    attestation_files, intervals = verify_attestation_inventory(
         attestations, manifest=manifest, registration=registration
     )
     bundle = StudyBundle.read_verified(output / "bundle.json")
@@ -1088,6 +1095,11 @@ def archive_and_analyze(
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")
         try:
+            if capsule.exists():
+                verify_reproduction_seal(capsule, manifest)
+                if not analysis_output.is_file():
+                    raise ValueError("sealed reproduction analysis is missing")
+                return
             _archive_and_analyze_locked(
                 root,
                 output,

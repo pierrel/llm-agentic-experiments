@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -396,13 +397,13 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             capsule = _reproduction_fixture(Path(temporary), manifest)
             root = capsule / "runtime-attestations"
-            paths, intervals = runner._verified_attestation_files(
+            paths, intervals = runner.verify_attestation_inventory(
                 root, manifest=manifest, registration=TEST_REGISTRATION
             )
             self.assertEqual((len(paths), len(intervals)), (9, 3))
             (root / "001-identity-after.json").write_bytes(b'{"identity":2}\n')
             with self.assertRaisesRegex(ValueError, "identity differs"):
-                runner._verified_attestation_files(
+                runner.verify_attestation_inventory(
                     root, manifest=manifest, registration=TEST_REGISTRATION
                 )
 
@@ -496,6 +497,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             })
         with self.assertRaisesRegex(ValueError, "outside"):
             runner._verify_event_interval(record | {"events": list(reversed(record["events"]))})
+        self.assertEqual(datetime.fromisoformat(runner._time_bound()).microsecond, 0)
+
+    def test_batch_cooldown_requires_an_integer_outcome_count(self) -> None:
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "batch-cooldown.json"
+            for value in (24.0, True, -1):
+                with self.subTest(value=value):
+                    path.write_bytes(canonical_json({
+                        "completed_outcomes": value,
+                        "not_before_unix": 1000.0,
+                    }) + b"\n")
+                    with self.assertRaisesRegex(ValueError, "malformed"):
+                        runner._read_batch_cooldown(path)
 
     def test_denial_retry_cadence_is_enforced_and_attested(self) -> None:
         admission = {"admitted": False, "trial_sha256": "trial-1"}
@@ -584,6 +598,30 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ) - int(was_loaded),
         )
 
+    def test_capsule_rejects_boolean_or_negative_token_counts(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            for value in (True, -1):
+                with self.subTest(value=value):
+                    capsule = Path(temporary) / str(value)
+                    shutil.copytree(HISTORICAL, capsule)
+                    metadata_path = capsule / "trial-metadata.json"
+                    metadata = json.loads(metadata_path.read_text())
+                    metadata[0]["first_prompt_tokens"] = value
+                    metadata_path.write_bytes(canonical_json(metadata) + b"\n")
+                    run_path = capsule / "run.json"
+                    run = json.loads(run_path.read_text())
+                    run.pop("record_sha256")
+                    run["trial_metadata_sha256"] = runner._sha256(metadata_path)
+                    run_path.write_bytes(
+                        canonical_json(run | {"record_sha256": digest(run)}) + b"\n"
+                    )
+                    with self.assertRaisesRegex(ValueError, "token count"):
+                        analysis._verify_capsule(
+                            capsule,
+                            bundle_sha256=manifest["parent"]["bundle_sha256"],
+                        )
+
     def test_execution_exceptions_quarantine_before_resume(self) -> None:
         thread = "thread-1"
         manifest = {
@@ -639,6 +677,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
                 shutil.rmtree(output)
                 shutil.rmtree(attestations)
+                with self.subTest(stage="parent-interrupt"), patch.object(
+                    runner, "attest", return_value=b'{}\n'
+                ), patch.object(runner.subprocess, "run", side_effect=KeyboardInterrupt):
+                    with self.assertRaises(KeyboardInterrupt):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                shutil.rmtree(attestations)
+                with self.subTest(stage="malformed-progress"), patch.object(
+                    runner, "_verified_progress", side_effect=AttributeError("not an object")
+                ):
+                    with self.assertRaisesRegex(ValueError, "persisted reproduction progress"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                if attestations.exists():
+                    shutil.rmtree(attestations)
                 with self.subTest(stage="post-attestation"), patch.object(
                     runner, "attest", side_effect=[b'{}\n', RuntimeError("changed")]
                 ), patch.object(
@@ -696,6 +753,57 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                         workspace_root=workspace,
                     )
             self.assertTrue((output / runner.INVALID).exists())
+
+    def test_archive_retry_accepts_an_existing_valid_seal(self) -> None:
+        thread = "thread-1"
+        manifest = {
+            "execution": {
+                "analysis_file": "reproduction-analysis.json",
+                "capsule_id": runner.STUDY,
+                "coordination_thread_id": thread,
+                "output_id": runner.STUDY,
+            }
+        }
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            output = parent / runner.STUDY
+            output.mkdir(mode=0o700)
+            capsule = parent / "capsules" / runner.STUDY
+            capsule.mkdir(parents=True)
+            analysis_output = capsule / "reproduction-analysis.json"
+            analysis_output.write_text("{}\n")
+            seal = {
+                "schema": "reach-v8-exact-reproduction-seal-v1",
+                "manifest_sha256": digest(manifest),
+                "sealed_files": {
+                    analysis_output.relative_to(capsule).as_posix(): runner._sha256(analysis_output)
+                },
+            }
+            (capsule / "reproduction-seal.json").write_bytes(
+                canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
+            )
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": thread}
+            ), patch.object(
+                runner, "_load_manifest", return_value=manifest
+            ), patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(runner, "_archive_and_analyze_locked") as archive:
+                runner.archive_and_analyze(
+                    ROOT,
+                    output,
+                    capsule,
+                    analysis_output,
+                    parent / "attestations",
+                    execution_root=parent / "experiment",
+                    assist_source=parent / "assist",
+                    assist_python=parent / "python",
+                    workspace_root=workspace,
+                )
+            archive.assert_not_called()
+            self.assertFalse((output / runner.INVALID).exists())
 
     def test_final_reproduction_seal_rejects_changed_evidence(self) -> None:
         with TemporaryDirectory() as temporary:

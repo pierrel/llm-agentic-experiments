@@ -130,7 +130,12 @@ def _verify_capsule(
             raise ValueError("trial metadata differs from the sealed outcome")
         if item.get("context_lines") != CONTEXT_LINES[trial.task]:
             raise ValueError("trial metadata context dose differs from the bundle")
-        if item.get("first_prompt_tokens") is not None and not isinstance(item["first_prompt_tokens"], int):
+        token_count = item.get("first_prompt_tokens")
+        if token_count is not None and (
+            not isinstance(token_count, int)
+            or isinstance(token_count, bool)
+            or token_count < 0
+        ):
             raise ValueError("trial metadata token count is invalid")
         if item.get("skill_loaded_before_first_read") is not None and not isinstance(item["skill_loaded_before_first_read"], bool):
             raise ValueError("trial metadata process measure is invalid")
