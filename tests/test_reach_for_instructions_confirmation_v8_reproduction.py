@@ -39,6 +39,7 @@ def _identity(manifest: dict[str, object]) -> bytes:
         "assist": {
             "commit": runtime["assist_commit"], "status": "", "tree": runtime["assist_tree"],
         },
+        "deployment_environment": expected["deployment_environment"],
         "environment": {
             key: expected[key] for key in ("distributions", "environment", "modules", "python")
         },
@@ -469,7 +470,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             deploy_environment.chmod(0o600)
             manifest = {
                 "runtime": {
-                    "expected_attestation": {"shared_gate": {"sha256": runner._sha256(gate)}}
+                    "expected_attestation": {
+                        "deployment_environment": {
+                            "sha256": runner._sha256(deploy_environment)
+                        },
+                        "shared_gate": {"sha256": runner._sha256(gate)},
+                    }
                 }
             }
             with patch.object(
@@ -620,11 +626,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             workspace.chmod(0o500)
             manifest = {
                 "runtime": {
-                    "expected_attestation": {"shared_gate": {"sha256": runner._sha256(gate)}}
+                    "expected_attestation": {
+                        "deployment_environment": {
+                            "sha256": runner._sha256(deploy_environment)
+                        },
+                        "shared_gate": {"sha256": runner._sha256(gate)},
+                    }
                 }
             }
             verified = runner._verify_worker_workspace(experiment, manifest)
-            with runner._bound_worker_workspace(verified) as reference:
+            with runner._bound_worker_workspace(verified, manifest) as reference:
                 self.assertEqual((reference / "tools" / "agentic").read_text(), "gate")
                 resolved_by_child = subprocess.run(
                     [
@@ -634,6 +645,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(resolved_by_child.returncode, 0)
+            deploy_environment.chmod(0o600)
+            deploy_environment.write_text("changed")
+            deploy_environment.chmod(0o400)
+            with self.assertRaisesRegex(ValueError, "differs from registration"):
+                runner._verify_worker_workspace(experiment, manifest)
             workspace.chmod(0o700)
             gate.parent.chmod(0o700)
             deploy_environment.parent.chmod(0o700)
@@ -963,7 +979,13 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "execution": {"coordination_thread_id": thread, "output_id": runner.STUDY},
             "parent": {"bundle_path": "bundle.json"},
             "runtime": {
-                "expected_attestation": {"production_threads_path_sha256": "0" * 64}
+                "expected_attestation": {
+                    "distributions": {},
+                    "environment": {},
+                    "modules": {},
+                    "production_threads_path_sha256": "0" * 64,
+                    "python": {},
+                }
             },
         }
         bundle = SimpleNamespace(schedule=(SimpleNamespace(sha256="trial-1"),))
@@ -1002,7 +1024,20 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ), patch.object(
                 runner, "_verify_worker_workspace", return_value=runtime / "worker-workspace"
             ), patch.object(
-                runner, "_bound_worker_workspace", return_value=nullcontext(workspace)
+                runner,
+                "_bound_invocation_paths",
+                return_value=nullcontext({
+                    "assist": runtime / "assist",
+                    "execution": runtime / "experiment",
+                    "python": parent / "python",
+                    "worker": workspace,
+                }),
+            ), patch.object(
+                runner,
+                "_environment_identity",
+                return_value={
+                    "distributions": {}, "environment": {}, "modules": {}, "python": {}
+                },
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="registered-input-drift"), patch.object(
                     runner, "_load_manifest", side_effect=ValueError("changed registration")

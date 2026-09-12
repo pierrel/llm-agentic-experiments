@@ -325,6 +325,7 @@ def verify_attestation_inventory(
             "status": "",
             "tree": manifest["runtime"]["assist_tree"],
         },
+        "deployment_environment": expected_runtime["deployment_environment"],
         "environment": {
             key: expected_runtime[key]
             for key in ("distributions", "environment", "modules", "python")

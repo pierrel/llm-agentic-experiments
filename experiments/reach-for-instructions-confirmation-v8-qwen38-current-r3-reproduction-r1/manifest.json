@@ -26,12 +26,12 @@
       "worker_workspace_relative": "worker-workspace"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "5b9ac499f6d7c2661f128cac26521187595bd9cdbce87f2427429703417e1c69",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "f7f3e9bd447102d2d7dfd4ecb3d93fcac32f1da94456f22c0ddb88f903159fe3",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "4bdd29187afbdddacc952214850237d72d9bd3dd7914db2863d073a8b6730f17",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "e9da76865f3246e76cb6079d6369545e3949017bca192fa62c5fc0c5e3bdc2fa",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "c628aa4aa59a8cc81dda5da98eb080604a3674757512a1a1fb357be223394f87",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "40217246dfe5b1dde39470ae5a5344fa0ab193e5a03d64c358de329077ffb518",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "e5a0c40a1fdc8e83dbf2b32b6edfe02b30d04bf88e1515b1602db9a4f50bb59b"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "758c8f4742ca2466c8fa8146a69fa121f420f7b05093089b9ae9978788810ee8",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "c4a1efa6caffa3b638699cd13cf57d0e26e3f7e412cf55f0192084a69f8c4950"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -61,6 +61,9 @@
       "assist_commit": "54b7b1049f43b86a0907203872b7b9c9ae8fb9a4",
       "assist_tree": "e3df40b30613c94a6d3455e920748b4c155a84a1",
       "expected_attestation": {
+        "deployment_environment": {
+          "sha256": "2fcd27991ce85056d0b37ad620518bee574fde1251a6e9dc2cbe236404226fd6"
+        },
         "distributions": {
           "closure_sha256": "fd9ab3c0947550dcb0be40a05bafdfe5110a86124c2e78426ad17addde3f8d9d",
           "packages": [
@@ -241,5 +244,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "2cda80088e671245bd517224e205940d20f5fcc698b5bb6a5f808c6935609abf"
+  "sha256": "a16d0e8a5982f5253710c686e5fe40724494107b2e6c1732bceee11fc9bff0c8"
 }

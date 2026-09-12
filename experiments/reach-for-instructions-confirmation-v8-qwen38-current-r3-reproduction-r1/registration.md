@@ -147,11 +147,12 @@ the systemd scope tools used to contain the parent process tree, are part of eve
 runtime identity attestation.
 At preparation, the exact gate and deployment environment are copied into a private
 worker-workspace whose directories and gate are mode 0500 and whose environment is
-mode 0400. Each invocation re-verifies the complete four-entry snapshot and passes
-the inherited parent a `/proc/<wrapper>/fd/<directory>` reference held open through
-the batch. The gate still reads canonical coordination state through the fixed
-`AGENTIC_ROOT`; only executable and configuration pathname resolution is bound to
-the snapshot.
+mode 0400. The manifest fixes both file digests. Each invocation opens the snapshot,
+exact parent checkout, exact Assist checkout, and interpreter environment first,
+then verifies all identities through those descriptors. The inherited parent uses
+only `/proc/<wrapper>/fd/<descriptor>` references held open through the batch. The
+gate still reads canonical coordination state through the fixed `AGENTIC_ROOT`;
+only executable, source, and configuration pathname resolution is descriptor-bound.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24

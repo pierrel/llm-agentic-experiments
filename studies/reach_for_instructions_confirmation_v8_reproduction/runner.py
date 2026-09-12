@@ -286,6 +286,8 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
                 not deploy_source.is_file()
                 or deploy_source.is_symlink()
                 or stat.S_IMODE(deploy_source.stat().st_mode) != 0o600
+                or _sha256(deploy_source)
+                != manifest["runtime"]["expected_attestation"]["deployment_environment"]["sha256"]
             ):
                 raise ValueError("worker deployment environment must be a real mode-0600 file")
             shutil.copyfile(gate_source, worker_tools / "agentic")
@@ -406,7 +408,8 @@ print(json.dumps({
 
 def _environment_identity(
     *, assist_python: Path, workspace_root: Path, execution_root: Path,
-    assist_source: Path, production_threads_path_sha256: str
+    assist_source: Path, production_threads_path_sha256: str,
+    worker_workspace: Path | None = None,
 ) -> dict[str, Any]:
     env = _execution_environment(
         workspace_root=workspace_root,
@@ -414,7 +417,7 @@ def _environment_identity(
         assist_source=assist_source,
         production_threads_path_sha256=production_threads_path_sha256,
     )
-    worker_workspace = execution_root.parent / "worker-workspace"
+    worker_workspace = worker_workspace or execution_root.parent / "worker-workspace"
     deploy_environment = worker_workspace / "assist" / ".deploy.env"
     if (
         deploy_environment.is_symlink() or not deploy_environment.is_file()
@@ -606,6 +609,9 @@ def attest(
         "registration": registration,
         "execution": execution,
         "assist": assist_identity,
+        "deployment_environment": {
+            "sha256": _sha256(worker_workspace / "assist" / ".deploy.env")
+        },
         "environment": _environment_identity(
             assist_python=assist_python,
             workspace_root=workspace_root,
@@ -634,6 +640,8 @@ def attest(
             raise ValueError(f"worker {key} differs from registration")
     if value["shared_gate"] != expected["shared_gate"]:
         raise ValueError("shared LLM admission gate differs from registration")
+    if value["deployment_environment"] != expected["deployment_environment"]:
+        raise ValueError("worker deployment environment differs from registration")
     if value["process_scope"] != expected["process_scope"]:
         raise ValueError("parent process scope tools differ from registration")
     return canonical_json(value) + b"\n"
@@ -1103,9 +1111,10 @@ def _verify_runtime_paths(
         _verify_fixed_path(label, actual, registered, canonical_workspace)
 
 
-def _verify_worker_workspace(execution_root: Path, manifest: dict[str, Any]) -> Path:
+def _verify_worker_workspace_path(
+    workspace: Path, manifest: dict[str, Any], *, bound_root: bool = False
+) -> Path:
     """Verify the private gate/environment snapshot used by the exact parent."""
-    workspace = execution_root.parent / "worker-workspace"
     gate = workspace / "tools" / "agentic"
     deploy_environment = workspace / "assist" / ".deploy.env"
     _verify_no_symlink_components("prepared shared LLM gate", gate, workspace)
@@ -1124,7 +1133,7 @@ def _verify_worker_workspace(execution_root: Path, manifest: dict[str, Any]) -> 
     directories = (workspace, workspace / "tools", workspace / "assist")
     if any(
         not directory.is_dir()
-        or directory.is_symlink()
+        or ((directory != workspace or not bound_root) and directory.is_symlink())
         or directory.stat().st_uid != os.getuid()
         or stat.S_IMODE(directory.stat().st_mode) != 0o500
         for directory in directories
@@ -1139,14 +1148,23 @@ def _verify_worker_workspace(execution_root: Path, manifest: dict[str, Any]) -> 
         or not deploy_environment.is_file()
         or deploy_environment.stat().st_uid != os.getuid()
         or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o400
+        or _sha256(deploy_environment)
+        != manifest["runtime"]["expected_attestation"]["deployment_environment"]["sha256"]
     ):
         raise ValueError("prepared worker workspace differs from registration")
     return workspace
 
 
+def _verify_worker_workspace(execution_root: Path, manifest: dict[str, Any]) -> Path:
+    """Locate and verify the snapshot beside a prepared execution checkout."""
+    return _verify_worker_workspace_path(
+        execution_root.parent / "worker-workspace", manifest
+    )
+
+
 @contextmanager
-def _bound_worker_workspace(workspace: Path):
-    """Keep the verified worker directory inode bound through parent execution."""
+def _bound_worker_workspace(workspace: Path, manifest: dict[str, Any]):
+    """Open the worker directory first, then verify and retain that exact inode."""
     descriptor = os.open(
         workspace,
         os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
@@ -1159,9 +1177,68 @@ def _bound_worker_workspace(workspace: Path):
             or stat.S_IMODE(metadata.st_mode) != 0o500
         ):
             raise ValueError("prepared worker workspace descriptor differs")
-        yield Path(f"/proc/{os.getpid()}/fd/{descriptor}")
+        reference = Path(f"/proc/{os.getpid()}/fd/{descriptor}")
+        _verify_worker_workspace_path(reference, manifest, bound_root=True)
+        yield reference
     finally:
         os.close(descriptor)
+
+
+@contextmanager
+def _bound_invocation_paths(
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    worker_workspace: Path,
+    manifest: dict[str, Any],
+):
+    """Open first and verify every code/config path used by the exact parent."""
+    venv_root = assist_python.parent.parent
+    sources = (execution_root, assist_source, venv_root)
+    descriptors: list[int] = []
+    try:
+        for source in sources:
+            descriptors.append(os.open(
+                source,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+                | getattr(os, "O_NOFOLLOW", 0),
+            ))
+        if any(
+            not stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            or os.fstat(descriptor).st_uid != os.getuid()
+            for descriptor in descriptors
+        ):
+            raise ValueError("bound invocation directory differs from registration")
+        references = [Path(f"/proc/{os.getpid()}/fd/{value}") for value in descriptors]
+        execution_reference, assist_reference, venv_reference = references
+        with _bound_worker_workspace(worker_workspace, manifest) as worker_reference:
+            _verify_execution(execution_reference, manifest)
+            if _git_identity(assist_reference) != {
+                "commit": manifest["runtime"]["assist_commit"],
+                "tree": manifest["runtime"]["assist_tree"],
+                "status": "",
+            }:
+                raise ValueError("bound Assist checkout differs from registration")
+            try:
+                python_relative = assist_python.relative_to(venv_root)
+            except ValueError as error:
+                raise ValueError("Assist interpreter escapes its environment") from error
+            python_reference = venv_reference / python_relative
+            if (
+                not python_reference.is_file()
+                or _sha256(python_reference)
+                != manifest["runtime"]["expected_attestation"]["python"]["sha256"]
+            ):
+                raise ValueError("bound Assist interpreter differs from registration")
+            yield {
+                "assist": assist_reference,
+                "execution": execution_reference,
+                "python": python_reference,
+                "worker": worker_reference,
+            }
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def _verify_run_scope(
@@ -1303,21 +1380,35 @@ def _run_batch_locked(
     if prefix and not prefix.endswith(b"\n"):
         _quarantine(output, "coordination event log has an unterminated prefix")
         raise ValueError("coordination event log has an unterminated prefix")
-    env = _execution_environment(
-        workspace_root=workspace_root,
-        execution_root=execution_root,
-        assist_source=assist_source,
-        production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
-    )
     worker_workspace = _verify_worker_workspace(execution_root, manifest)
-    with _bound_worker_workspace(worker_workspace) as worker_reference:
+    with _bound_invocation_paths(
+        execution_root, assist_source, assist_python, worker_workspace, manifest
+    ) as bound:
+        bound_environment = _environment_identity(
+            assist_python=bound["python"],
+            workspace_root=workspace_root,
+            execution_root=bound["execution"],
+            assist_source=bound["assist"],
+            production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
+            worker_workspace=bound["worker"],
+        )
+        expected_environment = manifest["runtime"]["expected_attestation"]
+        for key in ("distributions", "environment", "modules", "python"):
+            if bound_environment[key] != expected_environment[key]:
+                raise ValueError(f"bound worker {key} differs from registration")
+        env = _execution_environment(
+            workspace_root=workspace_root,
+            execution_root=bound["execution"],
+            assist_source=bound["assist"],
+            production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
+        )
         command = [
-            str(assist_python), "-m",
+            str(bound["python"]), "-m",
             "studies.reach_for_instructions_confirmation_v8.runner", "run",
-            "--root", str(execution_root), "--output", str(output),
-            "--workspace-root", str(worker_reference),
-            "--assist-source", str(assist_source),
-            "--assist-python", str(assist_python),
+            "--root", str(bound["execution"]), "--output", str(output),
+            "--workspace-root", str(bound["worker"]),
+            "--assist-source", str(bound["assist"]),
+            "--assist-python", str(bound["python"]),
         ]
         started_at = _time_bound()
         result = _run_parent(command, cwd=workspace_root, env=env, output=output)

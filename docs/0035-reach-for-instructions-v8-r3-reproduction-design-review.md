@@ -51,9 +51,11 @@ The reproduction adds no model-visible treatment. Its wrapper:
    The production-thread root is resolved only from the Assist service environment,
    checked against its registered path digest, and passed explicitly to the gate.
    Preparation copies the hash-pinned gate and mode-0600 deployment environment into
-   a private read-only worker-workspace snapshot. Each batch verifies that snapshot
-   and addresses it through a directory descriptor held open by the wrapper, so the
-   parent never resolves a mutable canonical gate or environment pathname.
+   a private read-only worker-workspace snapshot with both content digests fixed.
+   Each batch opens first, verifies through, and addresses that snapshot through a
+   directory descriptor held by the wrapper. The parent, exact code checkouts, and
+   interpreter environment all execute through similarly verified held descriptors,
+   so no model-capable path is re-resolved after its identity check.
 4. Attests the interpreter, resolved modules, the full non-extra dependency
    closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
    commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
