@@ -46,8 +46,9 @@ PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
 COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
 RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
+# systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
-    'ready="$1"; release="$2"; shift 2; printf R >&"$ready"; '
+    'ready="$1"; release="$2"; shift 2; printf "R %s\\n" "$$$$" >&"$ready"; '
     'IFS= read -r token <&"$release" && [ "$token" = R ] || exit 125; '
     'exec "$@"'
 )
@@ -55,6 +56,21 @@ _SCOPE_BOOTSTRAP = (
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _verify_no_symlink_components(label: str, path: Path, base: Path) -> None:
+    """Reject symlinks in every lexical path component below a trusted base."""
+    base_path = Path(os.path.abspath(base))
+    candidate_path = Path(os.path.abspath(path))
+    try:
+        relative = candidate_path.relative_to(base_path)
+    except ValueError as error:
+        raise ValueError(f"{label} escapes its trusted base") from error
+    candidate = base_path
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise ValueError(f"{label} contains a symlinked path component")
 
 
 def _command(*arguments: str, cwd: Path | None = None) -> str:
@@ -88,6 +104,7 @@ def _load_manifest(root: Path) -> dict[str, Any]:
         "output_relative": f"raw/{STUDY}",
         "runtime_relative": RUNTIME_RELATIVE.as_posix(),
         "assist_relative": "assist",
+        "worker_workspace_relative": "worker-workspace",
     }:
         raise ValueError("reproduction manifest execution identity mismatch")
     files = manifest.get("files")
@@ -120,11 +137,18 @@ def _canonical_workspace_root(root: Path) -> Path:
     git_directory = next((path for path in (common, *common.parents) if path.name == ".git"), None)
     if git_directory is None:
         raise ValueError("registration checkout is not attached to the shared workspace")
-    workspace = git_directory.parent if common != git_directory else git_directory.parent.parent
+    workspace = (
+        git_directory.parent if common != git_directory else git_directory.parent.parent
+    ).resolve()
     gate = workspace / "tools" / "agentic"
+    _verify_no_symlink_components("canonical shared LLM gate", gate, workspace)
     if not gate.is_file() or gate.is_symlink():
         raise ValueError("canonical shared LLM gate is unavailable")
-    return workspace.resolve()
+    deploy_environment = workspace / "assist" / ".deploy.env"
+    _verify_no_symlink_components(
+        "worker deployment environment", deploy_environment, workspace
+    )
+    return workspace
 
 
 def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
@@ -227,15 +251,7 @@ def _verify_fixed_path(
     registered_path = Path(os.path.abspath(registered))
     if actual_path != registered_path:
         raise ValueError(f"{label} differs from the fixed reproduction path")
-    try:
-        relative = registered_path.relative_to(workspace)
-    except ValueError as error:
-        raise ValueError(f"{label} escapes the canonical shared workspace") from error
-    candidate = workspace
-    for part in relative.parts:
-        candidate /= part
-        if candidate.is_symlink():
-            raise ValueError(f"{label} contains a symlinked path component")
+    _verify_no_symlink_components(label, registered_path, workspace)
 
 
 def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
@@ -259,10 +275,45 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
             )
             experiment = staging / "experiment"
             assist = staging / "assist"
-            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)], check=True)
-            subprocess.run(["git", "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]], check=True)
-            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)], check=True)
-            subprocess.run(["git", "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]], check=True)
+            worker_workspace = staging / "worker-workspace"
+            worker_tools = worker_workspace / "tools"
+            worker_assist = worker_workspace / "assist"
+            worker_tools.mkdir(parents=True, mode=0o700)
+            worker_assist.mkdir(mode=0o700)
+            gate_source = workspace_root / "tools" / "agentic"
+            deploy_source = workspace_root / "assist" / ".deploy.env"
+            if (
+                not deploy_source.is_file()
+                or deploy_source.is_symlink()
+                or stat.S_IMODE(deploy_source.stat().st_mode) != 0o600
+            ):
+                raise ValueError("worker deployment environment must be a real mode-0600 file")
+            shutil.copyfile(gate_source, worker_tools / "agentic")
+            shutil.copyfile(deploy_source, worker_assist / ".deploy.env")
+            (worker_tools / "agentic").chmod(0o500)
+            (worker_assist / ".deploy.env").chmod(0o400)
+            worker_tools.chmod(0o500)
+            worker_assist.chmod(0o500)
+            worker_workspace.chmod(0o500)
+            expected_gate = manifest["runtime"]["expected_attestation"]["shared_gate"]
+            if _sha256(worker_tools / "agentic") != expected_gate["sha256"]:
+                raise ValueError("prepared shared LLM gate differs from registration")
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]],
+                check=True,
+            )
             _verify_execution(experiment, manifest)
             if _git_identity(assist) != {
                 "commit": manifest["runtime"]["assist_commit"],
@@ -270,9 +321,17 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
                 "status": "",
             }:
                 raise ValueError("prepared Assist checkout differs from registration")
+            _verify_worker_workspace(experiment, manifest)
             staging.replace(runtime_root)
         finally:
             if staging.exists():
+                for directory in (
+                    staging / "worker-workspace" / "tools",
+                    staging / "worker-workspace" / "assist",
+                    staging / "worker-workspace",
+                ):
+                    if directory.is_dir() and not directory.is_symlink():
+                        directory.chmod(0o700)
                 shutil.rmtree(staging)
 
 
@@ -355,12 +414,13 @@ def _environment_identity(
         assist_source=assist_source,
         production_threads_path_sha256=production_threads_path_sha256,
     )
-    deploy_environment = workspace_root / "assist" / ".deploy.env"
+    worker_workspace = execution_root.parent / "worker-workspace"
+    deploy_environment = worker_workspace / "assist" / ".deploy.env"
     if (
         deploy_environment.is_symlink() or not deploy_environment.is_file()
-        or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o600
+        or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o400
     ):
-        raise ValueError("worker deployment environment must be a real mode-0600 file")
+        raise ValueError("worker deployment snapshot must be a real mode-0400 file")
     source_path = f"{execution_root}:{assist_source}"
     result = subprocess.run(
         [
@@ -539,6 +599,7 @@ def attest(
     }:
         raise ValueError("Assist runtime differs from registration")
     expected = manifest["runtime"]["expected_attestation"]
+    worker_workspace = _verify_worker_workspace(execution_root, manifest)
     value = {
         "manifest_sha256": digest(manifest),
         "publication": publication,
@@ -556,7 +617,7 @@ def attest(
             "systemctl_sha256": _sha256(Path("/usr/bin/systemctl")),
             "systemd_run_sha256": _sha256(Path("/usr/bin/systemd-run")),
         },
-        "shared_gate": {"sha256": _sha256(workspace_root / "tools" / "agentic")},
+        "shared_gate": {"sha256": _sha256(worker_workspace / "tools" / "agentic")},
         "server": _server_identity(server_pid, model_path, llama_source),
         "registered_model": manifest["runtime"]["model"],
     }
@@ -774,14 +835,30 @@ def _scope_cgroup(unit: str) -> Path:
     )
 
 
-def _bind_scope(process: subprocess.Popen[str], unit: str, ready: int) -> Path:
+def _bind_scope(unit: str, ready: int) -> Path:
     """Observe the gated payload inside its exact live transient cgroup."""
-    readable, _, _ = select.select([ready], [], [], 10)
-    if not readable or os.read(ready, 1) != b"R":
-        raise RuntimeError("parent process scope did not become ready")
+    deadline = time.monotonic() + 10
+    message = b""
+    while b"\n" not in message and len(message) <= 64:
+        remaining = max(0, deadline - time.monotonic())
+        readable, _, _ = select.select([ready], [], [], remaining)
+        if not readable:
+            raise RuntimeError("parent process scope did not become ready")
+        chunk = os.read(ready, 65 - len(message))
+        if not chunk:
+            raise RuntimeError("parent process scope readiness pipe closed")
+        message += chunk
+    fields = message.rstrip(b"\n").split()
+    if len(fields) != 2 or fields[0] != b"R" or not fields[1].isdigit():
+        raise RuntimeError("parent process scope readiness is malformed")
+    bootstrap_pid = fields[1].decode()
     scope = _scope_cgroup(unit)
     control = scope / "cgroup.kill"
     members = scope / "cgroup.procs"
+    _verify_no_symlink_components("parent process scope", members, Path("/"))
+    _verify_no_symlink_components(
+        "parent process scope kill control", control, Path("/")
+    )
     try:
         scope_metadata = scope.lstat()
         control_metadata = control.stat()
@@ -794,7 +871,7 @@ def _bind_scope(process: subprocess.Popen[str], unit: str, ready: int) -> Path:
         or not stat.S_ISREG(control_metadata.st_mode)
         or control_metadata.st_uid != os.getuid()
         or not stat.S_IMODE(control_metadata.st_mode) & stat.S_IWUSR
-        or str(process.pid) not in member_pids
+        or bootstrap_pid not in member_pids
     ):
         raise RuntimeError("parent process scope identity differs from registration")
     return scope
@@ -828,6 +905,10 @@ def _scope_capability() -> dict[str, str]:
 
 def _verify_scope_empty(scope: Path) -> None:
     """Prove a previously bound cgroup is now empty or has been removed."""
+    _verify_no_symlink_components("parent process scope", scope, Path("/"))
+    _verify_no_symlink_components(
+        "parent process scope membership", scope / "cgroup.procs", Path("/")
+    )
     try:
         members = (scope / "cgroup.procs").read_text().strip()
     except FileNotFoundError:
@@ -840,6 +921,9 @@ def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
     """Atomically kill the complete transient cgroup and prove it is empty."""
     def kill_members() -> None:
         path = scope / "cgroup.kill"
+        _verify_no_symlink_components(
+            "parent process scope kill control", path, Path("/")
+        )
         try:
             descriptor = os.open(
                 path,
@@ -870,16 +954,19 @@ def _kill_unbound_scope(
     process: subprocess.Popen[str], unit: str, env: dict[str, str]
 ) -> None:
     """Stop a startup-gated launcher before any payload command can begin."""
-    subprocess.run(
-        [
-            "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
-            "--signal=SIGKILL", f"{unit}.scope",
-        ],
-        env=env,
-        text=True,
-        capture_output=True,
-        timeout=10,
-    )
+    try:
+        subprocess.run(
+            [
+                "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
+                "--signal=SIGKILL", f"{unit}.scope",
+            ],
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -888,6 +975,9 @@ def _kill_unbound_scope(
         process.communicate(timeout=10)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError("startup-gated scope launcher could not be reaped") from error
+    scope = _scope_cgroup(unit)
+    _verify_no_symlink_components("startup-gated process scope", scope, Path("/"))
+    _verify_scope_empty(scope)
 
 
 def _run_parent(
@@ -921,7 +1011,7 @@ def _run_parent(
             ready_write = -1
             os.close(release_read)
             release_read = -1
-            scope = _bind_scope(process, unit, ready_read)
+            scope = _bind_scope(unit, ready_read)
             _release_scope(release_write)
             os.close(release_write)
             release_write = -1
@@ -1002,11 +1092,76 @@ def _verify_runtime_paths(
         "Assist checkout": (assist_source, runtime_root / "assist"),
         "raw output": (output, runtime_root / "raw" / STUDY),
         "attestations": (attestations, runtime_root / "attestations"),
+        "worker workspace": (
+            execution_root.parent / "worker-workspace",
+            runtime_root / "worker-workspace",
+        ),
     }
     if capsule is not None:
         expected["capsule"] = (capsule, runtime_root / "capsule" / STUDY)
     for label, (actual, registered) in expected.items():
         _verify_fixed_path(label, actual, registered, canonical_workspace)
+
+
+def _verify_worker_workspace(execution_root: Path, manifest: dict[str, Any]) -> Path:
+    """Verify the private gate/environment snapshot used by the exact parent."""
+    workspace = execution_root.parent / "worker-workspace"
+    gate = workspace / "tools" / "agentic"
+    deploy_environment = workspace / "assist" / ".deploy.env"
+    _verify_no_symlink_components("prepared shared LLM gate", gate, workspace)
+    _verify_no_symlink_components(
+        "prepared deployment environment", deploy_environment, workspace
+    )
+    expected_entries = {
+        workspace / "tools",
+        workspace / "assist",
+        gate,
+        deploy_environment,
+    }
+    actual_entries = set(workspace.rglob("*"))
+    if actual_entries != expected_entries:
+        raise ValueError("prepared worker workspace contains unexpected entries")
+    directories = (workspace, workspace / "tools", workspace / "assist")
+    if any(
+        not directory.is_dir()
+        or directory.is_symlink()
+        or directory.stat().st_uid != os.getuid()
+        or stat.S_IMODE(directory.stat().st_mode) != 0o500
+        for directory in directories
+    ):
+        raise ValueError("prepared worker workspace directory differs")
+    if (
+        not gate.is_file()
+        or gate.stat().st_uid != os.getuid()
+        or stat.S_IMODE(gate.stat().st_mode) != 0o500
+        or _sha256(gate)
+        != manifest["runtime"]["expected_attestation"]["shared_gate"]["sha256"]
+        or not deploy_environment.is_file()
+        or deploy_environment.stat().st_uid != os.getuid()
+        or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o400
+    ):
+        raise ValueError("prepared worker workspace differs from registration")
+    return workspace
+
+
+@contextmanager
+def _bound_worker_workspace(workspace: Path):
+    """Keep the verified worker directory inode bound through parent execution."""
+    descriptor = os.open(
+        workspace,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o500
+        ):
+            raise ValueError("prepared worker workspace descriptor differs")
+        yield Path(f"/proc/{os.getpid()}/fd/{descriptor}")
+    finally:
+        os.close(descriptor)
 
 
 def _verify_run_scope(
@@ -1154,15 +1309,19 @@ def _run_batch_locked(
         assist_source=assist_source,
         production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
     )
-    command = [
-        str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "run",
-        "--root", str(execution_root), "--output", str(output),
-        "--workspace-root", str(workspace_root), "--assist-source", str(assist_source),
-        "--assist-python", str(assist_python),
-    ]
-    started_at = _time_bound()
-    result = _run_parent(command, cwd=workspace_root, env=env, output=output)
-    finished_at = _time_bound()
+    worker_workspace = _verify_worker_workspace(execution_root, manifest)
+    with _bound_worker_workspace(worker_workspace) as worker_reference:
+        command = [
+            str(assist_python), "-m",
+            "studies.reach_for_instructions_confirmation_v8.runner", "run",
+            "--root", str(execution_root), "--output", str(output),
+            "--workspace-root", str(worker_reference),
+            "--assist-source", str(assist_source),
+            "--assist-python", str(assist_python),
+        ]
+        started_at = _time_bound()
+        result = _run_parent(command, cwd=workspace_root, env=env, output=output)
+        finished_at = _time_bound()
     try:
         after = attest(
             root, execution_root=execution_root, assist_source=assist_source,
@@ -1357,7 +1516,8 @@ def _verify_archive_runtime(
     for key in ("distributions", "environment", "modules", "python"):
         if environment[key] != expected[key]:
             raise ValueError(f"archive worker {key} differs from registration")
-    if _sha256(workspace_root / "tools" / "agentic") != expected["shared_gate"]["sha256"]:
+    worker_workspace = _verify_worker_workspace(execution_root, manifest)
+    if _sha256(worker_workspace / "tools" / "agentic") != expected["shared_gate"]["sha256"]:
         raise ValueError("shared LLM gate differs before archival")
 
 

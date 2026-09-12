@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -459,9 +460,21 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             workspace = Path(temporary)
             runtime = workspace / runner.RUNTIME_RELATIVE
+            gate = workspace / "tools" / "agentic"
+            gate.parent.mkdir()
+            gate.write_text("gate")
+            deploy_environment = workspace / "assist" / ".deploy.env"
+            deploy_environment.parent.mkdir()
+            deploy_environment.write_text("ASSIST_MODEL_URL=http://127.0.0.1:8000/v1\n")
+            deploy_environment.chmod(0o600)
+            manifest = {
+                "runtime": {
+                    "expected_attestation": {"shared_gate": {"sha256": runner._sha256(gate)}}
+                }
+            }
             with patch.object(
                 runner, "_canonical_workspace_root", return_value=workspace
-            ), patch.object(runner, "_load_manifest", return_value={}), patch.object(
+            ), patch.object(runner, "_load_manifest", return_value=manifest), patch.object(
                 runner, "_verify_publication", return_value={}
             ), patch.object(
                 runner.subprocess, "run", side_effect=OSError("clone failed")
@@ -535,7 +548,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(result.returncode, 125)
-            self.assertEqual(result.stdout, "R")
+            marker_fields = result.stdout.split()
+            self.assertEqual(marker_fields[0], "R")
+            self.assertTrue(marker_fields[1].isdigit())
             self.assertFalse(marker.exists())
 
     def test_execution_environment_cannot_redirect_the_shared_gate(self) -> None:
@@ -585,6 +600,56 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     output=runtime / "raw" / runner.STUDY,
                     attestations=runtime / "attestations",
                 )
+
+    def test_worker_workspace_is_exact_and_descriptor_bound(self) -> None:
+        with TemporaryDirectory() as temporary:
+            runtime = Path(temporary)
+            experiment = runtime / "experiment"
+            experiment.mkdir()
+            workspace = runtime / "worker-workspace"
+            gate = workspace / "tools" / "agentic"
+            deploy_environment = workspace / "assist" / ".deploy.env"
+            gate.parent.mkdir(parents=True, mode=0o700)
+            deploy_environment.parent.mkdir(mode=0o700)
+            gate.write_text("gate")
+            gate.chmod(0o500)
+            deploy_environment.write_text("environment")
+            deploy_environment.chmod(0o400)
+            gate.parent.chmod(0o500)
+            deploy_environment.parent.chmod(0o500)
+            workspace.chmod(0o500)
+            manifest = {
+                "runtime": {
+                    "expected_attestation": {"shared_gate": {"sha256": runner._sha256(gate)}}
+                }
+            }
+            verified = runner._verify_worker_workspace(experiment, manifest)
+            with runner._bound_worker_workspace(verified) as reference:
+                self.assertEqual((reference / "tools" / "agentic").read_text(), "gate")
+                resolved_by_child = subprocess.run(
+                    [
+                        "/bin/sh", "-c", 'exec /usr/bin/test -r "$1/tools/agentic"',
+                        "sh", str(reference),
+                    ],
+                    check=False,
+                )
+                self.assertEqual(resolved_by_child.returncode, 0)
+            workspace.chmod(0o700)
+            gate.parent.chmod(0o700)
+            deploy_environment.parent.chmod(0o700)
+
+    def test_worker_workspace_rejects_a_symlinked_gate_ancestor(self) -> None:
+        with TemporaryDirectory() as temporary:
+            runtime = Path(temporary)
+            experiment = runtime / "experiment"
+            experiment.mkdir()
+            workspace = runtime / "worker-workspace"
+            alternate = runtime / "alternate"
+            alternate.mkdir()
+            (workspace / "assist").mkdir(parents=True)
+            (workspace / "tools").symlink_to(alternate, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlinked path component"):
+                runner._verify_worker_workspace(experiment, {"runtime": {}})
 
     def test_archive_rejects_a_symlinked_raw_cohort(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -934,6 +999,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_verify_local_registration", return_value=TEST_REGISTRATION
             ), patch.object(
                 runner, "_production_threads_directory", return_value=workspace / "production"
+            ), patch.object(
+                runner, "_verify_worker_workspace", return_value=runtime / "worker-workspace"
+            ), patch.object(
+                runner, "_bound_worker_workspace", return_value=nullcontext(workspace)
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="registered-input-drift"), patch.object(
                     runner, "_load_manifest", side_effect=ValueError("changed registration")
@@ -999,7 +1068,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with self.subTest(stage="post-attestation"), patch.object(
                     runner, "attest", side_effect=[b'{}\n', RuntimeError("changed")]
                 ), patch.object(
-                    runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+                    runner, "_run_parent",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
                 ):
                     with self.assertRaisesRegex(RuntimeError, "changed"):
                         runner.run_batch(ROOT, output, attestations, **common)
@@ -1010,7 +1080,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with self.subTest(stage="wrapper-interrupt"), patch.object(
                     runner, "attest", side_effect=[b'{}\n', KeyboardInterrupt]
                 ), patch.object(
-                    runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+                    runner, "_run_parent",
+                    return_value=subprocess.CompletedProcess([], 0, "", ""),
                 ):
                     with self.assertRaises(KeyboardInterrupt):
                         runner.run_batch(ROOT, output, attestations, **common)

@@ -140,11 +140,18 @@ redirecting the shared gate or its interpreter. The gate receives an explicit
 production-thread directory derived from the Assist service environment whose
 path digest is fixed in `manifest.json`; caller variables and later worker
 environment loading cannot select another admission-status namespace. The wrapper replicates the inherited
-worker's mode-0600 deployment-environment loading and requires its non-secret model
+worker's deployment-environment loading from a mode-0600 source and requires its non-secret model
 endpoint to remain exactly `http://127.0.0.1:8000/v1` without recording secret
 environment values. The normalized fixed path and workspace root, plus hashes of
 the systemd scope tools used to contain the parent process tree, are part of every
 runtime identity attestation.
+At preparation, the exact gate and deployment environment are copied into a private
+worker-workspace whose directories and gate are mode 0500 and whose environment is
+mode 0400. Each invocation re-verifies the complete four-entry snapshot and passes
+the inherited parent a `/proc/<wrapper>/fd/<directory>` reference held open through
+the batch. The gate still reads canonical coordination state through the fixed
+`AGENTIC_ROOT`; only executable and configuration pathname resolution is bound to
+the snapshot.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
