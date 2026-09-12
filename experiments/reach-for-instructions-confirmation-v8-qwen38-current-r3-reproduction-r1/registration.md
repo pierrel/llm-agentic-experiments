@@ -30,6 +30,17 @@ Execution is bound to the registered immutable coordinator identity
 `01a09689-f137-7cf1-a5c0-f32e7537fefa`. A different `CODEX_THREAD_ID` cannot
 start or resume this cohort.
 
+There is exactly one prepared runtime and one raw cohort. The runtime root is the
+canonical shared workspace child
+`.coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1`;
+its parent and Assist checkouts, raw output, runtime attestations, and capsule use
+the fixed relative paths in `manifest.json`. Preparation refuses an alternate or
+existing root. Batch and archive commands reject alternate paths before touching
+cohort state. The fixed raw path makes the wrapper lock global to this
+reproduction and prevents selecting among parallel same-ID cohorts. The sealed
+capsule is first built at its fixed private runtime path so archival does not
+dirty the registered checkout.
+
 ## Hypothesis, conditions, and prompt sequence
 
 The unchanged question is whether this procedure-heavy natural equipment-return

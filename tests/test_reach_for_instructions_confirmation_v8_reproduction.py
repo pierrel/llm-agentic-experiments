@@ -61,7 +61,7 @@ def _identity(manifest: dict[str, object]) -> bytes:
 def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
     execution = manifest["execution"]
     assert isinstance(execution, dict)
-    capsule = parent / str(execution["capsule_id"])
+    capsule = parent / Path(str(execution["capsule_relative"])).name
     shutil.copytree(HISTORICAL, capsule)
     attestations = capsule / "runtime-attestations"
     attestations.mkdir()
@@ -473,6 +473,36 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     llama_source=Path("/unused-llama"),
                     events=Path("/copied-workspace/.coordination/events.jsonl"),
                 )
+            with self.assertRaisesRegex(ValueError, "raw output differs"):
+                runtime = workspace / runner.RUNTIME_RELATIVE
+                runner.run_batch(
+                    ROOT,
+                    workspace / ".coordination/other/raw" / runner.STUDY,
+                    runtime / "attestations",
+                    execution_root=runtime / "experiment",
+                    assist_source=runtime / "assist",
+                    assist_python=Path("/unused-python"),
+                    workspace_root=workspace,
+                    model_path=Path("/unused-model"),
+                    server_pid=1,
+                    llama_source=Path("/unused-llama"),
+                    events=workspace / ".coordination/events.jsonl",
+                )
+            with self.assertRaisesRegex(ValueError, "runtime root differs"):
+                runner.prepare_runtime(ROOT, Path("/unused-assist"), workspace / "other")
+            alternate_capsule = workspace / "other" / runner.STUDY
+            with self.assertRaisesRegex(ValueError, "capsule differs"):
+                runner.archive_and_analyze(
+                    ROOT,
+                    runtime / "raw" / runner.STUDY,
+                    alternate_capsule,
+                    alternate_capsule / "reproduction-analysis.json",
+                    runtime / "attestations",
+                    execution_root=runtime / "experiment",
+                    assist_source=runtime / "assist",
+                    assist_python=Path("/unused-python"),
+                    workspace_root=workspace,
+                )
         execute.assert_not_called()
 
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
@@ -684,14 +714,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             parent = Path(temporary)
             workspace = parent / "workspace"
+            runtime = workspace / runner.RUNTIME_RELATIVE
             events = workspace / ".coordination" / "events.jsonl"
             events.parent.mkdir(parents=True)
             events.write_bytes(b"")
-            output = parent / runner.STUDY
-            attestations = parent / "attestations"
+            (runtime / "raw").mkdir(parents=True)
+            output = runtime / "raw" / runner.STUDY
+            attestations = runtime / "attestations"
             common = {
-                "execution_root": parent / "execution",
-                "assist_source": parent / "assist",
+                "execution_root": runtime / "experiment",
+                "assist_source": runtime / "assist",
                 "assist_python": parent / "python",
                 "workspace_root": workspace,
                 "model_path": parent / "model",
@@ -818,12 +850,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 stage=stage, error=type(error).__name__
             ), TemporaryDirectory() as temporary:
                 parent = Path(temporary)
-                output = parent / runner.STUDY
-                output.mkdir(mode=0o700)
-                capsule = parent / "capsules" / runner.STUDY
-                analysis_output = capsule / "reproduction-analysis.json"
                 workspace = parent / "workspace"
-                workspace.mkdir()
+                runtime = workspace / runner.RUNTIME_RELATIVE
+                output = runtime / "raw" / runner.STUDY
+                output.mkdir(mode=0o700, parents=True)
+                capsule = runtime / "capsule" / runner.STUDY
+                analysis_output = capsule / "reproduction-analysis.json"
                 with patch.dict(
                     os.environ, {"CODEX_THREAD_ID": thread}
                 ), patch.object(
@@ -845,9 +877,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                             output,
                             capsule,
                             analysis_output,
-                            parent / "attestations",
-                            execution_root=parent / "experiment",
-                            assist_source=parent / "assist",
+                            runtime / "attestations",
+                            execution_root=runtime / "experiment",
+                            assist_source=runtime / "assist",
                             assist_python=parent / "python",
                             workspace_root=workspace,
                         )
@@ -865,17 +897,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         thread = manifest["execution"]["coordination_thread_id"]
         with TemporaryDirectory() as temporary:
             parent = Path(temporary)
-            output = parent / "raw" / runner.STUDY
-            output.parent.mkdir()
+            workspace = parent / "workspace"
+            runtime = workspace / runner.RUNTIME_RELATIVE
+            output = runtime / "raw" / runner.STUDY
+            output.parent.mkdir(parents=True)
             output.mkdir(mode=0o700)
-            capsule = _reproduction_fixture(parent / "capsules", manifest)
+            capsule = _reproduction_fixture(runtime / "capsule", manifest)
             analysis_output = capsule / "reproduction-analysis.json"
             analysis.analyze(
                 manifest, capsule, HISTORICAL, analysis_output, TEST_REGISTRATION
             )
             _seal_capsule(capsule, manifest)
-            workspace = parent / "workspace"
-            workspace.mkdir()
             with patch.dict(
                 os.environ, {"CODEX_THREAD_ID": thread}
             ), patch.object(
@@ -890,9 +922,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     output,
                     capsule,
                     analysis_output,
-                    parent / "attestations",
-                    execution_root=parent / "experiment",
-                    assist_source=parent / "assist",
+                    runtime / "attestations",
+                    execution_root=runtime / "experiment",
+                    assist_source=runtime / "assist",
                     assist_python=parent / "python",
                     workspace_root=workspace,
                 )
@@ -904,15 +936,15 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         thread = manifest["execution"]["coordination_thread_id"]
         with TemporaryDirectory() as temporary:
             parent = Path(temporary)
-            output = parent / "raw" / runner.STUDY
+            workspace = parent / "workspace"
+            runtime = workspace / runner.RUNTIME_RELATIVE
+            output = runtime / "raw" / runner.STUDY
             output.mkdir(mode=0o700, parents=True)
-            capsule = parent / "capsules" / runner.STUDY
+            capsule = runtime / "capsule" / runner.STUDY
             capsule.mkdir(parents=True)
             analysis_output = capsule / "reproduction-analysis.json"
             analysis_output.write_text("{}\n")
             _seal_capsule(capsule, manifest)
-            workspace = parent / "workspace"
-            workspace.mkdir()
             with patch.dict(
                 os.environ, {"CODEX_THREAD_ID": thread}
             ), patch.object(
@@ -928,9 +960,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                         output,
                         capsule,
                         analysis_output,
-                        parent / "attestations",
-                        execution_root=parent / "experiment",
-                        assist_source=parent / "assist",
+                        runtime / "attestations",
+                        execution_root=runtime / "experiment",
+                        assist_source=runtime / "assist",
                         assist_python=parent / "python",
                         workspace_root=workspace,
                     )

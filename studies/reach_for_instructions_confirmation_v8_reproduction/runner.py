@@ -38,6 +38,7 @@ REGISTRATION_TAG = f"{STUDY}"
 PUBLICATION_BRANCH = "reach-experiment-reproduction-v2"
 PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
 COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
+RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 
 
@@ -67,9 +68,15 @@ def _load_manifest(root: Path) -> dict[str, Any]:
         raise ValueError("reproduction manifest study identity mismatch")
     if manifest.get("execution") != {
         "analysis_file": "reproduction-analysis.json",
+        "attestations_relative": "attestations",
         "capsule_id": STUDY,
+        "capsule_relative": f"capsule/{STUDY}",
         "coordination_thread_id": COORDINATION_THREAD_ID,
+        "execution_relative": "experiment",
         "output_id": STUDY,
+        "output_relative": f"raw/{STUDY}",
+        "runtime_relative": RUNTIME_RELATIVE.as_posix(),
+        "assist_relative": "assist",
     }:
         raise ValueError("reproduction manifest execution identity mismatch")
     files = manifest.get("files")
@@ -202,11 +209,15 @@ def _verify_execution(execution_root: Path, manifest: dict[str, Any]) -> dict[st
 
 def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
     """Create private clean detached clones for execution without fetching."""
+    expected_root = _canonical_workspace_root(root) / RUNTIME_RELATIVE
+    if runtime_root.resolve() != expected_root.resolve():
+        raise ValueError("runtime root differs from the fixed reproduction path")
     if runtime_root.exists() or runtime_root.is_symlink():
         raise ValueError("runtime root must not already exist")
     manifest = _load_manifest(root)
     proof = _verify_publication(root, manifest)
     runtime_root.mkdir(mode=0o700, parents=True)
+    (runtime_root / "raw").mkdir(mode=0o700)
     atomic_write(runtime_root / "publication.json", canonical_json({"proof": proof, "sha256": digest(proof)}) + b"\n")
     experiment = runtime_root / "experiment"
     assist = runtime_root / "assist"
@@ -667,8 +678,38 @@ def _fidelity_error(records: list[dict[str, Any]]) -> bool:
     )
 
 
+def _verify_runtime_paths(
+    *,
+    workspace_root: Path,
+    execution_root: Path,
+    assist_source: Path,
+    output: Path,
+    attestations: Path,
+    capsule: Path | None = None,
+) -> None:
+    """Bind every cohort path to the one prepared runtime root."""
+    runtime_root = workspace_root / RUNTIME_RELATIVE
+    expected = {
+        "execution checkout": (execution_root, runtime_root / "experiment"),
+        "Assist checkout": (assist_source, runtime_root / "assist"),
+        "raw output": (output, runtime_root / "raw" / STUDY),
+        "attestations": (attestations, runtime_root / "attestations"),
+    }
+    if capsule is not None:
+        expected["capsule"] = (capsule, runtime_root / "capsule" / STUDY)
+    for label, (actual, registered) in expected.items():
+        if actual.resolve() != registered.resolve():
+            raise ValueError(f"{label} differs from the fixed reproduction path")
+
+
 def _verify_run_scope(
-    root: Path, output: Path, workspace_root: Path, events: Path
+    root: Path,
+    output: Path,
+    attestations: Path,
+    execution_root: Path,
+    assist_source: Path,
+    workspace_root: Path,
+    events: Path,
 ) -> None:
     """Validate caller-selected paths before touching reproduction state."""
     if output.name != STUDY:
@@ -677,6 +718,13 @@ def _verify_run_scope(
         raise ValueError("execution thread identity differs from registration")
     if workspace_root.resolve() != _canonical_workspace_root(root):
         raise ValueError("worker workspace differs from the canonical shared workspace")
+    _verify_runtime_paths(
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+        output=output,
+        attestations=attestations,
+    )
     if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
         raise ValueError("coordination event log path differs from the shared gate")
 
@@ -927,7 +975,9 @@ def run_batch(
     events: Path,
 ) -> str:
     """Serialize and run one inherited bounded invocation."""
-    _verify_run_scope(root, output, workspace_root, events)
+    _verify_run_scope(
+        root, output, attestations, execution_root, assist_source, workspace_root, events
+    )
     with _wrapper_lock(output):
         try:
             if output.is_symlink() or (output.exists() and not output.is_dir()):
@@ -1107,6 +1157,14 @@ def archive_and_analyze(
         raise ValueError("archive coordinator identity differs from registration")
     if workspace_root.resolve() != _canonical_workspace_root(root):
         raise ValueError("archive workspace differs from the canonical shared workspace")
+    _verify_runtime_paths(
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+        output=output,
+        attestations=attestations,
+        capsule=capsule,
+    )
     with _wrapper_lock(output):
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")

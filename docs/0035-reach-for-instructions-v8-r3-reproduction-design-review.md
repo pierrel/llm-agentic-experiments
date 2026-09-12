@@ -38,7 +38,10 @@ The reproduction adds no model-visible treatment. Its wrapper:
    proves the branch and tag publication once during runtime preparation, and
    binds subsequent checks to the saved proof and immutable local tag rather than
    repeatedly consulting a mutable remote branch.
-2. Creates clean detached local clones of the exact parent and Assist commits.
+2. Creates clean detached local clones of the exact parent and Assist commits
+   only under one fixed canonical-workspace runtime root. The raw cohort,
+   attestation inventory, and private sealed capsule also have single fixed child
+   paths, so alternate locks or same-ID cohorts cannot be selected.
 3. Derives the canonical workspace from the registered worktree's Git common
    directory, uses only that workspace's production-priority gate and events,
    and prevents the gate's forced working directory from shadowing either clean

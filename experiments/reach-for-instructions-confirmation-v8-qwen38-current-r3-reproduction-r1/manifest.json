@@ -13,17 +13,23 @@
     },
     "execution": {
       "analysis_file": "reproduction-analysis.json",
+      "assist_relative": "assist",
+      "attestations_relative": "attestations",
       "capsule_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1",
+      "capsule_relative": "capsule/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1",
       "coordination_thread_id": "01a09689-f137-7cf1-a5c0-f32e7537fefa",
-      "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
+      "execution_relative": "experiment",
+      "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1",
+      "output_relative": "raw/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1",
+      "runtime_relative": ".coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "8db62c82844f611fb292af6593064924a348c53d7e408ab74bbee42f40297285",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "fab1f51844fe49c93b5769ac6b2c006058c094e0da0d3ff25029e3870dee9449",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "1ae607482540fb632777b6b1e0c5598f0e3a194df0b928acfa58ec2ecbd07039",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "6a5b2704d32d6342c2b44fbf8fb9e141ad2a4307faaf8513a1d994cbd634d52b",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "0396f788537161c1eb05b7601fc3df7e4a72b260c4c1039fc86d20f1392d5675",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "31f86090995efd13b4db1b4e93b1b732ae205068a67baba30b84b5522aa2e1e0",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "1a22d0bcb67d00c696512437aa500d10d6e5a07691ee8aac35fb5490c182213e"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "336aa71d15ef27a76b80c258549111a7ea9e8936f1c89ae1013c15a621f895fd"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -217,5 +223,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "f59991c5837c60f98b4d29f1bfefb43376e2bd1c177c1d3ecd0ec3d56d897cd7"
+  "sha256": "206631daa9156a0ca156943cc8ed768fe9ed4e865ad9cd318321ed7b26bcfaba"
 }
