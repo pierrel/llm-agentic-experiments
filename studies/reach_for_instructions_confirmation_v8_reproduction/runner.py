@@ -30,7 +30,7 @@ DENIAL = re.compile(
     r"Run `tools/agentic production status --attempt N`, set its next-probe timer, "
     r"and continue other work\.$"
 )
-DEPENDENCIES = ("deepagents", "langchain", "langgraph")
+RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 
 
 def _sha256(path: Path) -> str:
@@ -77,6 +77,21 @@ def _git_identity(root: Path) -> dict[str, str]:
         "tree": _command("git", "rev-parse", "HEAD^{tree}", cwd=root),
         "status": _command("git", "status", "--porcelain=v1", cwd=root),
     }
+
+
+def _canonical_workspace_root(root: Path) -> Path:
+    """Locate the one shared workspace from this registered worktree's Git metadata."""
+    common = Path(
+        _command("git", "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root)
+    ).resolve()
+    git_directory = next((path for path in (common, *common.parents) if path.name == ".git"), None)
+    if git_directory is None:
+        raise ValueError("registration checkout is not attached to the shared workspace")
+    workspace = git_directory.parent if common != git_directory else git_directory.parent.parent
+    gate = workspace / "tools" / "agentic"
+    if not gate.is_file() or gate.is_symlink():
+        raise ValueError("canonical shared LLM gate is unavailable")
+    return workspace.resolve()
 
 
 def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
@@ -195,10 +210,19 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
 
 _ENVIRONMENT_SCRIPT = r'''
 import base64, csv, hashlib, importlib, importlib.metadata, json, os, pathlib, sys
-names = ("deepagents", "langchain", "langgraph")
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+roots = __RUNTIME_ROOT_DISTRIBUTIONS__
 distributions = {}
-for name in names:
+pending = list(roots)
+while pending:
+    name = canonicalize_name(pending.pop())
+    if name in distributions:
+        continue
     dist = importlib.metadata.distribution(name)
+    actual_name = canonicalize_name(dist.metadata["Name"])
+    if actual_name != name:
+        raise RuntimeError(f"distribution identity mismatch for {name}")
     record = next((path for path in dist.files or () if str(path).endswith(".dist-info/RECORD")), None)
     if record is None:
         raise RuntimeError(f"missing RECORD for {name}")
@@ -206,21 +230,24 @@ for name in names:
     verified = []
     with record_path.open(newline="") as source:
         for relative, encoded, _size in csv.reader(source):
-            if not encoded:
-                continue
-            algorithm, value = encoded.split("=", 1)
-            if algorithm != "sha256":
-                raise RuntimeError(f"unsupported RECORD hash for {name}")
             path = pathlib.Path(dist.locate_file(relative))
-            actual = base64.urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest()).rstrip(b"=").decode()
-            if actual != value:
-                raise RuntimeError(f"installed file differs from RECORD: {name}:{relative}")
-            verified.append((relative, value))
+            actual_digest = hashlib.sha256(path.read_bytes()).digest()
+            if encoded:
+                algorithm, value = encoded.split("=", 1)
+                actual = base64.urlsafe_b64encode(actual_digest).rstrip(b"=").decode()
+                if algorithm != "sha256" or actual != value:
+                    raise RuntimeError(f"installed file differs from RECORD: {name}:{relative}")
+            verified.append((relative, actual_digest.hex()))
     distributions[name] = {
         "version": dist.version,
         "record_sha256": hashlib.sha256(record_path.read_bytes()).hexdigest(),
         "verified_files_sha256": hashlib.sha256(json.dumps(sorted(verified), separators=(",", ":")).encode()).hexdigest(),
     }
+    for raw in dist.requires or ():
+        requirement = Requirement(raw)
+        if requirement.marker is None or requirement.marker.evaluate({"extra": ""}):
+            pending.append(requirement.name)
+distribution_identity = json.dumps(distributions, sort_keys=True, separators=(",", ":")).encode()
 modules = {}
 for name in ("studies.reach_for_instructions_confirmation_v8.runner", "harness.bundle", "assist", "assist.model_manager"):
     module = importlib.import_module(name)
@@ -228,7 +255,11 @@ for name in ("studies.reach_for_instructions_confirmation_v8.runner", "harness.b
     modules[name] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 python = pathlib.Path(sys.executable).resolve()
 print(json.dumps({
-    "distributions": distributions,
+    "distributions": {
+        "closure_sha256": hashlib.sha256(distribution_identity).hexdigest(),
+        "packages": sorted(distributions),
+        "roots": list(roots),
+    },
     "environment": {
         "assist_model_url": os.environ.get("ASSIST_MODEL_URL"),
         "python_no_user_site": os.environ.get("PYTHONNOUSERSITE"),
@@ -238,7 +269,7 @@ print(json.dumps({
     "modules": modules,
     "python": {"version": sys.version, "sha256": hashlib.sha256(python.read_bytes()).hexdigest()},
 }, sort_keys=True, separators=(",", ":")))
-'''
+'''.replace("__RUNTIME_ROOT_DISTRIBUTIONS__", repr(RUNTIME_ROOT_DISTRIBUTIONS))
 
 
 def _environment_identity(
@@ -636,6 +667,8 @@ def run_batch(
     thread_id = os.environ.get("CODEX_THREAD_ID", "")
     if thread_id != manifest["execution"]["coordination_thread_id"]:
         raise ValueError("execution thread identity differs from registration")
+    if workspace_root.resolve() != _canonical_workspace_root(root):
+        raise ValueError("worker workspace differs from the canonical shared workspace")
     if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
         raise ValueError("coordination event log path differs from the shared gate")
     if output.is_symlink() or (output.exists() and not output.is_dir()):
@@ -792,6 +825,8 @@ def archive_and_analyze(
 ) -> None:
     """Archive the verified parent run, then perform the locked separate analysis."""
     manifest = _load_manifest(root)
+    if workspace_root.resolve() != _canonical_workspace_root(root):
+        raise ValueError("archive workspace differs from the canonical shared workspace")
     registration = _verify_local_registration(root, manifest)
     _read_publication_proof(execution_root.parent / "publication.json", manifest, registration)
     if capsule.name != manifest["execution"]["capsule_id"]:

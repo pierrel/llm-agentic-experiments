@@ -294,6 +294,36 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 )
         execute.assert_not_called()
 
+    def test_canonical_workspace_is_derived_and_cannot_be_substituted(self) -> None:
+        workspace = runner._canonical_workspace_root(ROOT)
+        self.assertEqual(workspace, ROOT.parents[2])
+        manifest = {
+            "execution": {
+                "coordination_thread_id": "thread-1",
+                "output_id": runner.STUDY,
+            }
+        }
+        with patch.dict(
+            os.environ, {"CODEX_THREAD_ID": "thread-1"}
+        ), patch.object(
+            runner, "_load_manifest", return_value=manifest
+        ), patch.object(
+            runner, "_canonical_workspace_root", return_value=workspace
+        ), patch.object(runner.subprocess, "run") as execute:
+            with self.assertRaisesRegex(ValueError, "canonical shared workspace"):
+                runner.run_batch(
+                    ROOT, Path("/tmp") / runner.STUDY, Path("/unused-attestations"),
+                    execution_root=Path("/unused-experiment"),
+                    assist_source=Path("/unused-assist"),
+                    assist_python=Path("/unused-python"),
+                    workspace_root=Path("/copied-workspace"),
+                    model_path=Path("/unused-model"),
+                    server_pid=1,
+                    llama_source=Path("/unused-llama"),
+                    events=Path("/copied-workspace/.coordination/events.jsonl"),
+                )
+        execute.assert_not_called()
+
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
         with TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
@@ -353,6 +383,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_load_manifest", return_value=manifest
             ), patch.object(
                 runner.StudyBundle, "read_verified", return_value=bundle
+            ), patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="pre-attestation"), patch.object(
                     runner, "attest", side_effect=RuntimeError("attestation failed")

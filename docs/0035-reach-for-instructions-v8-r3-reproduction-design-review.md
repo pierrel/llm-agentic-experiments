@@ -39,12 +39,15 @@ The reproduction adds no model-visible treatment. Its wrapper:
    binds subsequent checks to the saved proof and immutable local tag rather than
    repeatedly consulting a mutable remote branch.
 2. Creates clean detached local clones of the exact parent and Assist commits.
-3. Uses the workspace's shared production-priority gate while preventing the
-   gate's forced working directory from shadowing either clean clone.
-4. Attests the interpreter, resolved modules, installed distribution contents,
-   Assist commit/tree, parent commit/tree/tag/bundle, llama.cpp commit/tree,
-   running server binary/arguments/PID/start identity, and complete model bytes
-   before and after every inherited bounded invocation.
+3. Derives the canonical workspace from the registered worktree's Git common
+   directory, uses only that workspace's production-priority gate and events,
+   and prevents the gate's forced working directory from shadowing either clean
+   clone.
+4. Attests the interpreter, resolved modules, the full non-extra dependency
+   closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
+   commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
+   PID/start identity, and complete model bytes before and after every inherited
+   bounded invocation.
 5. Requires identical attestation bytes across the whole reproduction.
 6. Reconciles parent admission records with the exact same-thread event-log byte
    slice and requires its ordered events to fall within the parent invocation's

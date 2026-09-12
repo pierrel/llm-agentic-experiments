@@ -99,11 +99,17 @@ the parent commit. Assist executes from a separate private clean detached
 checkout at commit `54b7b1049f43b86a0907203872b7b9c9ae8fb9a4`, tree
 `e3df40b30613c94a6d3455e920748b4c155a84a1`. The deployed Assist interpreter is
 used with `PYTHONSAFEPATH=1`, `PYTHONNOUSERSITE=1`, and a `PYTHONPATH` containing
-only those two source roots. The wrapper verifies exact imported files and all
-hashed files declared by the installed deepagents, langchain, and langgraph
-distribution RECORDs. It replicates the inherited worker's mode-0600 deployment-
-environment loading and requires its non-secret model endpoint to remain exactly
-`http://127.0.0.1:8000/v1` without recording other environment values.
+only those two source roots. The wrapper verifies exact imported files and every
+installed file listed in each distribution RECORD in the non-extra dependency
+closure rooted at deepagents and langchain-openai. Declared RECORD hashes must
+match, and the actual bytes of both hashed and unhashed entries feed the closure
+identity. That closure
+includes the LangChain/LangGraph support packages, OpenAI client, HTTP stack,
+Pydantic, and their declared runtime dependencies; its complete package list
+and identity digest are fixed in `manifest.json`. The wrapper replicates the
+inherited worker's mode-0600 deployment-environment loading and requires its
+non-secret model endpoint to remain exactly `http://127.0.0.1:8000/v1` without
+recording other environment values.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
@@ -113,7 +119,10 @@ There is no result-based stop and no replacement of admitted outcomes.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 accepts evidence only from its sibling `.coordination/events.jsonl`. A different
-tool or caller-selected event log cannot authorize an admission or retry.
+tool or caller-selected event log cannot authorize an admission or retry. The
+shared workspace itself is derived from the registered worktree's Git common
+directory; a caller-supplied copied workspace cannot substitute its own lock or
+event namespace.
 
 A production-priority denial is administrative missingness and retries the same
 trial only when all three facts agree: the parent admission is false with the
