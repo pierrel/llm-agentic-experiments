@@ -87,10 +87,11 @@ EB-507, and the unresolved relationship among S-4, S-4B, and K-31. The exact V8-
 condition-blind calibration and scorer decide acceptance.
 
 The unchanged secondary process measure is whether the exact named guide is
-loaded before the first source-record read. It is computed even when the primary
-artifact fails. The execution retains every admitted terminal result with the
-parent reason codes, plus actual first-provider-request input tokens when
-available.
+loaded before the first source-record read. It is computed from the trace even
+when the primary artifact fails; a timeout or interrupted trace that cannot
+expose the measure remains missing rather than being classified as no load. The
+execution retains every admitted terminal result with the parent reason codes,
+plus actual first-provider-request input tokens when available.
 
 ## Execution, stopping, and missingness
 
@@ -103,8 +104,8 @@ only those two source roots. The wrapper verifies exact imported files and every
 installed file listed in each distribution RECORD in the non-extra dependency
 closure rooted at deepagents and langchain-openai. Declared RECORD hashes must
 match, and the actual bytes of both hashed and unhashed entries feed the closure
-identity. That closure
-includes the LangChain/LangGraph support packages, OpenAI client, HTTP stack,
+identity. That closure includes the LangChain/LangGraph support packages, OpenAI
+client, HTTP stack,
 Pydantic, and their declared runtime dependencies; its complete package list
 and identity digest are fixed in `manifest.json`. The wrapper replicates the
 inherited worker's mode-0600 deployment-environment loading and requires its
@@ -135,6 +136,9 @@ a parent-recorded timeout may lack the finish event because the inherited runner
 terminates the admitted process group at its safety limit. Each retained event
 slice also records the parent invocation's UTC start and finish bounds; all
 resource events must be ordered and fall within those bounds.
+The wrapper persists a 600-second `not_before` record after each corroborated
+denial, refuses an earlier attempt, and verifies the same interval in the final
+attestation history.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
 request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
@@ -166,7 +170,7 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
-Before analysis reads an outcome, the wrapper copies the verified attestation
+Before locked analysis summarizes an outcome, the wrapper copies the verified attestation
 inventory into the capsule and writes a self-digested provenance record binding
 every copied file, the capsule run record, manifest, and coordinator identity.
 The only historical comparator is the preregistered parent capsule
@@ -176,7 +180,8 @@ its run-file SHA-256
 
 The locked analysis reports the two runs separately. For each of six cells it
 reports denominator, pass count/rate, every reason-code count, guide-load count/
-rate, input-token values and range, and outcome counts by within-pair position.
+observed denominator, missing count, observed-case rate, input-token
+values and range, and outcome counts by within-pair position.
 It reports G02 minus G01 pass-rate percentage points by dose. It does not pool
 runs, select another comparator, calculate an unregistered p-value or context
 threshold, or apply a binary replication-success rule. Interpretation remains

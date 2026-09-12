@@ -31,8 +31,29 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
     identity = b'{"identity":"test"}\n'
     (attestations / "000-identity-before.json").write_bytes(identity)
     (attestations / "000-identity-after.json").write_bytes(identity)
+    thread_id = str(execution["coordination_thread_id"])
+    admissions = [json.loads(line) for line in (capsule / "admissions.jsonl").read_text().splitlines()]
+    outcomes = [json.loads(line) for line in (capsule / "outcomes.jsonl").read_text().splitlines()]
+    events = []
+    for admission in admissions:
+        if admission["admitted"]:
+            events.extend([
+                {
+                    "at": "2026-09-12T00:00:00+00:00", "event": "resource_started",
+                    "resource": "llm", "thread": thread_id,
+                },
+                {
+                    "at": "2026-09-12T00:00:00+00:00", "event": "resource_finished",
+                    "exit_code": 0, "resource": "llm", "thread": thread_id,
+                },
+            ])
+        else:
+            events.append({
+                "at": "2026-09-12T00:00:00+00:00",
+                "event": "production_admission_denied", "resource": "llm", "thread": thread_id,
+            })
     interval = {
-        "events": [],
+        "events": events,
         "finished_at": "2026-09-12T00:00:00+00:00",
         "started_at": "2026-09-12T00:00:00+00:00",
     }
@@ -42,7 +63,15 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
             path.name: runner._sha256(path) for path in sorted(attestations.iterdir())
         },
         "capsule_run_sha256": runner._sha256(capsule / "run.json"),
-        "coordination_thread_id": execution["coordination_thread_id"],
+        "coordination_thread_id": thread_id,
+        "execution_witness": {
+            "admission_count": len(admissions),
+            "admissions_file_sha256": runner._sha256(capsule / "admissions.jsonl"),
+            "event_count": len(events),
+            "events_sha256": digest(events),
+            "outcome_count": len(outcomes),
+            "outcomes_file_sha256": runner._sha256(capsule / "outcomes.jsonl"),
+        },
         "manifest_sha256": digest(manifest),
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }
@@ -91,6 +120,13 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cannot substitute"):
                 analysis.analyze(
                     manifest, HISTORICAL, HISTORICAL, Path(temporary) / "analysis.json"
+                )
+
+            copied = Path(temporary) / manifest["execution"]["capsule_id"]
+            shutil.copytree(HISTORICAL, copied)
+            with self.assertRaisesRegex(ValueError, "provenance"):
+                analysis.analyze(
+                    manifest, copied, HISTORICAL, Path(temporary) / "copied-analysis.json"
                 )
 
     def test_locked_analysis_rejects_changed_historical_metadata(self) -> None:
@@ -351,6 +387,64 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             })
         with self.assertRaisesRegex(ValueError, "outside"):
             runner._verify_event_interval(record | {"events": list(reversed(record["events"]))})
+
+    def test_denial_retry_cadence_is_enforced_and_attested(self) -> None:
+        admission = {"admitted": False, "trial_sha256": "trial-1"}
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            cooldown = {
+                "admission_count": 1,
+                "not_before_unix": 700.0,
+                "trial_sha256": "trial-1",
+            }
+            (output / "denial-cooldown.json").write_bytes(canonical_json(cooldown) + b"\n")
+            self.assertTrue(runner._denial_retry_pending(output, [admission], now=699.0))
+            self.assertFalse(runner._denial_retry_pending(output, [admission], now=700.0))
+        intervals = [
+            {
+                "events": [{
+                    "at": "2026-09-12T00:00:00+00:00",
+                    "event": "production_admission_denied",
+                }],
+                "finished_at": "2026-09-12T00:00:00+00:00",
+                "started_at": "2026-09-12T00:00:00+00:00",
+            },
+            {
+                "events": [],
+                "finished_at": "2026-09-12T00:10:00+00:00",
+                "started_at": "2026-09-12T00:10:00+00:00",
+            },
+        ]
+        runner._verify_denial_retry_cadence(intervals, 600)
+        intervals[1]["started_at"] = "2026-09-12T00:09:59+00:00"
+        with self.assertRaisesRegex(ValueError, "cadence"):
+            runner._verify_denial_retry_cadence(intervals, 600)
+
+    def test_process_rate_uses_only_observed_secondary_measurements(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        bundle, _, _, metadata = analysis._verify_capsule(
+            HISTORICAL, bundle_sha256=manifest["parent"]["bundle_sha256"]
+        )
+        changed = [dict(item) for item in metadata]
+        cell_key = f'{changed[0]["trial"]["task"]}:{changed[0]["trial"]["condition"]}'
+        was_loaded = changed[0]["skill_loaded_before_first_read"] is True
+        changed[0]["skill_loaded_before_first_read"] = None
+        cell = analysis._cell_summary(bundle, changed)["cells"][cell_key]
+        self.assertEqual(cell["skill_loaded_observed"], 11)
+        self.assertEqual(cell["skill_loaded_missing"], 1)
+        self.assertEqual(
+            cell["skill_loaded_rate"],
+            (cell["skill_loaded_before_first_read"] / 11),
+        )
+        self.assertEqual(
+            cell["skill_loaded_before_first_read"],
+            sum(
+                item["skill_loaded_before_first_read"] is True
+                for item in metadata
+                if item["trial"]["task"] == changed[0]["trial"]["task"]
+                and item["trial"]["condition"] == changed[0]["trial"]["condition"]
+            ) - int(was_loaded),
+        )
 
     def test_execution_exceptions_quarantine_before_resume(self) -> None:
         thread = "thread-1"

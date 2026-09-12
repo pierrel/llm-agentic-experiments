@@ -17,6 +17,12 @@ from typing import Any
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction import analysis
+from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    DENIAL_RETRY_SECONDS,
+    events_match_admissions as _events_match_admissions,
+    verify_denial_retry_cadence as _verify_denial_retry_cadence,
+    verify_event_interval as _verify_event_interval,
+)
 
 
 STUDY = "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
@@ -457,6 +463,32 @@ def _verified_progress(
     return admission_records, outcomes
 
 
+def _denial_retry_pending(output: Path, admissions: list[dict[str, Any]], *, now: float) -> bool:
+    """Validate the latest denial record and report whether its retry is still early."""
+    path = output / "denial-cooldown.json"
+    if not path.exists():
+        if admissions and admissions[-1].get("admitted") is False:
+            raise ValueError("production-denial cooldown is missing")
+        return False
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("production-denial cooldown is malformed") from error
+    if (
+        not isinstance(record, dict)
+        or set(record) != {"admission_count", "not_before_unix", "trial_sha256"}
+        or not isinstance(record["admission_count"], int)
+        or not isinstance(record["not_before_unix"], (int, float))
+        or not isinstance(record["trial_sha256"], str)
+        or not 1 <= record["admission_count"] <= len(admissions)
+    ):
+        raise ValueError("production-denial cooldown is malformed")
+    denial = admissions[record["admission_count"] - 1]
+    if denial.get("admitted") is not False or denial.get("trial_sha256") != record["trial_sha256"]:
+        raise ValueError("production-denial cooldown differs from admissions")
+    return record["admission_count"] == len(admissions) and now < record["not_before_unix"]
+
+
 def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
     """Verify the final immutable reproduction evidence inventory."""
     path = capsule / "reproduction-seal.json"
@@ -505,51 +537,6 @@ def _true_denial(
     ]
 
 
-def _events_match_admissions(
-    *,
-    new_admissions: list[dict[str, Any]],
-    new_outcomes: list[dict[str, Any]],
-    new_events: list[dict[str, Any]],
-    thread_id: str,
-) -> bool:
-    """Require one complete shared-resource transaction per admitted episode."""
-    relevant = [
-        event for event in new_events
-        if event.get("thread") == thread_id and event.get("resource") == "llm"
-        and event.get("event") in {"production_admission_denied", "resource_started", "resource_finished"}
-    ]
-    terminal = iter(new_outcomes)
-    position = 0
-    for admission in new_admissions:
-        if admission.get("admitted") is False:
-            if position >= len(relevant) or relevant[position]["event"] != "production_admission_denied":
-                return False
-            position += 1
-            continue
-        if admission.get("admitted") is not True or position >= len(relevant):
-            return False
-        if relevant[position]["event"] != "resource_started":
-            return False
-        position += 1
-        try:
-            outcome = next(terminal)
-        except StopIteration:
-            return False
-        if position < len(relevant) and relevant[position]["event"] == "resource_finished":
-            if not isinstance(relevant[position].get("exit_code"), int):
-                return False
-            position += 1
-        elif outcome.get("outcome") != "timeout":
-            return False
-    try:
-        next(terminal)
-    except StopIteration:
-        pass
-    else:
-        return False
-    return position == len(relevant)
-
-
 def _verified_attestation_files(attestations: Path) -> list[Path]:
     """Verify the complete, immutable per-invocation attestation inventory."""
     paths = sorted(attestations.iterdir())
@@ -573,8 +560,13 @@ def _verified_attestation_files(attestations: Path) -> list[Path]:
         if "-identity-" in path.name
     ):
         raise ValueError("runtime identity differs across attestations")
-    for index in range(invocations):
-        _verify_event_interval(json.loads((attestations / f"{index:03d}-events.json").read_text()))
+    intervals = [
+        json.loads((attestations / f"{index:03d}-events.json").read_text())
+        for index in range(invocations)
+    ]
+    for interval in intervals:
+        _verify_event_interval(interval)
+    _verify_denial_retry_cadence(intervals, DENIAL_RETRY_SECONDS)
     return paths
 
 
@@ -607,30 +599,6 @@ def _read_appended_events(events: Path, prefix: bytes) -> list[dict[str, Any]]:
 
 def _time_bound() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-def _verify_event_interval(record: Any) -> list[dict[str, Any]]:
-    """Require ordered event timestamps inside their parent invocation interval."""
-    if not isinstance(record, dict) or set(record) != {"events", "finished_at", "started_at"}:
-        raise ValueError("runtime event attestation is malformed")
-    events = record["events"]
-    if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
-        raise ValueError("runtime event attestation is malformed")
-    try:
-        started = datetime.fromisoformat(record["started_at"])
-        finished = datetime.fromisoformat(record["finished_at"])
-        times = [datetime.fromisoformat(event["at"]) for event in events]
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("runtime event timestamps are malformed") from error
-    if (
-        started.tzinfo is None or finished.tzinfo is None
-        or any(value.tzinfo is None for value in times)
-        or started > finished
-        or times != sorted(times)
-        or any(value < started or value > finished for value in times)
-    ):
-        raise ValueError("runtime events fall outside their ordered invocation interval")
-    return events
 
 
 def _fidelity_error(records: list[dict[str, Any]]) -> bool:
@@ -680,10 +648,13 @@ def run_batch(
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
+        denial_retry_pending = _denial_retry_pending(output, prior_admissions, now=time.time())
     except (OSError, ValueError, json.JSONDecodeError) as error:
         _quarantine(output, "persisted reproduction progress is invalid")
         raise ValueError("persisted reproduction progress is invalid") from error
     remaining = len(bundle.schedule) - len(existing_outcomes)
+    if denial_retry_pending:
+        return "denial-cooldown"
     if remaining and len(existing_outcomes):
         cooldown = output / "batch-cooldown.json"
         if cooldown.exists():
@@ -803,6 +774,17 @@ def run_batch(
         if not _true_denial(new_admissions=new_admissions, new_events=new_events, thread_id=thread_id):
             _quarantine(output, "ambiguous pre-request failure")
             raise ValueError("ambiguous pre-request failure; reproduction quarantined")
+        denial = new_admissions[-1]
+        cooldown = {
+            "admission_count": len(admissions),
+            "not_before_unix": time.time() + DENIAL_RETRY_SECONDS,
+            "trial_sha256": denial["trial_sha256"],
+        }
+        try:
+            atomic_write(output / "denial-cooldown.json", canonical_json(cooldown) + b"\n")
+        except Exception as error:
+            _quarantine(output, "production-denial cooldown could not be recorded")
+            raise ValueError("production-denial cooldown could not be recorded") from error
         return "denied"
     expected = min(24, remaining)
     if len(new_outcomes) != expected:
@@ -866,10 +848,19 @@ def archive_and_analyze(
     copied_attestations.mkdir()
     for source in attestation_files:
         atomic_write(copied_attestations / source.name, source.read_bytes())
+    witness = {
+        "admission_count": len(admissions),
+        "admissions_file_sha256": _sha256(capsule / "admissions.jsonl"),
+        "event_count": len(execution_events),
+        "events_sha256": digest(execution_events),
+        "outcome_count": len(outcomes),
+        "outcomes_file_sha256": _sha256(capsule / "outcomes.jsonl"),
+    }
     provenance = {
         "attestation_files": {source.name: _sha256(source) for source in attestation_files},
         "capsule_run_sha256": _sha256(capsule / "run.json"),
         "coordination_thread_id": manifest["execution"]["coordination_thread_id"],
+        "execution_witness": witness,
         "manifest_sha256": digest(manifest),
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }

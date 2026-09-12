@@ -53,7 +53,8 @@ The reproduction adds no model-visible treatment. Its wrapper:
    slice and requires its ordered events to fall within the parent invocation's
    recorded UTC bounds. Only a corroborated production denial retries; an
    admitted timeout may omit the finish event when the inherited safety bound
-   kills the wrapper; ambiguity quarantines.
+   kills the wrapper. A persisted 600-second denial cooldown and the final
+   interval history both enforce the retry cadence; ambiguity quarantines.
 7. Refuses resume or analysis after any identity, request-fidelity, event,
    parent-process, or terminal-count failure.
 8. Verifies and copies every per-invocation identity and event slice, binds them
@@ -62,10 +63,12 @@ The reproduction adds no model-visible treatment. Its wrapper:
 
 ## Analysis and validity boundary
 
-The analysis verifies both immutable capsules before reading trial metadata. It
-then emits only the preregistered descriptive six-cell summaries, within-dose
-delivery contrasts, token diagnostics, guide-load process counts, and pair-
-position diagnostics. The reproduction and the uniquely pinned historical run
+The analysis verifies both immutable capsules and the reproduction's complete
+admission/outcome/event witness before emitting the preregistered descriptive
+six-cell summaries, within-dose
+delivery contrasts, token diagnostics, guide-load process counts with explicit
+observed and missing denominators, and pair-position diagnostics. The
+reproduction and the uniquely pinned historical run
 remain separate. No pooling, significance test, threshold selection, or binary
 success criterion is introduced after seeing results.
 

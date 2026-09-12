@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -11,6 +10,12 @@ from typing import Any
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
+from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    DENIAL_RETRY_SECONDS,
+    events_match_admissions,
+    verify_denial_retry_cadence,
+    verify_event_interval,
+)
 
 
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
@@ -34,7 +39,12 @@ def _verify_capsule(
     bundle_sha256: str,
     expected_run_sha256: str | None = None,
     expected_hashes: dict[str, str] | None = None,
-) -> tuple[StudyBundle, list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    StudyBundle,
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     """Return verified outcomes and metadata from one complete archived run."""
     if capsule.is_symlink() or not capsule.is_dir():
         raise ValueError("capsule must be a real directory")
@@ -106,6 +116,7 @@ def _verify_capsule(
     if artifacts != expected_artifacts:
         raise ValueError("capsule trace/report hashes differ from the final seal")
     outcomes.verify_finalized(bundle.schedule, admissions, artifacts)
+    admission_records = admissions.read_verified()
     outcome_records = outcomes.read_verified()
     metadata = _json(metadata_path)
     if not isinstance(metadata, list) or len(metadata) != len(bundle.schedule):
@@ -123,7 +134,7 @@ def _verify_capsule(
             raise ValueError("trial metadata token count is invalid")
         if item.get("skill_loaded_before_first_read") is not None and not isinstance(item["skill_loaded_before_first_read"], bool):
             raise ValueError("trial metadata process measure is invalid")
-    return bundle, outcome_records, metadata
+    return bundle, admission_records, outcome_records, metadata
 
 
 def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[str, Any]:
@@ -167,8 +178,9 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
                 "pass_rate": reasons.get("pass", 0) / 12,
                 "reason_codes": dict(sorted(reasons.items())),
                 "skill_loaded_before_first_read": process,
-                "skill_loaded_rate": process / 12,
+                "skill_loaded_rate": process / process_observed if process_observed else None,
                 "skill_loaded_observed": process_observed,
+                "skill_loaded_missing": 12 - process_observed,
                 "first_prompt_tokens": {
                     "count": len(tokens),
                     "min": min(tokens) if tokens else None,
@@ -191,7 +203,12 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
     return {"cells": cells, "contrasts": contrasts}
 
 
-def _verify_reproduction_provenance(manifest: dict[str, Any], capsule: Path) -> None:
+def _verify_reproduction_provenance(
+    manifest: dict[str, Any],
+    capsule: Path,
+    admissions: list[dict[str, Any]],
+    outcomes: list[dict[str, Any]],
+) -> None:
     """Require the wrapper-produced capsule and attestation binding before analysis."""
     if capsule.name != manifest["execution"]["capsule_id"]:
         raise ValueError("reproduction capsule identity differs from registration")
@@ -222,33 +239,36 @@ def _verify_reproduction_provenance(manifest: dict[str, Any], capsule: Path) -> 
     identity = (attestations / "000-identity-before.json").read_bytes()
     if any(item.read_bytes() != identity for item in paths if "-identity-" in item.name):
         raise ValueError("reproduction runtime identity differs across attestations")
-    for index in range(invocations):
-        interval = _json(attestations / f"{index:03d}-events.json")
-        if not isinstance(interval, dict) or set(interval) != {"events", "finished_at", "started_at"}:
-            raise ValueError("reproduction event attestation is malformed")
-        events = interval["events"]
-        if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
-            raise ValueError("reproduction event attestation is malformed")
-        try:
-            started = datetime.fromisoformat(interval["started_at"])
-            finished = datetime.fromisoformat(interval["finished_at"])
-            times = [datetime.fromisoformat(event["at"]) for event in events]
-        except (KeyError, TypeError, ValueError) as error:
-            raise ValueError("reproduction event timestamps are malformed") from error
-        if (
-            started.tzinfo is None or finished.tzinfo is None
-            or any(value.tzinfo is None for value in times)
-            or started > finished or times != sorted(times)
-            or any(value < started or value > finished for value in times)
-        ):
-            raise ValueError("reproduction events fall outside their invocation interval")
+    intervals = [
+        _json(attestations / f"{index:03d}-events.json")
+        for index in range(invocations)
+    ]
+    execution_events = [event for interval in intervals for event in verify_event_interval(interval)]
+    verify_denial_retry_cadence(intervals, DENIAL_RETRY_SECONDS)
+    thread_id = manifest["execution"]["coordination_thread_id"]
+    if not events_match_admissions(
+        new_admissions=admissions,
+        new_outcomes=outcomes,
+        new_events=execution_events,
+        thread_id=thread_id,
+    ):
+        raise ValueError("reproduction events do not witness its admissions and outcomes")
     files = {
         item.name: _sha256(item) for item in paths
+    }
+    witness = {
+        "admission_count": len(admissions),
+        "admissions_file_sha256": _sha256(capsule / "admissions.jsonl"),
+        "event_count": len(execution_events),
+        "events_sha256": digest(execution_events),
+        "outcome_count": len(outcomes),
+        "outcomes_file_sha256": _sha256(capsule / "outcomes.jsonl"),
     }
     expected = {
         "attestation_files": files,
         "capsule_run_sha256": _sha256(capsule / "run.json"),
-        "coordination_thread_id": manifest["execution"]["coordination_thread_id"],
+        "coordination_thread_id": thread_id,
+        "execution_witness": witness,
         "manifest_sha256": digest(manifest),
         "schema": "reach-v8-exact-reproduction-provenance-v1",
     }
@@ -265,13 +285,15 @@ def analyze(
     """Write the locked, separate descriptive reproduction comparison."""
     if reproduction_capsule.resolve() == historical_capsule.resolve():
         raise ValueError("historical capsule cannot substitute for the reproduction")
-    _verify_reproduction_provenance(manifest, reproduction_capsule)
     parent = manifest["parent"]
     historical = manifest["historical_comparator"]
-    reproduction_bundle, _, reproduction_metadata = _verify_capsule(
+    reproduction_bundle, reproduction_admissions, reproduction_outcomes, reproduction_metadata = _verify_capsule(
         reproduction_capsule, bundle_sha256=parent["bundle_sha256"]
     )
-    historical_bundle, _, historical_metadata = _verify_capsule(
+    _verify_reproduction_provenance(
+        manifest, reproduction_capsule, reproduction_admissions, reproduction_outcomes
+    )
+    historical_bundle, _, _, historical_metadata = _verify_capsule(
         historical_capsule,
         bundle_sha256=parent["bundle_sha256"],
         expected_run_sha256=historical["run_file_sha256"],

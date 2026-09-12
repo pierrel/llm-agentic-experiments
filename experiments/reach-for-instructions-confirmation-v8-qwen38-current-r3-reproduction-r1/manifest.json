@@ -6,7 +6,7 @@
       "report": [
         "six-cell denominators, pass counts, rates, and reason codes",
         "G02 minus G01 pass-rate percentage points within each context dose",
-        "guide-load process counts and rates",
+        "guide-load process counts, observed denominators, missing counts, and observed-case rates",
         "first-provider-request input-token values and ranges",
         "outcome counts by within-pair position"
       ]
@@ -18,11 +18,12 @@
       "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "42db614e9d0f70b63a730b68c26966a95ad59bb506d191009063f79ec73c886a",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "d8ea249a76f453aaaf6c2933d5d0bd1d392895271487b722e6aed9b14e2091be",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "a7f426107dc0b299f6b5f760ca79480b7105abebbc94340a34ee86bfd68f852b",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "b24c3098af5c6d4f23a3e2eb1af7ad925cd7bb69ceeaa73e0ce3d4931b288d29",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "446ac716040d12d28b49f2d6c7327f1b4a1d89205960a5edd51386adc9aa094e",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "a6aac0039b72dba906b489b3672685bc4e461dea458406d816ee87d5d2d9dcdc"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "108683072e11da1732f3e2b96b109612caddc36302d5d63218f07c829f68ffa6",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "154c846832e87277a1e04f0417dcfc11f1c143058254fcd9a985ae6d1943708d",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "d40152dbf907c024d6838b14299dcc9b8abc9e23e128ccae55fdf71dead438df"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -216,5 +217,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "79ebf24c5d986e44cd9af85820a60701322d623b3d55d8c72c0bcff4871d3df6"
+  "sha256": "a0a2d6ae1a137e7883b6baee1026fa5dfdf05a6a64de01e98000f2c3fb7a6a8a"
 }
