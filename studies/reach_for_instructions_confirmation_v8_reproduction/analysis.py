@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
@@ -190,6 +191,71 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
     return {"cells": cells, "contrasts": contrasts}
 
 
+def _verify_reproduction_provenance(manifest: dict[str, Any], capsule: Path) -> None:
+    """Require the wrapper-produced capsule and attestation binding before analysis."""
+    if capsule.name != manifest["execution"]["capsule_id"]:
+        raise ValueError("reproduction capsule identity differs from registration")
+    path = capsule / "reproduction-provenance.json"
+    provenance = _json(path)
+    if not isinstance(provenance, dict):
+        raise ValueError("reproduction provenance is malformed")
+    claimed = provenance.pop("record_sha256", None)
+    if claimed != digest(provenance):
+        raise ValueError("reproduction provenance digest mismatch")
+    attestations = capsule / "runtime-attestations"
+    if attestations.is_symlink() or not attestations.is_dir():
+        raise ValueError("reproduction runtime attestations are missing")
+    paths = sorted(attestations.iterdir())
+    if not paths or any(
+        item.is_symlink() or not item.is_file() or item.suffix != ".json"
+        for item in paths
+    ):
+        raise ValueError("reproduction provenance contains unsafe attestations")
+    invocations = len(paths) // 3
+    expected_names = {
+        f"{index:03d}-{suffix}.json"
+        for index in range(invocations)
+        for suffix in ("events", "identity-after", "identity-before")
+    }
+    if {item.name for item in paths} != expected_names:
+        raise ValueError("reproduction attestation inventory is incomplete or unexpected")
+    identity = (attestations / "000-identity-before.json").read_bytes()
+    if any(item.read_bytes() != identity for item in paths if "-identity-" in item.name):
+        raise ValueError("reproduction runtime identity differs across attestations")
+    for index in range(invocations):
+        interval = _json(attestations / f"{index:03d}-events.json")
+        if not isinstance(interval, dict) or set(interval) != {"events", "finished_at", "started_at"}:
+            raise ValueError("reproduction event attestation is malformed")
+        events = interval["events"]
+        if not isinstance(events, list) or not all(isinstance(event, dict) for event in events):
+            raise ValueError("reproduction event attestation is malformed")
+        try:
+            started = datetime.fromisoformat(interval["started_at"])
+            finished = datetime.fromisoformat(interval["finished_at"])
+            times = [datetime.fromisoformat(event["at"]) for event in events]
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("reproduction event timestamps are malformed") from error
+        if (
+            started.tzinfo is None or finished.tzinfo is None
+            or any(value.tzinfo is None for value in times)
+            or started > finished or times != sorted(times)
+            or any(value < started or value > finished for value in times)
+        ):
+            raise ValueError("reproduction events fall outside their invocation interval")
+    files = {
+        item.name: _sha256(item) for item in paths
+    }
+    expected = {
+        "attestation_files": files,
+        "capsule_run_sha256": _sha256(capsule / "run.json"),
+        "coordination_thread_id": manifest["execution"]["coordination_thread_id"],
+        "manifest_sha256": digest(manifest),
+        "schema": "reach-v8-exact-reproduction-provenance-v1",
+    }
+    if provenance != expected or not files:
+        raise ValueError("reproduction provenance differs from its evidence")
+
+
 def analyze(
     manifest: dict[str, Any],
     reproduction_capsule: Path,
@@ -197,6 +263,9 @@ def analyze(
     output: Path,
 ) -> Path:
     """Write the locked, separate descriptive reproduction comparison."""
+    if reproduction_capsule.resolve() == historical_capsule.resolve():
+        raise ValueError("historical capsule cannot substitute for the reproduction")
+    _verify_reproduction_provenance(manifest, reproduction_capsule)
     parent = manifest["parent"]
     historical = manifest["historical_comparator"]
     reproduction_bundle, _, reproduction_metadata = _verify_capsule(

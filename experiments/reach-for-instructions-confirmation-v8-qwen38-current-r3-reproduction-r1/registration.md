@@ -21,7 +21,10 @@ must equal the published annotated tag
 `reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1`
 and the published branch `reach-experiment-reproduction-v2` must point to that
 tag's commit. The commit and tree reached by the annotated tag are the authority;
-the names are only discovery handles.
+the names are only discovery handles. Runtime preparation makes this publication
+check once, saves its self-digested proof inside the private runtime root, and
+subsequent pre/post attestations require that proof plus the still-clean local
+tagged checkout. They do not depend on a later mutable branch lookup.
 
 Execution is bound to the registered immutable coordinator identity
 `01a09689-f137-7cf1-a5c0-f32e7537fefa`. A different `CODEX_THREAD_ID` cannot
@@ -104,9 +107,13 @@ environment loading and requires its non-secret model endpoint to remain exactly
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
-terminal episodes. An incomplete invocation boundary at 24, 48, or any later
-multiple of 24 keeps the parent's 900-second cooldown. There is no result-based
-stop and no replacement of admitted outcomes.
+terminal episodes. Any invocation that records 24 terminal episodes while the
+schedule remains incomplete keeps the parent's recorded 900-second cooldown.
+There is no result-based stop and no replacement of admitted outcomes.
+
+The wrapper hashes that exact shared gate before and after every invocation and
+accepts evidence only from its sibling `.coordination/events.jsonl`. A different
+tool or caller-selected event log cannot authorize an admission or retry.
 
 A production-priority denial is administrative missingness and retries the same
 trial only when all three facts agree: the parent admission is false with the
@@ -116,7 +123,9 @@ same-thread LLM start for that attempt. The coordinator retries on the required
 ten-minute cadence without changing the trial. Every admitted episode must
 instead match one same-thread `resource_started` and `resource_finished` pair;
 a parent-recorded timeout may lack the finish event because the inherited runner
-terminates the admitted process group at its safety limit.
+terminates the admitted process group at its safety limit. Each retained event
+slice also records the parent invocation's UTC start and finish bounds; all
+resource events must be ordered and fall within those bounds.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
 request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
@@ -148,6 +157,9 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
+Before analysis reads an outcome, the wrapper copies the verified attestation
+inventory into the capsule and writes a self-digested provenance record binding
+every copied file, the capsule run record, manifest, and coordinator identity.
 The only historical comparator is the preregistered parent capsule
 `results/reach-for-instructions-confirmation-v8-qwen38-current-r3/`, pinned by
 its run-file SHA-256

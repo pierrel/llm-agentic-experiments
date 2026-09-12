@@ -18,11 +18,11 @@
       "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "52482b8db1bd21811d82dea1337ca639db86410a53e03d7e32eba4c062055d71",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "c073c3edccf00f099ec5a803055ba851a97651cf984620a5433c0b5d0704e348",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "2aa2ce82ccc678b4ac83164904ed58905b5d632eaf9664e9eeabf391cb96d3f6",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "654160e3c57ce435a5854a8f07ea214c809fb8b7308b568e2adb66600a3ff15b",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "5e7668832c0ac97e8723eb969222be52b9992bc4443fe949058368b62b7cc346",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "f4e636dfff9bce982db57a7995e93f458900e313bb178daba4d2299a043f635d"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "446ac716040d12d28b49f2d6c7327f1b4a1d89205960a5edd51386adc9aa094e",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "bce7eb4bfbd4c23246393a70206dc3fe851c0d69938b7d752d9f3639c36a2a70"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -85,7 +85,7 @@
           },
           "assist.model_manager": {
             "path": "assist/model_manager.py",
-            "sha256": "a1d4283b07fb7ee3b693f9c10307a67c33b57fb722bf3ecb1625a9b4023bf52"
+            "sha256": "a1d4283b07fb7ee3b693f9c10307a67c33cb57fb722bf3ecb1625a9b4023bf52"
           },
           "harness.bundle": {
             "path": "harness/bundle.py",
@@ -99,6 +99,9 @@
         "python": {
           "sha256": "d78f9cf7178ecff09963551399855543c297f37ac207e626228bfe43cb26a70c",
           "version": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
+        },
+        "shared_gate": {
+          "sha256": "24363a8d39da95602440844f7aeb2e511b76944a87a60c6a8368c9c4621adb58"
         },
         "server": {
           "argv": [
@@ -164,5 +167,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "e26629e555f54148bd8c44ee8cfd2d68d6f3c64c349af98eb400d47aab19b2b8"
+  "sha256": "155af9ba2e10647efa931b0b01aa8f0ca5c294c7be7dbe93dc5db7c7b67c83fd"
 }

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from harness.bundle import StudyBundle, canonical_json, digest
 from studies.reach_for_instructions_confirmation_v2 import runner as core
@@ -16,6 +19,37 @@ from studies.reach_for_instructions_confirmation_v8_reproduction import analysis
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORICAL = ROOT / "results" / "reach-for-instructions-confirmation-v8-qwen38-current-r3"
+
+
+def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
+    execution = manifest["execution"]
+    assert isinstance(execution, dict)
+    capsule = parent / str(execution["capsule_id"])
+    shutil.copytree(HISTORICAL, capsule)
+    attestations = capsule / "runtime-attestations"
+    attestations.mkdir()
+    identity = b'{"identity":"test"}\n'
+    (attestations / "000-identity-before.json").write_bytes(identity)
+    (attestations / "000-identity-after.json").write_bytes(identity)
+    interval = {
+        "events": [],
+        "finished_at": "2026-09-12T00:00:00+00:00",
+        "started_at": "2026-09-12T00:00:00+00:00",
+    }
+    (attestations / "000-events.json").write_bytes(canonical_json(interval) + b"\n")
+    provenance = {
+        "attestation_files": {
+            path.name: runner._sha256(path) for path in sorted(attestations.iterdir())
+        },
+        "capsule_run_sha256": runner._sha256(capsule / "run.json"),
+        "coordination_thread_id": execution["coordination_thread_id"],
+        "manifest_sha256": digest(manifest),
+        "schema": "reach-v8-exact-reproduction-provenance-v1",
+    }
+    (capsule / "reproduction-provenance.json").write_bytes(
+        canonical_json(provenance | {"record_sha256": digest(provenance)}) + b"\n"
+    )
+    return capsule
 
 
 class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
@@ -34,8 +68,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
     def test_locked_analysis_keeps_runs_and_all_six_cells_separate(self) -> None:
         manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:
+            reproduction = _reproduction_fixture(Path(temporary), manifest)
             output = Path(temporary) / "analysis.json"
-            analysis.analyze(manifest, HISTORICAL, HISTORICAL, output)
+            analysis.analyze(manifest, reproduction, HISTORICAL, output)
             report = json.loads(output.read_text())
 
         self.assertEqual(set(report), {"analysis", "bundle_sha256", "historical", "reproduction"})
@@ -50,15 +85,24 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ))
         self.assertEqual(report["historical"], report["reproduction"])
 
+    def test_historical_capsule_cannot_substitute_for_reproduction(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "cannot substitute"):
+                analysis.analyze(
+                    manifest, HISTORICAL, HISTORICAL, Path(temporary) / "analysis.json"
+                )
+
     def test_locked_analysis_rejects_changed_historical_metadata(self) -> None:
         manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:
+            reproduction = _reproduction_fixture(Path(temporary), manifest)
             capsule = Path(temporary) / "capsule"
             shutil.copytree(HISTORICAL, capsule)
             metadata = capsule / "trial-metadata.json"
             metadata.write_bytes(metadata.read_bytes() + b"\n")
             with self.assertRaisesRegex(ValueError, "trial metadata"):
-                analysis.analyze(manifest, HISTORICAL, capsule, Path(temporary) / "analysis.json")
+                analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
 
     def test_locked_analysis_rejects_undeclared_response_surface_changes(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -103,6 +147,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "omitted-scheduled-pair": schedule,
         }.items():
             with self.subTest(name=name), TemporaryDirectory() as temporary:
+                reproduction = _reproduction_fixture(Path(temporary), manifest)
                 capsule = Path(temporary) / "capsule"
                 shutil.copytree(HISTORICAL, capsule)
                 bundle_path = capsule / "bundle.json"
@@ -111,11 +156,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 stored["sha256"] = digest(stored["bundle"])
                 bundle_path.write_bytes(canonical_json(stored) + b"\n")
                 with self.assertRaises(ValueError):
-                    analysis.analyze(manifest, HISTORICAL, capsule, Path(temporary) / "analysis.json")
+                    analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
 
     def test_locked_analysis_rejects_an_altered_result_record(self) -> None:
         manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:
+            reproduction = _reproduction_fixture(Path(temporary), manifest)
             capsule = Path(temporary) / "capsule"
             shutil.copytree(HISTORICAL, capsule)
             outcomes = capsule / "outcomes.jsonl"
@@ -125,7 +171,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             records[0] = canonical_json(first).decode()
             outcomes.write_text("\n".join(records) + "\n")
             with self.assertRaises(ValueError):
-                analysis.analyze(manifest, HISTORICAL, capsule, Path(temporary) / "analysis.json")
+                analysis.analyze(manifest, reproduction, capsule, Path(temporary) / "analysis.json")
+
+    def test_progress_guard_rejects_an_omitted_scheduled_outcome(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            shutil.copy2(HISTORICAL / "admissions.jsonl", output / "admissions.jsonl")
+            records = (HISTORICAL / "outcomes.jsonl").read_text().splitlines()
+            (output / "outcomes.jsonl").write_text("\n".join(records[:-1]) + "\n")
+            with self.assertRaisesRegex(ValueError, "progress differs"):
+                runner._verified_progress(output, bundle)
 
     def test_opaque_condition_labels_never_reach_model_prompts(self) -> None:
         bundle = StudyBundle.read_verified(ROOT / runner._load_manifest(ROOT)["parent"]["bundle_path"])
@@ -205,14 +261,126 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             identity = b'{"identity":1}\n'
+            interval = canonical_json({
+                "events": [],
+                "finished_at": "2026-09-12T00:00:00+00:00",
+                "started_at": "2026-09-12T00:00:00+00:00",
+            }) + b"\n"
             for index in range(2):
                 (root / f"{index:03d}-identity-before.json").write_bytes(identity)
                 (root / f"{index:03d}-identity-after.json").write_bytes(identity)
-                (root / f"{index:03d}-events.json").write_text("[]\n")
+                (root / f"{index:03d}-events.json").write_bytes(interval)
             self.assertEqual(len(runner._verified_attestation_files(root)), 6)
             (root / "001-identity-after.json").write_bytes(b'{"identity":2}\n')
             with self.assertRaisesRegex(ValueError, "identity differs"):
                 runner._verified_attestation_files(root)
+
+    def test_wrong_coordinator_identity_rejects_before_any_subprocess(self) -> None:
+        output = Path("/tmp") / runner.STUDY
+        with patch.dict(os.environ, {"CODEX_THREAD_ID": "wrong-thread"}), patch(
+            "studies.reach_for_instructions_confirmation_v8_reproduction.runner.subprocess.run"
+        ) as execute:
+            with self.assertRaisesRegex(ValueError, "thread identity"):
+                runner.run_batch(
+                    ROOT, output, Path("/unused-attestations"),
+                    execution_root=Path("/unused-experiment"),
+                    assist_source=Path("/unused-assist"),
+                    assist_python=Path("/unused-python"),
+                    workspace_root=Path("/unused-workspace"),
+                    model_path=Path("/unused-model"),
+                    server_pid=1,
+                    llama_source=Path("/unused-llama"),
+                    events=Path("/unused-events"),
+                )
+        execute.assert_not_called()
+
+    def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            prefix = b'{"event":"old"}\n'
+            appended = b'{"event":"new"}\n'
+            events.write_bytes(prefix + appended)
+            self.assertEqual(runner._read_appended_events(events, prefix), [{"event": "new"}])
+            events.write_bytes(b'{"event":"bad"}\n' + appended)
+            with self.assertRaisesRegex(ValueError, "non-append-only"):
+                runner._read_appended_events(events, prefix)
+
+    def test_event_interval_requires_ordered_events_within_parent_run(self) -> None:
+        record = {
+            "started_at": "2026-09-12T00:00:00+00:00",
+            "finished_at": "2026-09-12T00:00:02+00:00",
+            "events": [
+                {"at": "2026-09-12T00:00:00+00:00"},
+                {"at": "2026-09-12T00:00:02+00:00"},
+            ],
+        }
+        self.assertEqual(runner._verify_event_interval(record), record["events"])
+        with self.assertRaisesRegex(ValueError, "outside"):
+            runner._verify_event_interval(record | {
+                "events": [{"at": "2026-09-12T00:00:03+00:00"}]
+            })
+        with self.assertRaisesRegex(ValueError, "outside"):
+            runner._verify_event_interval(record | {"events": list(reversed(record["events"]))})
+
+    def test_execution_exceptions_quarantine_before_resume(self) -> None:
+        thread = "thread-1"
+        manifest = {
+            "execution": {"coordination_thread_id": thread, "output_id": runner.STUDY},
+            "parent": {"bundle_path": "bundle.json"},
+        }
+        bundle = SimpleNamespace(schedule=(SimpleNamespace(sha256="trial-1"),))
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            workspace = parent / "workspace"
+            events = workspace / ".coordination" / "events.jsonl"
+            events.parent.mkdir(parents=True)
+            events.write_bytes(b"")
+            output = parent / runner.STUDY
+            attestations = parent / "attestations"
+            common = {
+                "execution_root": parent / "execution",
+                "assist_source": parent / "assist",
+                "assist_python": parent / "python",
+                "workspace_root": workspace,
+                "model_path": parent / "model",
+                "server_pid": 1,
+                "llama_source": parent / "llama",
+                "events": events,
+            }
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": thread}
+            ), patch.object(
+                runner, "_load_manifest", return_value=manifest
+            ), patch.object(
+                runner.StudyBundle, "read_verified", return_value=bundle
+            ), patch.object(runner, "_verified_progress", return_value=([], [])):
+                with self.subTest(stage="pre-attestation"), patch.object(
+                    runner, "attest", side_effect=RuntimeError("attestation failed")
+                ):
+                    with self.assertRaisesRegex(ValueError, "pre-invocation"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                if attestations.exists():
+                    shutil.rmtree(attestations)
+                with self.subTest(stage="parent-launch"), patch.object(
+                    runner, "attest", return_value=b'{}\n'
+                ), patch.object(runner.subprocess, "run", side_effect=OSError("cannot exec")):
+                    with self.assertRaisesRegex(ValueError, "could not be launched"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                shutil.rmtree(attestations)
+                with self.subTest(stage="post-attestation"), patch.object(
+                    runner, "attest", side_effect=[b'{}\n', RuntimeError("changed")]
+                ), patch.object(
+                    runner.subprocess, "run", return_value=SimpleNamespace(returncode=0)
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "changed"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
 
     def test_request_fidelity_failure_is_never_a_scored_resume(self) -> None:
         self.assertTrue(runner._fidelity_error([

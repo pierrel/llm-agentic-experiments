@@ -34,7 +34,10 @@ outcome.
 
 The reproduction adds no model-visible treatment. Its wrapper:
 
-1. Requires a clean checkout of the exact published annotated reproduction tag.
+1. Requires a clean checkout of the exact published annotated reproduction tag,
+   proves the branch and tag publication once during runtime preparation, and
+   binds subsequent checks to the saved proof and immutable local tag rather than
+   repeatedly consulting a mutable remote branch.
 2. Creates clean detached local clones of the exact parent and Assist commits.
 3. Uses the workspace's shared production-priority gate while preventing the
    gate's forced working directory from shadowing either clean clone.
@@ -44,13 +47,15 @@ The reproduction adds no model-visible treatment. Its wrapper:
    before and after every inherited bounded invocation.
 5. Requires identical attestation bytes across the whole reproduction.
 6. Reconciles parent admission records with the exact same-thread event-log byte
-   slice. Only a corroborated production denial retries; an admitted timeout may
-   omit the finish event when the inherited safety bound kills the wrapper;
-   ambiguity quarantines.
+   slice and requires its ordered events to fall within the parent invocation's
+   recorded UTC bounds. Only a corroborated production denial retries; an
+   admitted timeout may omit the finish event when the inherited safety bound
+   kills the wrapper; ambiguity quarantines.
 7. Refuses resume or analysis after any identity, request-fidelity, event,
    parent-process, or terminal-count failure.
-8. Archives all capsule evidence, analysis, per-invocation identities, and event
-   slices under a final self-digested reproduction seal.
+8. Verifies and copies every per-invocation identity and event slice, binds them
+   to the run and manifest in reproduction provenance before analysis, then
+   archives all capsule evidence and analysis under a final self-digested seal.
 
 ## Analysis and validity boundary
 
