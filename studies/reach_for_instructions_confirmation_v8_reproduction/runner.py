@@ -1132,8 +1132,10 @@ def archive_and_analyze(
                 assist_python=assist_python,
                 workspace_root=workspace_root,
             )
-        except Exception as error:
+        except BaseException as error:
             _quarantine(output, "archive or analysis integrity failed")
+            if not isinstance(error, Exception):
+                raise
             raise ValueError("archive or analysis integrity failed; reproduction quarantined") from error
 
 

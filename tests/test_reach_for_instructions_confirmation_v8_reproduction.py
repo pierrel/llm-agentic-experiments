@@ -782,7 +782,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             {"outcome": "provider_error", "detail": "provider was temporarily unavailable"}
         ]))
 
-    def test_archive_integrity_failure_quarantines_the_raw_cohort(self) -> None:
+    def test_archive_failures_and_interruptions_quarantine_the_raw_cohort(self) -> None:
         thread = "thread-1"
         manifest = {
             "execution": {
@@ -792,36 +792,44 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 "output_id": runner.STUDY,
             }
         }
-        with TemporaryDirectory() as temporary:
-            parent = Path(temporary)
-            output = parent / runner.STUDY
-            output.mkdir(mode=0o700)
-            capsule = parent / "capsules" / runner.STUDY
-            analysis_output = capsule / "reproduction-analysis.json"
-            workspace = parent / "workspace"
-            workspace.mkdir()
-            with patch.dict(
-                os.environ, {"CODEX_THREAD_ID": thread}
-            ), patch.object(
-                runner, "_load_manifest", return_value=manifest
-            ), patch.object(
-                runner, "_canonical_workspace_root", return_value=workspace
-            ), patch.object(
-                runner, "_archive_and_analyze_locked", side_effect=ValueError("bad attestation")
-            ):
-                with self.assertRaisesRegex(ValueError, "reproduction quarantined"):
-                    runner.archive_and_analyze(
-                        ROOT,
-                        output,
-                        capsule,
-                        analysis_output,
-                        parent / "attestations",
-                        execution_root=parent / "experiment",
-                        assist_source=parent / "assist",
-                        assist_python=parent / "python",
-                        workspace_root=workspace,
-                    )
-            self.assertTrue((output / runner.INVALID).exists())
+        for error in (ValueError("bad attestation"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__), TemporaryDirectory() as temporary:
+                parent = Path(temporary)
+                output = parent / runner.STUDY
+                output.mkdir(mode=0o700)
+                capsule = parent / "capsules" / runner.STUDY
+                analysis_output = capsule / "reproduction-analysis.json"
+                workspace = parent / "workspace"
+                workspace.mkdir()
+                with patch.dict(
+                    os.environ, {"CODEX_THREAD_ID": thread}
+                ), patch.object(
+                    runner, "_load_manifest", return_value=manifest
+                ), patch.object(
+                    runner, "_canonical_workspace_root", return_value=workspace
+                ), patch.object(
+                    runner, "_archive_and_analyze_locked", side_effect=error
+                ):
+                    def archive() -> None:
+                        runner.archive_and_analyze(
+                            ROOT,
+                            output,
+                            capsule,
+                            analysis_output,
+                            parent / "attestations",
+                            execution_root=parent / "experiment",
+                            assist_source=parent / "assist",
+                            assist_python=parent / "python",
+                            workspace_root=workspace,
+                        )
+
+                    if isinstance(error, Exception):
+                        with self.assertRaisesRegex(ValueError, "reproduction quarantined"):
+                            archive()
+                    else:
+                        with self.assertRaises(KeyboardInterrupt):
+                            archive()
+                self.assertTrue((output / runner.INVALID).exists())
 
     def test_archive_retry_accepts_an_existing_valid_seal(self) -> None:
         manifest = runner._load_manifest(ROOT)
