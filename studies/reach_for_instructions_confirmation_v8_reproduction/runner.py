@@ -643,7 +643,7 @@ def attest(
     if value["deployment_environment"] != expected["deployment_environment"]:
         raise ValueError("worker deployment environment differs from registration")
     if value["process_scope"] != expected["process_scope"]:
-        raise ValueError("parent process scope tools differ from registration")
+        raise ValueError("scoped process tools differ from registration")
     return canonical_json(value) + b"\n"
 
 
@@ -815,7 +815,11 @@ def _read_appended_events(descriptor: int, prefix: bytes) -> list[dict[str, Any]
     if appended and not appended.endswith(b"\n"):
         raise ValueError("coordination event slice has an unterminated record")
     try:
-        records = [json.loads(line) for line in appended.splitlines()]
+        records = (
+            [json.loads(line) for line in appended[:-1].split(b"\n")]
+            if appended
+            else []
+        )
     except json.JSONDecodeError as error:
         raise ValueError("coordination event slice is malformed") from error
     if not all(isinstance(record, dict) for record in records):
@@ -860,28 +864,28 @@ def _bind_scope(unit: str, ready: int) -> Path:
         remaining = max(0, deadline - time.monotonic())
         readable, _, _ = select.select([ready], [], [], remaining)
         if not readable:
-            raise RuntimeError("parent process scope did not become ready")
+            raise RuntimeError("scoped process did not become ready")
         chunk = os.read(ready, 65 - len(message))
         if not chunk:
-            raise RuntimeError("parent process scope readiness pipe closed")
+            raise RuntimeError("scoped process readiness pipe closed")
         message += chunk
     fields = message.rstrip(b"\n").split()
     if len(fields) != 2 or fields[0] != b"R" or not fields[1].isdigit():
-        raise RuntimeError("parent process scope readiness is malformed")
+        raise RuntimeError("scoped process readiness is malformed")
     bootstrap_pid = fields[1].decode()
     scope = _scope_cgroup(unit)
     control = scope / "cgroup.kill"
     members = scope / "cgroup.procs"
-    _verify_no_symlink_components("parent process scope", members, Path("/"))
+    _verify_no_symlink_components("scoped process", members, Path("/"))
     _verify_no_symlink_components(
-        "parent process scope kill control", control, Path("/")
+        "scoped process kill control", control, Path("/")
     )
     try:
         scope_metadata = scope.lstat()
         control_metadata = control.stat()
         member_pids = members.read_text().split()
     except OSError as error:
-        raise RuntimeError("parent process scope could not be bound") from error
+        raise RuntimeError("scoped process could not be bound") from error
     if (
         not stat.S_ISDIR(scope_metadata.st_mode)
         or scope.is_symlink()
@@ -890,7 +894,7 @@ def _bind_scope(unit: str, ready: int) -> Path:
         or not stat.S_IMODE(control_metadata.st_mode) & stat.S_IWUSR
         or bootstrap_pid not in member_pids
     ):
-        raise RuntimeError("parent process scope identity differs from registration")
+        raise RuntimeError("scoped process identity differs from registration")
     return scope
 
 
@@ -922,16 +926,16 @@ def _scope_capability() -> dict[str, str]:
 
 def _verify_scope_empty(scope: Path) -> None:
     """Prove a previously bound cgroup is now empty or has been removed."""
-    _verify_no_symlink_components("parent process scope", scope, Path("/"))
+    _verify_no_symlink_components("scoped process", scope, Path("/"))
     _verify_no_symlink_components(
-        "parent process scope membership", scope / "cgroup.procs", Path("/")
+        "scoped process membership", scope / "cgroup.procs", Path("/")
     )
     try:
         members = (scope / "cgroup.procs").read_text().strip()
     except FileNotFoundError:
         return
     if members:
-        raise RuntimeError("parent process scope still contains live members")
+        raise RuntimeError("scoped process still contains live members")
 
 
 def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
@@ -939,7 +943,7 @@ def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
     def kill_members() -> None:
         path = scope / "cgroup.kill"
         _verify_no_symlink_components(
-            "parent process scope kill control", path, Path("/")
+            "scoped process kill control", path, Path("/")
         )
         try:
             descriptor = os.open(
@@ -963,7 +967,7 @@ def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
         try:
             process.communicate(timeout=10)
         except subprocess.TimeoutExpired as error:
-            raise RuntimeError("parent process scope launcher could not be reaped") from error
+            raise RuntimeError("scoped process launcher could not be reaped") from error
     _verify_scope_empty(scope)
 
 
@@ -997,10 +1001,10 @@ def _kill_unbound_scope(
     _verify_scope_empty(scope)
 
 
-def _run_parent(
-    command: list[str], *, cwd: Path, env: dict[str, str], output: Path
+def _run_scoped(
+    command: list[str], *, cwd: Path, env: dict[str, str], output: Path, stage: str
 ) -> subprocess.CompletedProcess[str]:
-    """Run the exact parent in a killable user scope and reap it on interruption."""
+    """Run one child tree in a killable user scope and reap it on interruption."""
     _scope_capability()
     unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
     ready_read, ready_write = os.pipe()
@@ -1045,12 +1049,12 @@ def _run_parent(
                     _kill_scope(process, scope)
             except Exception as scope_error:
                 cleanup_error = scope_error
-        _quarantine(output, "parent runner could not be launched or was interrupted")
+        _quarantine(output, f"{stage} could not be launched or was interrupted")
         if cleanup_error is not None:
-            raise RuntimeError("parent process scope could not be terminated") from cleanup_error
+            raise RuntimeError(f"{stage} process scope could not be terminated") from cleanup_error
         if not isinstance(error, Exception):
             raise
-        raise ValueError("parent runner could not be launched") from error
+        raise ValueError(f"{stage} could not be launched") from error
     finally:
         for descriptor in (ready_read, ready_write, release_read, release_write):
             if descriptor >= 0:
@@ -1424,7 +1428,7 @@ def _run_batch_locked(
         _quarantine(output, "coordination event log has an unterminated prefix")
         raise ValueError("coordination event log has an unterminated prefix")
     try:
-        worker_workspace = _verify_worker_workspace(execution_root, manifest)
+        worker_workspace = execution_root.parent / "worker-workspace"
         with _bound_invocation_paths(
             execution_root, assist_source, assist_python, worker_workspace, manifest
         ) as bound:
@@ -1438,7 +1442,13 @@ def _run_batch_locked(
                 "--assist-python", str(bound["python"]),
             ]
             started_at = _time_bound()
-            result = _run_parent(command, cwd=workspace_root, env=env, output=output)
+            result = _run_scoped(
+                command,
+                cwd=workspace_root,
+                env=env,
+                output=output,
+                stage="parent runner",
+            )
             finished_at = _time_bound()
         new_events = _read_appended_events(event_descriptor, prefix)
     except (OSError, ValueError):
@@ -1526,7 +1536,6 @@ def _run_batch_locked(
         "started_at": started_at,
     }
     try:
-        _verify_event_interval(interval)
         atomic_write(attestations / f"{label}-events.json", canonical_json(interval) + b"\n")
         _, complete_intervals = verify_attestation_inventory(
             attestations, manifest=manifest, registration=registration
@@ -1710,7 +1719,7 @@ def _archive_and_analyze_locked(
         schedule_size=len(bundle.schedule),
     )
     expected_metadata = _trial_metadata_from_traces(output, bundle, outcomes)
-    worker_workspace = _verify_worker_workspace(execution_root, manifest)
+    worker_workspace = execution_root.parent / "worker-workspace"
     with _bound_invocation_paths(
         execution_root, assist_source, assist_python, worker_workspace, manifest
     ) as bound:
@@ -1721,7 +1730,15 @@ def _archive_and_analyze_locked(
             "--root", str(bound["execution"]), "--output", str(output),
             "--archive", str(capsule),
         ]
-        subprocess.run(command, cwd=workspace_root, env=env, check=True)
+        result = _run_scoped(
+            command,
+            cwd=workspace_root,
+            env=env,
+            output=output,
+            stage="archive worker",
+        )
+        if result.returncode:
+            raise ValueError("parent archive returned a nonzero status")
     if (capsule / "trial-metadata.json").read_bytes() != expected_metadata:
         raise ValueError("archived trial metadata differs from sealed traces")
     copied_attestations = capsule / "runtime-attestations"
@@ -1808,31 +1825,32 @@ def archive_and_analyze(
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")
         try:
-            manifest = _load_manifest(root)
-            registration = _verify_local_registration(root, manifest)
-            if capsule.exists():
-                verify_reproduction_seal(capsule, manifest)
-                analysis.verify_existing_analysis(
-                    manifest,
+            with _termination_interrupts():
+                manifest = _load_manifest(root)
+                registration = _verify_local_registration(root, manifest)
+                if capsule.exists():
+                    verify_reproduction_seal(capsule, manifest)
+                    analysis.verify_existing_analysis(
+                        manifest,
+                        capsule,
+                        root / manifest["historical_comparator"]["capsule"],
+                        analysis_output,
+                        registration,
+                    )
+                    return
+                _archive_and_analyze_locked(
+                    root,
+                    output,
                     capsule,
-                    root / manifest["historical_comparator"]["capsule"],
                     analysis_output,
-                    registration,
+                    attestations,
+                    manifest=manifest,
+                    registration=registration,
+                    execution_root=execution_root,
+                    assist_source=assist_source,
+                    assist_python=assist_python,
+                    workspace_root=workspace_root,
                 )
-                return
-            _archive_and_analyze_locked(
-                root,
-                output,
-                capsule,
-                analysis_output,
-                attestations,
-                manifest=manifest,
-                registration=registration,
-                execution_root=execution_root,
-                assist_source=assist_source,
-                assist_python=assist_python,
-                workspace_root=workspace_root,
-            )
         except BaseException as error:
             _quarantine(output, "archive or analysis integrity failed")
             if not isinstance(error, Exception):

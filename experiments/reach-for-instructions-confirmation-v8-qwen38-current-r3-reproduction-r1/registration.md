@@ -157,6 +157,10 @@ The inherited parent canonicalizes its parent-checkout descriptor to the same
 prepared checkout before execution. Preventing a malicious same-UID process from
 rewriting that inode afterward is outside this cooperative protocol's stated
 security boundary. Archive repeats the same open-first descriptor verification.
+The inherited archive worker also runs in a transient scope using the same gated
+startup and whole-cgroup cleanup mechanism. Terminating signals during any part
+of the archive transaction become cleanup-bearing interruptions; the worker tree
+is killed and reaped before lock release, and the raw cohort is quarantined.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24

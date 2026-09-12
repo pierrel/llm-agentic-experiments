@@ -89,7 +89,10 @@ The reproduction adds no model-visible treatment. Its wrapper:
    resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and
-   gate before archival. It verifies and copies every per-invocation identity
+   gate before archival. The inherited archive worker uses the same gated,
+   killable transient-scope mechanism, and terminating signals quarantine the
+   raw cohort only after that child tree is killed and reaped. It verifies and
+   copies every per-invocation identity
    and event slice, independently reconstructs secondary metadata from the sealed
    traces and outcomes, requires the parent archive to copy those exact bytes,
    binds the evidence to the run and manifest in reproduction provenance before

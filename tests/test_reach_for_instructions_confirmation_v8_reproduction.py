@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -492,7 +493,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 list(runtime.parent.glob(f".{runner.STUDY}.preparing-*")), []
             )
 
-    def test_parent_interruption_kills_the_complete_systemd_scope(self) -> None:
+    def test_scoped_child_interruption_kills_the_complete_systemd_scope(self) -> None:
         process = Mock()
         process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
         process.returncode = -9
@@ -507,8 +508,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_kill_scope"
             ) as terminate:
                 with self.assertRaises(KeyboardInterrupt):
-                    runner._run_parent(
-                        ["/unused-parent"], cwd=Path(temporary), env={}, output=output
+                    runner._run_scoped(
+                        ["/unused-parent"],
+                        cwd=Path(temporary),
+                        env={},
+                        output=output,
+                        stage="archive worker",
                     )
             self.assertTrue((output / runner.INVALID).exists())
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
@@ -534,8 +539,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_bind_scope", side_effect=RuntimeError("scope absent")
             ), patch.object(runner, "_kill_unbound_scope") as terminate:
                 with self.assertRaisesRegex(ValueError, "could not be launched"):
-                    runner._run_parent(
-                        ["/unused-parent"], cwd=Path(temporary), env={}, output=output
+                    runner._run_scoped(
+                        ["/unused-parent"],
+                        cwd=Path(temporary),
+                        env={},
+                        output=output,
+                        stage="parent runner",
                     )
             self.assertTrue((output / runner.INVALID).exists())
             terminate.assert_called_once()
@@ -803,6 +812,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 )
             finally:
                 os.close(descriptor)
+
+    def test_event_slice_rejects_a_bare_carriage_return_separator(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            prefix = b'{"event":"old"}\n'
+            events.write_bytes(
+                prefix + b'{"event":"started"}\r{"event":"finished"}\n'
+            )
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                with self.assertRaisesRegex(ValueError, "malformed"):
+                    runner._read_appended_events(descriptor, prefix)
+            finally:
+                os.close(descriptor)
+
+    def test_termination_signals_become_cleanup_bearing_interruptions(self) -> None:
+        with self.assertRaises(KeyboardInterrupt):
+            with runner._termination_interrupts():
+                os.kill(os.getpid(), signal.SIGTERM)
 
     def test_event_interval_requires_ordered_events_within_parent_run(self) -> None:
         record = {
@@ -1125,7 +1153,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with self.subTest(stage="post-attestation"), patch.object(
                     runner, "attest", side_effect=[b'{}\n', RuntimeError("changed")]
                 ), patch.object(
-                    runner, "_run_parent",
+                    runner, "_run_scoped",
                     return_value=subprocess.CompletedProcess([], 0, "", ""),
                 ):
                     with self.assertRaisesRegex(RuntimeError, "changed"):
@@ -1137,7 +1165,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with self.subTest(stage="wrapper-interrupt"), patch.object(
                     runner, "attest", side_effect=[b'{}\n', KeyboardInterrupt]
                 ), patch.object(
-                    runner, "_run_parent",
+                    runner, "_run_scoped",
                     return_value=subprocess.CompletedProcess([], 0, "", ""),
                 ):
                     with self.assertRaises(KeyboardInterrupt):
@@ -1195,6 +1223,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 ), patch.object(
                     runner, "_verify_local_registration", return_value=TEST_REGISTRATION
                 ), patch.object(
+                    runner, "_termination_interrupts"
+                ) as termination_guard, patch.object(
                     runner,
                     "_archive_and_analyze_locked",
                     **archive_effect,
@@ -1218,6 +1248,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     else:
                         with self.assertRaises(KeyboardInterrupt):
                             archive()
+                termination_guard.assert_called_once_with()
                 self.assertTrue((output / runner.INVALID).exists())
 
     def test_archive_retry_accepts_an_existing_valid_seal(self) -> None:
