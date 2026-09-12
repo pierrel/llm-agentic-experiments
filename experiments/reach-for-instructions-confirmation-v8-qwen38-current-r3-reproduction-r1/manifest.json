@@ -25,12 +25,12 @@
       "runtime_relative": ".coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "08caa5153b06e9129db32f019903c4d8bad7795da480b7f63d6c09c0c157de11",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "f8695bbbee3a98c2e31ae4962b50af348f0a5ab8ea2d7848263b2a770fe466b9",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "f9d83375186823ec22069291366e4c1285e045111ed44e2189685860b3161550",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "b5d42798ea885ffaeb8128ea1c6a69db3b19c185bfb707c2250dc46298d794e5",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "c628aa4aa59a8cc81dda5da98eb080604a3674757512a1a1fb357be223394f87",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "40217246dfe5b1dde39470ae5a5344fa0ab193e5a03d64c358de329077ffb518",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "7ab8097b2a793241cd439806122f18d169e859c33828c3efaa26ed17fd8dad8b"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "e962606dd79c489ed93d54a8678ddb11e2e2370ff1e3f161509d9c28a6bd2146"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -128,6 +128,7 @@
         },
         "environment": {
           "agentic_root": "canonical-workspace",
+          "agentic_production_threads_dir": "registered-systemd-directory",
           "assist_model_url": "http://127.0.0.1:8000/v1",
           "dbus_session_bus_address": "user-runtime-bus",
           "path": [
@@ -165,9 +166,13 @@
           "version": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
         },
         "process_scope": {
+          "cgroup_kill_mode": "0200",
+          "cgroup_kill_owner": "runtime-user",
+          "slice": "app.slice",
           "systemctl_sha256": "afe98ef3d55f504b37c6e7eb7da21a639ae7fb558f4c9024c89abb580a703255",
           "systemd_run_sha256": "e14f7e69b1c30ae2135de4abc8df315fe2f23a92ab5ee39d41d4fa5f0b0c6339"
         },
+        "production_threads_path_sha256": "d52678e3676af1ab2056a34ac1329c545fe117225b7c6a725c411b6321d11f15",
         "shared_gate": {
           "sha256": "24363a8d39da95602440844f7aeb2e511b76944a87a60c6a8368c9c4621adb58"
         },
@@ -235,5 +240,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "8ce97013767ecf10f56ad5a88fac928467634236a8b2303907adca863ae03023"
+  "sha256": "7652f7c2283069958a5fb26efcc9e13835c1feed17b5a21169d76ec170d35131"
 }

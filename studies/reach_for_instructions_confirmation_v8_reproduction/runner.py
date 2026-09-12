@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 import pwd
 import shutil
+import shlex
+import signal
 import stat
 import subprocess
 import tempfile
@@ -210,11 +212,31 @@ def _verify_execution(execution_root: Path, manifest: dict[str, Any]) -> dict[st
     return identity
 
 
+def _verify_fixed_path(
+    label: str, actual: Path, registered: Path, workspace_root: Path
+) -> None:
+    """Require one exact lexical path with no symlink below the workspace root."""
+    workspace = Path(os.path.abspath(workspace_root))
+    actual_path = Path(os.path.abspath(actual))
+    registered_path = Path(os.path.abspath(registered))
+    if actual_path != registered_path:
+        raise ValueError(f"{label} differs from the fixed reproduction path")
+    try:
+        relative = registered_path.relative_to(workspace)
+    except ValueError as error:
+        raise ValueError(f"{label} escapes the canonical shared workspace") from error
+    candidate = workspace
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise ValueError(f"{label} contains a symlinked path component")
+
+
 def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
     """Atomically publish private clean detached clones without fetching."""
-    expected_root = _canonical_workspace_root(root) / RUNTIME_RELATIVE
-    if runtime_root.resolve() != expected_root.resolve():
-        raise ValueError("runtime root differs from the fixed reproduction path")
+    workspace_root = _canonical_workspace_root(root)
+    expected_root = workspace_root / RUNTIME_RELATIVE
+    _verify_fixed_path("runtime root", runtime_root, expected_root, workspace_root)
     manifest = _load_manifest(root)
     proof = _verify_publication(root, manifest)
     runtime_root.parent.mkdir(parents=True, exist_ok=True)
@@ -302,6 +324,7 @@ print(json.dumps({
     },
     "environment": {
         "agentic_root": os.environ.get("AGENTIC_ROOT"),
+        "agentic_production_threads_dir": os.environ.get("AGENTIC_PRODUCTION_THREADS_DIR"),
         "assist_model_url": os.environ.get("ASSIST_MODEL_URL"),
         "dbus_session_bus_address": os.environ.get("DBUS_SESSION_BUS_ADDRESS"),
         "path": os.environ.get("PATH"),
@@ -317,12 +340,14 @@ print(json.dumps({
 
 
 def _environment_identity(
-    *, assist_python: Path, workspace_root: Path, execution_root: Path, assist_source: Path
+    *, assist_python: Path, workspace_root: Path, execution_root: Path,
+    assist_source: Path, production_threads_path_sha256: str
 ) -> dict[str, Any]:
     env = _execution_environment(
         workspace_root=workspace_root,
         execution_root=execution_root,
         assist_source=assist_source,
+        production_threads_path_sha256=production_threads_path_sha256,
     )
     deploy_environment = workspace_root / "assist" / ".deploy.env"
     if (
@@ -358,6 +383,7 @@ def _environment_identity(
         value["modules"][name]["path"] = relative
     if value["environment"] != {
         "agentic_root": str(workspace_root),
+        "agentic_production_threads_dir": env["AGENTIC_PRODUCTION_THREADS_DIR"],
         "assist_model_url": "http://127.0.0.1:8000/v1",
         "dbus_session_bus_address": f"unix:path=/run/user/{os.getuid()}/bus",
         "path": "/usr/bin:/bin",
@@ -368,6 +394,7 @@ def _environment_identity(
     }:
         raise ValueError("worker environment differs from the exact runtime profile")
     value["environment"]["agentic_root"] = "canonical-workspace"
+    value["environment"]["agentic_production_threads_dir"] = "registered-systemd-directory"
     value["environment"]["dbus_session_bus_address"] = "user-runtime-bus"
     value["environment"]["path"] = ["/usr/bin", "/bin"]
     value["environment"]["python_path"] = ["exact-parent-checkout", "exact-assist-checkout"]
@@ -376,11 +403,14 @@ def _environment_identity(
 
 
 def _execution_environment(
-    *, workspace_root: Path, execution_root: Path, assist_source: Path
+    *, workspace_root: Path, execution_root: Path, assist_source: Path,
+    production_threads_path_sha256: str
 ) -> dict[str, str]:
     """Build the fixed minimal environment used by parent-runner subprocesses."""
+    production_threads = _production_threads_directory(production_threads_path_sha256)
     return {
         "AGENTIC_ROOT": str(workspace_root),
+        "AGENTIC_PRODUCTION_THREADS_DIR": str(production_threads),
         "CODEX_THREAD_ID": COORDINATION_THREAD_ID,
         "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus",
         "HOME": pwd.getpwuid(os.getuid()).pw_dir,
@@ -393,6 +423,37 @@ def _execution_environment(
         "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
         "no_proxy": "127.0.0.1,localhost",
     }
+
+
+def _production_threads_directory(expected_sha256: str) -> Path:
+    """Resolve the hash-pinned production-status root from the Assist service."""
+    result = subprocess.run(
+        ["/usr/bin/systemctl", "show", "assist-web", "-p", "Environment", "--value"],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode:
+        raise ValueError("production status directory is unavailable")
+    try:
+        values = [
+            setting.partition("=")[2]
+            for setting in shlex.split(result.stdout)
+            if setting.partition("=")[:2] == ("ASSIST_THREADS_DIR", "=")
+        ]
+    except ValueError as error:
+        raise ValueError("production status directory is malformed") from error
+    if len(values) != 1:
+        raise ValueError("production status directory is not uniquely configured")
+    path = Path(values[0])
+    if (
+        not path.is_absolute()
+        or path.is_symlink()
+        or not path.is_dir()
+        or path.resolve() != path
+        or hashlib.sha256(str(path).encode()).hexdigest() != expected_sha256
+    ):
+        raise ValueError("production status directory differs from registration")
+    return path
 
 
 def _server_identity(server_pid: int, model_path: Path, llama_source: Path) -> dict[str, Any]:
@@ -471,6 +532,7 @@ def attest(
         "status": "",
     }:
         raise ValueError("Assist runtime differs from registration")
+    expected = manifest["runtime"]["expected_attestation"]
     value = {
         "manifest_sha256": digest(manifest),
         "publication": publication,
@@ -482,8 +544,9 @@ def attest(
             workspace_root=workspace_root,
             execution_root=execution_root,
             assist_source=assist_source,
+            production_threads_path_sha256=expected["production_threads_path_sha256"],
         ),
-        "process_scope": {
+        "process_scope": _scope_capability() | {
             "systemctl_sha256": _sha256(Path("/usr/bin/systemctl")),
             "systemd_run_sha256": _sha256(Path("/usr/bin/systemd-run")),
         },
@@ -491,7 +554,6 @@ def attest(
         "server": _server_identity(server_pid, model_path, llama_source),
         "registered_model": manifest["runtime"]["model"],
     }
-    expected = manifest["runtime"]["expected_attestation"]
     server_expected = expected["server"]
     server = value["server"]
     for key in ("argv", "binary_sha256", "model"):
@@ -681,14 +743,109 @@ def _time_bound() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@contextmanager
+def _termination_interrupts():
+    """Convert terminating wrapper signals into cleanup-bearing exceptions."""
+    originals = {number: signal.getsignal(number) for number in (signal.SIGHUP, signal.SIGTERM)}
+
+    def interrupt(number: int, _frame: Any) -> None:
+        raise KeyboardInterrupt(f"wrapper received signal {number}")
+
+    try:
+        for number in originals:
+            signal.signal(number, interrupt)
+        yield
+    finally:
+        for number, handler in originals.items():
+            signal.signal(number, handler)
+
+
+def _scope_cgroup(unit: str) -> Path:
+    uid = os.getuid()
+    return Path(
+        f"/sys/fs/cgroup/user.slice/user-{uid}.slice/"
+        f"user@{uid}.service/app.slice/{unit}.scope"
+    )
+
+
+def _scope_capability() -> dict[str, str]:
+    """Verify the user slice exposes its owner-writable atomic kill control."""
+    uid = os.getuid()
+    control = Path(
+        f"/sys/fs/cgroup/user.slice/user-{uid}.slice/"
+        f"user@{uid}.service/app.slice/cgroup.kill"
+    )
+    try:
+        metadata = control.stat()
+    except OSError as error:
+        raise ValueError("systemd scope kill control is unavailable") from error
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != uid or not mode & stat.S_IWUSR:
+        raise ValueError("systemd scope kill control is not delegated to this runtime")
+    return {
+        "cgroup_kill_mode": f"{mode:04o}",
+        "cgroup_kill_owner": "runtime-user",
+        "slice": "app.slice",
+    }
+
+
+def _kill_scope(process: subprocess.Popen[str], unit: str) -> None:
+    """Atomically kill the complete transient cgroup and prove it is empty."""
+    scope = _scope_cgroup(unit)
+
+    def kill_members() -> bool:
+        path = scope / "cgroup.kill"
+        try:
+            descriptor = os.open(
+                path,
+                os.O_WRONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+            )
+        except FileNotFoundError:
+            return False
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise RuntimeError("scope kill control is not a regular cgroup file")
+            os.write(descriptor, b"1")
+        finally:
+            os.close(descriptor)
+        return True
+
+    killed_scope = kill_members()
+    if not killed_scope:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        process.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        kill_members()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            process.communicate(timeout=10)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("parent process scope launcher could not be reaped") from error
+    kill_members()
+    try:
+        members = (scope / "cgroup.procs").read_text().strip()
+    except FileNotFoundError:
+        members = ""
+    if members:
+        raise RuntimeError("parent process scope still contains live members")
+
+
 def _run_parent(
     command: list[str], *, cwd: Path, env: dict[str, str], output: Path
 ) -> subprocess.CompletedProcess[str]:
     """Run the exact parent in a killable user scope and reap it on interruption."""
+    _scope_capability()
     unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
     scoped_command = [
         "/usr/bin/systemd-run", "--user", "--scope", "--quiet", "--collect",
-        f"--unit={unit}", "--", *command,
+        "--slice=app.slice", f"--unit={unit}", "--", *command,
     ]
     process: subprocess.Popen[str] | None = None
     try:
@@ -701,30 +858,16 @@ def _run_parent(
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        stdout, stderr = process.communicate()
+        with _termination_interrupts():
+            stdout, stderr = process.communicate()
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
         cleanup_error: Exception | None = None
         if process is not None:
             try:
-                subprocess.run(
-                    [
-                        "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
-                        "--signal=SIGKILL", f"{unit}.scope",
-                    ],
-                    env=env,
-                    text=True,
-                    capture_output=True,
-                    timeout=10,
-                    check=True,
-                )
+                _kill_scope(process, unit)
             except Exception as scope_error:
                 cleanup_error = scope_error
-            try:
-                process.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
         _quarantine(output, "parent runner could not be launched or was interrupted")
         if cleanup_error is not None:
             raise RuntimeError("parent process scope could not be terminated") from cleanup_error
@@ -776,7 +919,10 @@ def _verify_runtime_paths(
     capsule: Path | None = None,
 ) -> None:
     """Bind every cohort path to the one prepared runtime root."""
-    runtime_root = workspace_root / RUNTIME_RELATIVE
+    canonical_workspace = workspace_root.resolve()
+    if Path(os.path.abspath(workspace_root)) != canonical_workspace:
+        raise ValueError("workspace path contains a symlinked component")
+    runtime_root = canonical_workspace / RUNTIME_RELATIVE
     expected = {
         "execution checkout": (execution_root, runtime_root / "experiment"),
         "Assist checkout": (assist_source, runtime_root / "assist"),
@@ -786,8 +932,7 @@ def _verify_runtime_paths(
     if capsule is not None:
         expected["capsule"] = (capsule, runtime_root / "capsule" / STUDY)
     for label, (actual, registered) in expected.items():
-        if actual.resolve() != registered.resolve():
-            raise ValueError(f"{label} differs from the fixed reproduction path")
+        _verify_fixed_path(label, actual, registered, canonical_workspace)
 
 
 def _verify_run_scope(
@@ -813,8 +958,12 @@ def _verify_run_scope(
         output=output,
         attestations=attestations,
     )
-    if events.resolve() != (workspace_root / ".coordination" / "events.jsonl").resolve():
-        raise ValueError("coordination event log path differs from the shared gate")
+    _verify_fixed_path(
+        "coordination event log",
+        events,
+        workspace_root / ".coordination" / "events.jsonl",
+        workspace_root,
+    )
 
 
 def _run_batch_locked(
@@ -929,6 +1078,7 @@ def _run_batch_locked(
         workspace_root=workspace_root,
         execution_root=execution_root,
         assist_source=assist_source,
+        production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
     )
     command = [
         str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "run",
@@ -1127,6 +1277,7 @@ def _verify_archive_runtime(
         workspace_root=workspace_root,
         execution_root=execution_root,
         assist_source=assist_source,
+        production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
     )
     expected = manifest["runtime"]["expected_attestation"]
     for key in ("distributions", "environment", "modules", "python"):
@@ -1209,6 +1360,7 @@ def _archive_and_analyze_locked(
         workspace_root=workspace_root,
         execution_root=execution_root,
         assist_source=assist_source,
+        production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
     )
     command = [
         str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "archive",
@@ -1275,8 +1427,6 @@ def archive_and_analyze(
         raise ValueError("raw output ID differs from the fixed reproduction")
     if capsule.name != STUDY:
         raise ValueError("capsule ID differs from the fixed reproduction")
-    if analysis_output.resolve() != (capsule / "reproduction-analysis.json").resolve():
-        raise ValueError("analysis output path differs from registration")
     if os.environ.get("CODEX_THREAD_ID") != COORDINATION_THREAD_ID:
         raise ValueError("archive coordinator identity differs from registration")
     if workspace_root.resolve() != _canonical_workspace_root(root):
@@ -1288,6 +1438,12 @@ def archive_and_analyze(
         output=output,
         attestations=attestations,
         capsule=capsule,
+    )
+    _verify_fixed_path(
+        "analysis output",
+        analysis_output,
+        capsule / "reproduction-analysis.json",
+        workspace_root,
     )
     with _wrapper_lock(output):
         if output.is_symlink() or not output.is_dir():

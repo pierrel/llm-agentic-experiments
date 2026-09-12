@@ -482,33 +482,64 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             output.mkdir(mode=0o700)
             with patch.object(
                 runner.subprocess, "Popen", return_value=process
-            ) as launch, patch.object(
-                runner.subprocess,
-                "run",
-                return_value=subprocess.CompletedProcess([], 0),
-            ) as terminate:
+            ) as launch, patch.object(runner, "_kill_scope") as terminate:
                 with self.assertRaises(KeyboardInterrupt):
                     runner._run_parent(
                         ["/unused-parent"], cwd=Path(temporary), env={}, output=output
                     )
             self.assertTrue((output / runner.INVALID).exists())
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
-            self.assertEqual(terminate.call_args.args[0][0], "/usr/bin/systemctl")
-            self.assertIn("--kill-whom=all", terminate.call_args.args[0])
+            terminate.assert_called_once()
+            self.assertIs(terminate.call_args.args[0], process)
+            self.assertTrue(terminate.call_args.args[1].startswith("reach-v8-r1-"))
 
     def test_execution_environment_cannot_redirect_the_shared_gate(self) -> None:
         with patch.dict(
             os.environ,
             {"AGENTIC_ROOT": "/tmp/other", "PATH": "/tmp/other"},
+        ), patch.object(
+            runner, "_production_threads_directory", return_value=Path("/production")
         ):
             environment = runner._execution_environment(
                 workspace_root=Path("/workspace"),
                 execution_root=Path("/execution"),
                 assist_source=Path("/assist"),
+                production_threads_path_sha256="0" * 64,
             )
         self.assertEqual(environment["AGENTIC_ROOT"], "/workspace")
+        self.assertEqual(environment["AGENTIC_PRODUCTION_THREADS_DIR"], "/production")
         self.assertEqual(environment["PATH"], "/usr/bin:/bin")
         self.assertEqual(environment["CODEX_THREAD_ID"], runner.COORDINATION_THREAD_ID)
+
+    def test_production_status_directory_is_hash_pinned_from_systemd(self) -> None:
+        with TemporaryDirectory() as temporary:
+            threads = Path(temporary)
+            expected = runner.hashlib.sha256(str(threads).encode()).hexdigest()
+            service = subprocess.CompletedProcess(
+                [], 0, stdout=f"OTHER=value ASSIST_THREADS_DIR={threads}\n", stderr=""
+            )
+            with patch.object(runner.subprocess, "run", return_value=service):
+                self.assertEqual(runner._production_threads_directory(expected), threads)
+            with patch.object(runner.subprocess, "run", return_value=service):
+                with self.assertRaisesRegex(ValueError, "differs from registration"):
+                    runner._production_threads_directory("0" * 64)
+
+    def test_every_fixed_runtime_path_component_rejects_symlinks(self) -> None:
+        with TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            runtime = workspace / runner.RUNTIME_RELATIVE
+            runtime.mkdir(parents=True)
+            alternate = workspace / "alternate"
+            alternate.mkdir()
+            (runtime / "experiment").symlink_to(alternate, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "symlinked path component"):
+                runner._verify_runtime_paths(
+                    workspace_root=workspace,
+                    execution_root=runtime / "experiment",
+                    assist_source=runtime / "assist",
+                    output=runtime / "raw" / runner.STUDY,
+                    attestations=runtime / "attestations",
+                )
 
     def test_archive_rejects_a_symlinked_raw_cohort(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -525,7 +556,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ), patch.object(
                 runner, "_canonical_workspace_root", return_value=workspace
             ):
-                with self.assertRaisesRegex(ValueError, "real directory"):
+                with self.assertRaisesRegex(ValueError, "symlinked path component"):
                     runner.archive_and_analyze(
                         ROOT,
                         output,
@@ -821,6 +852,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         manifest = {
             "execution": {"coordination_thread_id": thread, "output_id": runner.STUDY},
             "parent": {"bundle_path": "bundle.json"},
+            "runtime": {
+                "expected_attestation": {"production_threads_path_sha256": "0" * 64}
+            },
         }
         bundle = SimpleNamespace(schedule=(SimpleNamespace(sha256="trial-1"),))
         with TemporaryDirectory() as temporary:
@@ -853,6 +887,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_canonical_workspace_root", return_value=workspace
             ), patch.object(
                 runner, "_verify_local_registration", return_value=TEST_REGISTRATION
+            ), patch.object(
+                runner, "_production_threads_directory", return_value=workspace / "production"
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="registered-input-drift"), patch.object(
                     runner, "_load_manifest", side_effect=ValueError("changed registration")
@@ -896,11 +932,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     runner, "attest", return_value=b'{}\n'
                 ), patch.object(
                     runner.subprocess, "Popen", return_value=interrupted
-                ), patch.object(
-                    runner.subprocess,
-                    "run",
-                    return_value=subprocess.CompletedProcess([], 0),
-                ):
+                ), patch.object(runner, "_kill_scope"):
                     with self.assertRaises(KeyboardInterrupt):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())

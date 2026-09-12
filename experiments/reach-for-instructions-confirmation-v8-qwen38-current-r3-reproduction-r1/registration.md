@@ -136,7 +136,10 @@ and identity digest are fixed in `manifest.json`. The wrapper gives the inherite
 parent a fixed minimal environment: the canonical `AGENTIC_ROOT`, exact coordinator
 thread, `/usr/bin:/bin` path, fixed localhost proxy bypass, and the registered
 Python isolation variables. This prevents an inherited caller environment from
-redirecting the shared gate or its interpreter. The wrapper replicates the inherited
+redirecting the shared gate or its interpreter. The gate receives an explicit
+production-thread directory derived from the Assist service environment whose
+path digest is fixed in `manifest.json`; caller variables and later worker
+environment loading cannot select another admission-status namespace. The wrapper replicates the inherited
 worker's mode-0600 deployment-environment loading and requires its non-secret model
 endpoint to remain exactly `http://127.0.0.1:8000/v1` without recording secret
 environment values. The normalized fixed path and workspace root, plus hashes of
@@ -154,7 +157,8 @@ parent execution, event reconciliation, and cooldown recording. It does not
 reuse the inherited parent output lock.
 The inherited parent and every descendant, including workers that start their own
 sessions, run inside one transient user-systemd scope. Wrapper interruption kills
-that complete scope and reaps its launcher before quarantine and lock release.
+that complete scope through the cgroup's atomic `cgroup.kill` control, reaps its
+launcher, and verifies no scope member remains before quarantine and lock release.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 accepts evidence only from its sibling `.coordination/events.jsonl`. A different

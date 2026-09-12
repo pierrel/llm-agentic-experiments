@@ -48,6 +48,8 @@ The reproduction adds no model-visible treatment. Its wrapper:
    coordinator, and `/usr/bin:/bin`, uses only that workspace's production-priority
    gate and events, and prevents the gate's forced working directory or an
    inherited environment from shadowing either clean clone or redirecting admission.
+   The production-thread root is resolved only from the Assist service environment,
+   checked against its registered path digest, and passed explicitly to the gate.
 4. Attests the interpreter, resolved modules, the full non-extra dependency
    closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
    commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
@@ -71,7 +73,8 @@ The reproduction adds no model-visible treatment. Its wrapper:
 8. Validates the exact persisted admission/outcome schemas and semantics rather
    than relying on hash-chain continuity alone.
 9. Contains the inherited parent and every descendant in one transient systemd
-   scope, kills and reaps that whole scope on wrapper interruption, and refuses
+   scope, atomically kills its complete cgroup, reaps the launcher, proves the
+   scope empty on wrapper interruption, and refuses
    resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and
