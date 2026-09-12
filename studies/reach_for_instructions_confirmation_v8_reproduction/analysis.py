@@ -263,14 +263,13 @@ def _verify_reproduction_provenance(
         raise ValueError("reproduction provenance differs from its evidence")
 
 
-def analyze(
+def _analysis_value(
     manifest: dict[str, Any],
     reproduction_capsule: Path,
     historical_capsule: Path,
-    output: Path,
     registration: dict[str, str],
-) -> Path:
-    """Write the locked, separate descriptive reproduction comparison."""
+) -> dict[str, Any]:
+    """Build the locked, separate descriptive reproduction comparison."""
     if reproduction_capsule.resolve() == historical_capsule.resolve():
         raise ValueError("historical capsule cannot substitute for the reproduction")
     parent = manifest["parent"]
@@ -293,11 +292,39 @@ def analyze(
     )
     if historical_bundle.payload() != reproduction_bundle.payload():
         raise ValueError("historical and reproduction capsules use different bundles")
-    value = {
+    return {
         "analysis": "descriptive exact reproduction; no pooling or binary replication threshold",
         "bundle_sha256": parent["bundle_sha256"],
         "reproduction": _cell_summary(reproduction_bundle, reproduction_metadata),
         "historical": _cell_summary(historical_bundle, historical_metadata),
     }
+
+
+def analyze(
+    manifest: dict[str, Any],
+    reproduction_capsule: Path,
+    historical_capsule: Path,
+    output: Path,
+    registration: dict[str, str],
+) -> Path:
+    """Write the locked, separate descriptive reproduction comparison."""
+    value = _analysis_value(
+        manifest, reproduction_capsule, historical_capsule, registration
+    )
     atomic_write(output, canonical_json(value) + b"\n")
     return output
+
+
+def verify_existing_analysis(
+    manifest: dict[str, Any],
+    reproduction_capsule: Path,
+    historical_capsule: Path,
+    output: Path,
+    registration: dict[str, str],
+) -> None:
+    """Verify that a prior archive contains the exact locked analysis."""
+    expected = _analysis_value(
+        manifest, reproduction_capsule, historical_capsule, registration
+    )
+    if _json(output) != expected:
+        raise ValueError("sealed reproduction analysis differs from locked analysis")

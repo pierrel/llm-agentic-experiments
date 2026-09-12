@@ -1097,8 +1097,14 @@ def archive_and_analyze(
         try:
             if capsule.exists():
                 verify_reproduction_seal(capsule, manifest)
-                if not analysis_output.is_file():
-                    raise ValueError("sealed reproduction analysis is missing")
+                registration = _verify_local_registration(root, manifest)
+                analysis.verify_existing_analysis(
+                    manifest,
+                    capsule,
+                    root / manifest["historical_comparator"]["capsule"],
+                    analysis_output,
+                    registration,
+                )
                 return
             _archive_and_analyze_locked(
                 root,

@@ -122,6 +122,23 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
     return capsule
 
 
+def _seal_capsule(capsule: Path, manifest: dict[str, object]) -> None:
+    sealed_files = {
+        path.relative_to(capsule).as_posix(): runner._sha256(path)
+        for path in sorted(capsule.rglob("*"))
+        if path.is_file()
+        and path.name not in {"learning.md", "assist-roadmap-proposal.md"}
+    }
+    seal = {
+        "schema": "reach-v8-exact-reproduction-seal-v1",
+        "manifest_sha256": digest(manifest),
+        "sealed_files": sealed_files,
+    }
+    (capsule / "reproduction-seal.json").write_bytes(
+        canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
+    )
+
+
 class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
     def test_manifest_pins_the_exact_authoritative_parent(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -755,33 +772,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             self.assertTrue((output / runner.INVALID).exists())
 
     def test_archive_retry_accepts_an_existing_valid_seal(self) -> None:
-        thread = "thread-1"
-        manifest = {
-            "execution": {
-                "analysis_file": "reproduction-analysis.json",
-                "capsule_id": runner.STUDY,
-                "coordination_thread_id": thread,
-                "output_id": runner.STUDY,
-            }
-        }
+        manifest = runner._load_manifest(ROOT)
+        thread = manifest["execution"]["coordination_thread_id"]
         with TemporaryDirectory() as temporary:
             parent = Path(temporary)
-            output = parent / runner.STUDY
+            output = parent / "raw" / runner.STUDY
+            output.parent.mkdir()
             output.mkdir(mode=0o700)
-            capsule = parent / "capsules" / runner.STUDY
-            capsule.mkdir(parents=True)
+            capsule = _reproduction_fixture(parent / "capsules", manifest)
             analysis_output = capsule / "reproduction-analysis.json"
-            analysis_output.write_text("{}\n")
-            seal = {
-                "schema": "reach-v8-exact-reproduction-seal-v1",
-                "manifest_sha256": digest(manifest),
-                "sealed_files": {
-                    analysis_output.relative_to(capsule).as_posix(): runner._sha256(analysis_output)
-                },
-            }
-            (capsule / "reproduction-seal.json").write_bytes(
-                canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
+            analysis.analyze(
+                manifest, capsule, HISTORICAL, analysis_output, TEST_REGISTRATION
             )
+            _seal_capsule(capsule, manifest)
             workspace = parent / "workspace"
             workspace.mkdir()
             with patch.dict(
@@ -790,6 +793,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_load_manifest", return_value=manifest
             ), patch.object(
                 runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(
+                runner, "_verify_local_registration", return_value=TEST_REGISTRATION
             ), patch.object(runner, "_archive_and_analyze_locked") as archive:
                 runner.archive_and_analyze(
                     ROOT,
@@ -804,6 +809,43 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 )
             archive.assert_not_called()
             self.assertFalse((output / runner.INVALID).exists())
+
+    def test_archive_retry_rejects_an_arbitrary_self_sealed_analysis(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        thread = manifest["execution"]["coordination_thread_id"]
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            output = parent / "raw" / runner.STUDY
+            output.mkdir(mode=0o700, parents=True)
+            capsule = parent / "capsules" / runner.STUDY
+            capsule.mkdir(parents=True)
+            analysis_output = capsule / "reproduction-analysis.json"
+            analysis_output.write_text("{}\n")
+            _seal_capsule(capsule, manifest)
+            workspace = parent / "workspace"
+            workspace.mkdir()
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": thread}
+            ), patch.object(
+                runner, "_load_manifest", return_value=manifest
+            ), patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(
+                runner, "_verify_local_registration", return_value=TEST_REGISTRATION
+            ):
+                with self.assertRaisesRegex(ValueError, "reproduction quarantined"):
+                    runner.archive_and_analyze(
+                        ROOT,
+                        output,
+                        capsule,
+                        analysis_output,
+                        parent / "attestations",
+                        execution_root=parent / "experiment",
+                        assist_source=parent / "assist",
+                        assist_python=parent / "python",
+                        workspace_root=workspace,
+                    )
+            self.assertTrue((output / runner.INVALID).exists())
 
     def test_final_reproduction_seal_rejects_changed_evidence(self) -> None:
         with TemporaryDirectory() as temporary:
