@@ -38,20 +38,23 @@ The reproduction adds no model-visible treatment. Its wrapper:
    proves the branch and tag publication once during runtime preparation, and
    binds subsequent checks to the saved proof and immutable local tag rather than
    repeatedly consulting a mutable remote branch.
-2. Creates clean detached local clones of the exact parent and Assist commits
-   only under one fixed canonical-workspace runtime root. The raw cohort,
+2. Builds and verifies clean detached local clones of the exact parent and Assist
+   commits in a locked private staging directory, then atomically publishes the
+   sole fixed canonical-workspace runtime root. The raw cohort,
    attestation inventory, and private sealed capsule also have single fixed child
    paths, so alternate locks or same-ID cohorts cannot be selected.
 3. Derives the canonical workspace from the registered worktree's Git common
-   directory, uses only that workspace's production-priority gate and events,
-   and prevents the gate's forced working directory from shadowing either clean
-   clone.
+   directory, pins a minimal parent environment to that `AGENTIC_ROOT`, exact
+   coordinator, and `/usr/bin:/bin`, uses only that workspace's production-priority
+   gate and events, and prevents the gate's forced working directory or an
+   inherited environment from shadowing either clean clone or redirecting admission.
 4. Attests the interpreter, resolved modules, the full non-extra dependency
    closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
    commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
    PID/start identity, and complete model bytes before and after every inherited
    bounded invocation.
-5. Requires identical attestation bytes across the whole reproduction.
+5. Requires identical attestation bytes across the whole reproduction, including
+   the normalized parent environment and hashes of its systemd scope tools.
 6. Holds a distinct nonblocking wrapper lock across progress inspection,
    attestation, parent execution, event reconciliation, and cooldown recording;
    the inherited child lock remains separate.
@@ -67,12 +70,16 @@ The reproduction adds no model-visible treatment. Its wrapper:
    boundary's registered 900-second duration; ambiguity quarantines.
 8. Validates the exact persisted admission/outcome schemas and semantics rather
    than relying on hash-chain continuity alone.
-9. Refuses resume or analysis after any identity, detected request-fidelity, event,
+9. Contains the inherited parent and every descendant in one transient systemd
+   scope, kills and reaps that whole scope on wrapper interruption, and refuses
+   resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and
    gate before archival. It verifies and copies every per-invocation identity
-   and event slice, binds them to the run and manifest in reproduction provenance
-   before analysis, then archives the fixed capsule evidence and analysis under
+   and event slice, independently reconstructs secondary metadata from the sealed
+   traces and outcomes, requires the parent archive to copy those exact bytes,
+   binds the evidence to the run and manifest in reproduction provenance before
+   analysis, then archives the fixed capsule evidence and analysis under
    a final self-digested seal. Later interpretive `learning.md` and Assist
    proposal files remain deliberately outside that data seal.
 

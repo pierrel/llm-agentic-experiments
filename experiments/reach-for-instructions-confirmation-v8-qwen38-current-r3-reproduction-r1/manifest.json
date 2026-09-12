@@ -25,12 +25,12 @@
       "runtime_relative": ".coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "d972b4a571c101dbf55ee03f84500a700e2d7c6292ff74052d2c3ca126d80dd4",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "0a202c2e927b817d9d0403ced1b250cbee6de5f28cae97771ced28caf1ce65c3",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "08caa5153b06e9129db32f019903c4d8bad7795da480b7f63d6c09c0c157de11",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "f8695bbbee3a98c2e31ae4962b50af348f0a5ab8ea2d7848263b2a770fe466b9",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "c628aa4aa59a8cc81dda5da98eb080604a3674757512a1a1fb357be223394f87",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "31f86090995efd13b4db1b4e93b1b732ae205068a67baba30b84b5522aa2e1e0",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "336aa71d15ef27a76b80c258549111a7ea9e8936f1c89ae1013c15a621f895fd"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "40217246dfe5b1dde39470ae5a5344fa0ab193e5a03d64c358de329077ffb518",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "7ab8097b2a793241cd439806122f18d169e859c33828c3efaa26ed17fd8dad8b"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -127,13 +127,20 @@
           ]
         },
         "environment": {
+          "agentic_root": "canonical-workspace",
           "assist_model_url": "http://127.0.0.1:8000/v1",
+          "dbus_session_bus_address": "user-runtime-bus",
+          "path": [
+            "/usr/bin",
+            "/bin"
+          ],
           "python_no_user_site": "1",
           "python_path": [
             "exact-parent-checkout",
             "exact-assist-checkout"
           ],
-          "python_safe_path": "1"
+          "python_safe_path": "1",
+          "xdg_runtime_dir": "user-runtime"
         },
         "modules": {
           "assist": {
@@ -156,6 +163,10 @@
         "python": {
           "sha256": "d78f9cf7178ecff09963551399855543c297f37ac207e626228bfe43cb26a70c",
           "version": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
+        },
+        "process_scope": {
+          "systemctl_sha256": "afe98ef3d55f504b37c6e7eb7da21a639ae7fb558f4c9024c89abb580a703255",
+          "systemd_run_sha256": "e14f7e69b1c30ae2135de4abc8df315fe2f23a92ab5ee39d41d4fa5f0b0c6339"
         },
         "shared_gate": {
           "sha256": "24363a8d39da95602440844f7aeb2e511b76944a87a60c6a8368c9c4621adb58"
@@ -224,5 +235,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "94f769a9bfaffca1aab3ed653eb3068199c6ccdf787e01b103a4e6ca4b234b1a"
+  "sha256": "8ce97013767ecf10f56ad5a88fac928467634236a8b2303907adca863ae03023"
 }

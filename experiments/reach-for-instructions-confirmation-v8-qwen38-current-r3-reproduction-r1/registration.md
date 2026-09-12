@@ -34,8 +34,11 @@ There is exactly one prepared runtime and one raw cohort. The runtime root is th
 canonical shared workspace child
 `.coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1`;
 its parent and Assist checkouts, raw output, runtime attestations, and capsule use
-the fixed relative paths in `manifest.json`. Preparation refuses an alternate or
-existing root. Batch and archive commands reject alternate paths before touching
+the fixed relative paths in `manifest.json`. Preparation builds and verifies a
+private staging directory under a nonblocking lock, atomically publishes it at
+the sole canonical path, and refuses an alternate or existing root. An interrupted
+or failed preparation therefore cannot strand a partial canonical runtime. Batch
+and archive commands reject alternate or symlinked paths before touching
 cohort state. The fixed raw path makes the wrapper lock global to this
 reproduction and prevents selecting among parallel same-ID cohorts. The sealed
 capsule is first built at its fixed private runtime path so archival does not
@@ -129,10 +132,16 @@ match, and the actual bytes of both hashed and unhashed entries feed the closure
 identity. That closure includes the LangChain/LangGraph support packages, OpenAI
 client, HTTP stack,
 Pydantic, and their declared runtime dependencies; its complete package list
-and identity digest are fixed in `manifest.json`. The wrapper replicates the
-inherited worker's mode-0600 deployment-environment loading and requires its
-non-secret model endpoint to remain exactly `http://127.0.0.1:8000/v1` without
-recording other environment values.
+and identity digest are fixed in `manifest.json`. The wrapper gives the inherited
+parent a fixed minimal environment: the canonical `AGENTIC_ROOT`, exact coordinator
+thread, `/usr/bin:/bin` path, fixed localhost proxy bypass, and the registered
+Python isolation variables. This prevents an inherited caller environment from
+redirecting the shared gate or its interpreter. The wrapper replicates the inherited
+worker's mode-0600 deployment-environment loading and requires its non-secret model
+endpoint to remain exactly `http://127.0.0.1:8000/v1` without recording secret
+environment values. The normalized fixed path and workspace root, plus hashes of
+the systemd scope tools used to contain the parent process tree, are part of every
+runtime identity attestation.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
@@ -143,6 +152,9 @@ One separate nonblocking reproduction lock covers the complete wrapper
 transaction from persisted-progress inspection through before/after identity,
 parent execution, event reconciliation, and cooldown recording. It does not
 reuse the inherited parent output lock.
+The inherited parent and every descendant, including workers that start their own
+sessions, run inside one transient user-systemd scope. Wrapper interruption kills
+that complete scope and reaps its launcher before quarantine and lock release.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 accepts evidence only from its sibling `.coordination/events.jsonl`. A different
@@ -204,6 +216,10 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
+Before calling the parent archive, the wrapper independently recomputes the exact
+secondary metadata bytes from the raw trace bodies and sealed outcomes. The parent
+archive must verify those trace hashes and copy metadata that exactly matches the
+independent reconstruction; mutable raw metadata cannot become sealed evidence.
 Immediately before the parent archive command, the wrapper re-verifies the exact
 parent and Assist checkouts, interpreter, imported modules, full dependency
 closure, environment, and shared gate. An archive-stage reproduction-integrity

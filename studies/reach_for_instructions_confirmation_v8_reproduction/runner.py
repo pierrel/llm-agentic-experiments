@@ -11,8 +11,11 @@ import json
 import math
 import os
 from pathlib import Path
+import pwd
+import shutil
 import stat
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -208,30 +211,41 @@ def _verify_execution(execution_root: Path, manifest: dict[str, Any]) -> dict[st
 
 
 def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
-    """Create private clean detached clones for execution without fetching."""
+    """Atomically publish private clean detached clones without fetching."""
     expected_root = _canonical_workspace_root(root) / RUNTIME_RELATIVE
     if runtime_root.resolve() != expected_root.resolve():
         raise ValueError("runtime root differs from the fixed reproduction path")
-    if runtime_root.exists() or runtime_root.is_symlink():
-        raise ValueError("runtime root must not already exist")
     manifest = _load_manifest(root)
     proof = _verify_publication(root, manifest)
-    runtime_root.mkdir(mode=0o700, parents=True)
-    (runtime_root / "raw").mkdir(mode=0o700)
-    atomic_write(runtime_root / "publication.json", canonical_json({"proof": proof, "sha256": digest(proof)}) + b"\n")
-    experiment = runtime_root / "experiment"
-    assist = runtime_root / "assist"
-    subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)], check=True)
-    subprocess.run(["git", "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]], check=True)
-    subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)], check=True)
-    subprocess.run(["git", "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]], check=True)
-    _verify_execution(experiment, manifest)
-    if _git_identity(assist) != {
-        "commit": manifest["runtime"]["assist_commit"],
-        "tree": manifest["runtime"]["assist_tree"],
-        "status": "",
-    }:
-        raise ValueError("prepared Assist checkout differs from registration")
+    runtime_root.parent.mkdir(parents=True, exist_ok=True)
+    with _wrapper_lock(runtime_root):
+        if runtime_root.exists() or runtime_root.is_symlink():
+            raise ValueError("runtime root must not already exist")
+        staging = Path(tempfile.mkdtemp(prefix=f".{STUDY}.preparing-", dir=runtime_root.parent))
+        staging.chmod(0o700)
+        try:
+            (staging / "raw").mkdir(mode=0o700)
+            atomic_write(
+                staging / "publication.json",
+                canonical_json({"proof": proof, "sha256": digest(proof)}) + b"\n",
+            )
+            experiment = staging / "experiment"
+            assist = staging / "assist"
+            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)], check=True)
+            subprocess.run(["git", "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]], check=True)
+            subprocess.run(["git", "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)], check=True)
+            subprocess.run(["git", "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]], check=True)
+            _verify_execution(experiment, manifest)
+            if _git_identity(assist) != {
+                "commit": manifest["runtime"]["assist_commit"],
+                "tree": manifest["runtime"]["assist_tree"],
+                "status": "",
+            }:
+                raise ValueError("prepared Assist checkout differs from registration")
+            staging.replace(runtime_root)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
 
 _ENVIRONMENT_SCRIPT = r'''
@@ -287,10 +301,14 @@ print(json.dumps({
         "roots": list(roots),
     },
     "environment": {
+        "agentic_root": os.environ.get("AGENTIC_ROOT"),
         "assist_model_url": os.environ.get("ASSIST_MODEL_URL"),
+        "dbus_session_bus_address": os.environ.get("DBUS_SESSION_BUS_ADDRESS"),
+        "path": os.environ.get("PATH"),
         "python_no_user_site": os.environ.get("PYTHONNOUSERSITE"),
         "python_path": os.environ.get("PYTHONPATH"),
         "python_safe_path": os.environ.get("PYTHONSAFEPATH"),
+        "xdg_runtime_dir": os.environ.get("XDG_RUNTIME_DIR"),
     },
     "modules": modules,
     "python": {"version": sys.version, "sha256": hashlib.sha256(python.read_bytes()).hexdigest()},
@@ -301,12 +319,11 @@ print(json.dumps({
 def _environment_identity(
     *, assist_python: Path, workspace_root: Path, execution_root: Path, assist_source: Path
 ) -> dict[str, Any]:
-    env = os.environ.copy()
-    env.update({
-        "PYTHONPATH": f"{execution_root}:{assist_source}",
-        "PYTHONSAFEPATH": "1",
-        "PYTHONNOUSERSITE": "1",
-    })
+    env = _execution_environment(
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+    )
     deploy_environment = workspace_root / "assist" / ".deploy.env"
     if (
         deploy_environment.is_symlink() or not deploy_environment.is_file()
@@ -340,14 +357,42 @@ def _environment_identity(
             raise ValueError(f"worker import escaped its clean checkout: {name}") from error
         value["modules"][name]["path"] = relative
     if value["environment"] != {
+        "agentic_root": str(workspace_root),
         "assist_model_url": "http://127.0.0.1:8000/v1",
+        "dbus_session_bus_address": f"unix:path=/run/user/{os.getuid()}/bus",
+        "path": "/usr/bin:/bin",
         "python_no_user_site": "1",
         "python_path": source_path,
         "python_safe_path": "1",
+        "xdg_runtime_dir": f"/run/user/{os.getuid()}",
     }:
         raise ValueError("worker environment differs from the exact runtime profile")
+    value["environment"]["agentic_root"] = "canonical-workspace"
+    value["environment"]["dbus_session_bus_address"] = "user-runtime-bus"
+    value["environment"]["path"] = ["/usr/bin", "/bin"]
     value["environment"]["python_path"] = ["exact-parent-checkout", "exact-assist-checkout"]
+    value["environment"]["xdg_runtime_dir"] = "user-runtime"
     return value
+
+
+def _execution_environment(
+    *, workspace_root: Path, execution_root: Path, assist_source: Path
+) -> dict[str, str]:
+    """Build the fixed minimal environment used by parent-runner subprocesses."""
+    return {
+        "AGENTIC_ROOT": str(workspace_root),
+        "CODEX_THREAD_ID": COORDINATION_THREAD_ID,
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus",
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
+        "LANG": "C.UTF-8",
+        "NO_PROXY": "127.0.0.1,localhost",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONPATH": f"{execution_root}:{assist_source}",
+        "PYTHONSAFEPATH": "1",
+        "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
+        "no_proxy": "127.0.0.1,localhost",
+    }
 
 
 def _server_identity(server_pid: int, model_path: Path, llama_source: Path) -> dict[str, Any]:
@@ -438,6 +483,10 @@ def attest(
             execution_root=execution_root,
             assist_source=assist_source,
         ),
+        "process_scope": {
+            "systemctl_sha256": _sha256(Path("/usr/bin/systemctl")),
+            "systemd_run_sha256": _sha256(Path("/usr/bin/systemd-run")),
+        },
         "shared_gate": {"sha256": _sha256(workspace_root / "tools" / "agentic")},
         "server": _server_identity(server_pid, model_path, llama_source),
         "registered_model": manifest["runtime"]["model"],
@@ -456,6 +505,8 @@ def attest(
             raise ValueError(f"worker {key} differs from registration")
     if value["shared_gate"] != expected["shared_gate"]:
         raise ValueError("shared LLM admission gate differs from registration")
+    if value["process_scope"] != expected["process_scope"]:
+        raise ValueError("parent process scope tools differ from registration")
     return canonical_json(value) + b"\n"
 
 
@@ -633,13 +684,50 @@ def _time_bound() -> str:
 def _run_parent(
     command: list[str], *, cwd: Path, env: dict[str, str], output: Path
 ) -> subprocess.CompletedProcess[str]:
-    """Run the exact parent and quarantine even when the wrapper is interrupted."""
+    """Run the exact parent in a killable user scope and reap it on interruption."""
+    unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
+    scoped_command = [
+        "/usr/bin/systemd-run", "--user", "--scope", "--quiet", "--collect",
+        f"--unit={unit}", "--", *command,
+    ]
+    process: subprocess.Popen[str] | None = None
     try:
-        return subprocess.run(
-            command, cwd=cwd, env=env, text=True, capture_output=True
+        process = subprocess.Popen(
+            scoped_command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
+        stdout, stderr = process.communicate()
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
+        cleanup_error: Exception | None = None
+        if process is not None:
+            try:
+                subprocess.run(
+                    [
+                        "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
+                        "--signal=SIGKILL", f"{unit}.scope",
+                    ],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    timeout=10,
+                    check=True,
+                )
+            except Exception as scope_error:
+                cleanup_error = scope_error
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
         _quarantine(output, "parent runner could not be launched or was interrupted")
+        if cleanup_error is not None:
+            raise RuntimeError("parent process scope could not be terminated") from cleanup_error
         if not isinstance(error, Exception):
             raise
         raise ValueError("parent runner could not be launched") from error
@@ -837,12 +925,11 @@ def _run_batch_locked(
     if prefix and not prefix.endswith(b"\n"):
         _quarantine(output, "coordination event log has an unterminated prefix")
         raise ValueError("coordination event log has an unterminated prefix")
-    env = os.environ.copy()
-    env.update({
-        "PYTHONPATH": f"{execution_root}:{assist_source}",
-        "PYTHONSAFEPATH": "1",
-        "PYTHONNOUSERSITE": "1",
-    })
+    env = _execution_environment(
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+    )
     command = [
         str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "run",
         "--root", str(execution_root), "--output", str(output),
@@ -1049,6 +1136,37 @@ def _verify_archive_runtime(
         raise ValueError("shared LLM gate differs before archival")
 
 
+def _trial_metadata_from_traces(
+    output: Path, bundle: StudyBundle, outcomes: list[dict[str, Any]]
+) -> bytes:
+    """Recompute the parent's secondary metadata from its sealed trace bodies."""
+    by_trial = {str(record["trial_sha256"]): record for record in outcomes}
+    metadata = []
+    for trial in bundle.schedule:
+        trace_path = output / "traces" / f"{trial.sha256}.json"
+        try:
+            trace = json.loads(trace_path.read_text())
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError("sealed trial trace is missing or malformed") from error
+        if not isinstance(trace, dict) or trace.get("trial_sha256") != trial.sha256:
+            raise ValueError("sealed trial trace identity differs from the schedule")
+        result = trace.get("result", {})
+        if not isinstance(result, dict):
+            result = {}
+        record = by_trial.get(trial.sha256)
+        if record is None:
+            raise ValueError("sealed outcome is missing from trial metadata")
+        metadata.append({
+            "trial": trial.__dict__,
+            "context_lines": analysis.CONTEXT_LINES[trial.task],
+            "first_prompt_tokens": result.get("first_prompt_tokens"),
+            "skill_loaded_before_first_read": result.get("skill_loaded_before_first_read"),
+            "outcome": record["outcome"],
+            "detail": record["detail"],
+        })
+    return canonical_json(metadata) + b"\n"
+
+
 def _archive_and_analyze_locked(
     root: Path,
     output: Path,
@@ -1086,13 +1204,19 @@ def _archive_and_analyze_locked(
         thread_id=manifest["execution"]["coordination_thread_id"],
         schedule_size=len(bundle.schedule),
     )
-    env = os.environ.copy()
-    env.update({"PYTHONPATH": f"{execution_root}:{assist_source}", "PYTHONSAFEPATH": "1", "PYTHONNOUSERSITE": "1"})
+    expected_metadata = _trial_metadata_from_traces(output, bundle, outcomes)
+    env = _execution_environment(
+        workspace_root=workspace_root,
+        execution_root=execution_root,
+        assist_source=assist_source,
+    )
     command = [
         str(assist_python), "-m", "studies.reach_for_instructions_confirmation_v8.runner", "archive",
         "--root", str(execution_root), "--output", str(output), "--archive", str(capsule),
     ]
     subprocess.run(command, cwd=workspace_root, env=env, check=True)
+    if (capsule / "trial-metadata.json").read_bytes() != expected_metadata:
+        raise ValueError("archived trial metadata differs from sealed traces")
     copied_attestations = capsule / "runtime-attestations"
     copied_attestations.mkdir()
     for source in attestation_files:
@@ -1166,6 +1290,10 @@ def archive_and_analyze(
         capsule=capsule,
     )
     with _wrapper_lock(output):
+        if output.is_symlink() or not output.is_dir():
+            raise ValueError("reproduction output must be a real directory")
+        if stat.S_IMODE(output.stat().st_mode) != 0o700:
+            raise ValueError("reproduction output must have mode 0700")
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")
         try:

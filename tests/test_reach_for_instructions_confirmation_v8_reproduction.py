@@ -6,10 +6,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from harness.bundle import StudyBundle, canonical_json, digest
 from studies.reach_for_instructions_confirmation_v2 import runner as core
@@ -40,6 +41,7 @@ def _identity(manifest: dict[str, object]) -> bytes:
         "environment": {
             key: expected[key] for key in ("distributions", "environment", "modules", "python")
         },
+        "process_scope": expected["process_scope"],
         "execution": {
             "commit": parent["commit"], "status": "", "tree": parent["tree"],
         },
@@ -453,6 +455,113 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     with runner._wrapper_lock(output):
                         self.fail("concurrent wrapper lock unexpectedly succeeded")
 
+    def test_prepare_failure_never_publishes_the_canonical_runtime(self) -> None:
+        with TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            runtime = workspace / runner.RUNTIME_RELATIVE
+            with patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
+            ), patch.object(runner, "_load_manifest", return_value={}), patch.object(
+                runner, "_verify_publication", return_value={}
+            ), patch.object(
+                runner.subprocess, "run", side_effect=OSError("clone failed")
+            ):
+                with self.assertRaisesRegex(OSError, "clone failed"):
+                    runner.prepare_runtime(ROOT, Path("/unused-assist"), runtime)
+            self.assertFalse(runtime.exists())
+            self.assertEqual(
+                list(runtime.parent.glob(f".{runner.STUDY}.preparing-*")), []
+            )
+
+    def test_parent_interruption_kills_the_complete_systemd_scope(self) -> None:
+        process = Mock()
+        process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+        process.returncode = -9
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / runner.STUDY
+            output.mkdir(mode=0o700)
+            with patch.object(
+                runner.subprocess, "Popen", return_value=process
+            ) as launch, patch.object(
+                runner.subprocess,
+                "run",
+                return_value=subprocess.CompletedProcess([], 0),
+            ) as terminate:
+                with self.assertRaises(KeyboardInterrupt):
+                    runner._run_parent(
+                        ["/unused-parent"], cwd=Path(temporary), env={}, output=output
+                    )
+            self.assertTrue((output / runner.INVALID).exists())
+            self.assertTrue(launch.call_args.kwargs["start_new_session"])
+            self.assertEqual(terminate.call_args.args[0][0], "/usr/bin/systemctl")
+            self.assertIn("--kill-whom=all", terminate.call_args.args[0])
+
+    def test_execution_environment_cannot_redirect_the_shared_gate(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"AGENTIC_ROOT": "/tmp/other", "PATH": "/tmp/other"},
+        ):
+            environment = runner._execution_environment(
+                workspace_root=Path("/workspace"),
+                execution_root=Path("/execution"),
+                assist_source=Path("/assist"),
+            )
+        self.assertEqual(environment["AGENTIC_ROOT"], "/workspace")
+        self.assertEqual(environment["PATH"], "/usr/bin:/bin")
+        self.assertEqual(environment["CODEX_THREAD_ID"], runner.COORDINATION_THREAD_ID)
+
+    def test_archive_rejects_a_symlinked_raw_cohort(self) -> None:
+        with TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            runtime = workspace / runner.RUNTIME_RELATIVE
+            output = runtime / "raw" / runner.STUDY
+            output.parent.mkdir(parents=True)
+            target = runtime / "alternate"
+            target.mkdir(mode=0o700)
+            output.symlink_to(target, target_is_directory=True)
+            capsule = runtime / "capsule" / runner.STUDY
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID}
+            ), patch.object(
+                runner, "_canonical_workspace_root", return_value=workspace
+            ):
+                with self.assertRaisesRegex(ValueError, "real directory"):
+                    runner.archive_and_analyze(
+                        ROOT,
+                        output,
+                        capsule,
+                        capsule / "reproduction-analysis.json",
+                        runtime / "attestations",
+                        execution_root=runtime / "experiment",
+                        assist_source=runtime / "assist",
+                        assist_python=Path("/unused-python"),
+                        workspace_root=workspace,
+                    )
+
+    def test_secondary_metadata_is_recomputed_from_sealed_traces(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        trial = bundle.schedule[0]
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            traces = output / "traces"
+            traces.mkdir()
+            (traces / f"{trial.sha256}.json").write_bytes(canonical_json({
+                "trial_sha256": trial.sha256,
+                "result": {
+                    "first_prompt_tokens": 123,
+                    "skill_loaded_before_first_read": True,
+                },
+            }) + b"\n")
+            one_trial_bundle = SimpleNamespace(schedule=(trial,))
+            metadata = json.loads(runner._trial_metadata_from_traces(
+                output,
+                one_trial_bundle,
+                [{"trial_sha256": trial.sha256, "outcome": "pass", "detail": "ok"}],
+            ))
+        self.assertEqual(metadata[0]["first_prompt_tokens"], 123)
+        self.assertTrue(metadata[0]["skill_loaded_before_first_read"])
+        self.assertEqual(metadata[0]["outcome"], "pass")
+
     def test_canonical_workspace_is_derived_and_cannot_be_substituted(self) -> None:
         workspace = runner._canonical_workspace_root(ROOT)
         self.assertEqual(workspace, ROOT.parents[2])
@@ -773,16 +882,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     shutil.rmtree(attestations)
                 with self.subTest(stage="parent-launch"), patch.object(
                     runner, "attest", return_value=b'{}\n'
-                ), patch.object(runner.subprocess, "run", side_effect=OSError("cannot exec")):
+                ), patch.object(runner.subprocess, "Popen", side_effect=OSError("cannot exec")):
                     with self.assertRaisesRegex(ValueError, "could not be launched"):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())
 
                 shutil.rmtree(output)
                 shutil.rmtree(attestations)
+                interrupted = Mock()
+                interrupted.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+                interrupted.returncode = -9
                 with self.subTest(stage="parent-interrupt"), patch.object(
                     runner, "attest", return_value=b'{}\n'
-                ), patch.object(runner.subprocess, "run", side_effect=KeyboardInterrupt):
+                ), patch.object(
+                    runner.subprocess, "Popen", return_value=interrupted
+                ), patch.object(
+                    runner.subprocess,
+                    "run",
+                    return_value=subprocess.CompletedProcess([], 0),
+                ):
                     with self.assertRaises(KeyboardInterrupt):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())

@@ -343,6 +343,7 @@ def verify_attestation_inventory(
         },
         "registered_model": manifest["runtime"]["model"],
         "registration": registration,
+        "process_scope": expected_runtime["process_scope"],
         "shared_gate": expected_runtime["shared_gate"],
     }
     if not isinstance(identity, dict) or set(identity) != set(expected_identity) | {"server"}:
