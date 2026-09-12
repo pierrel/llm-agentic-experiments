@@ -1006,16 +1006,14 @@ def _archive_and_analyze_locked(
     analysis_output: Path,
     attestations: Path,
     *,
+    manifest: dict[str, Any],
+    registration: dict[str, str],
     execution_root: Path,
     assist_source: Path,
     assist_python: Path,
     workspace_root: Path,
 ) -> None:
     """Archive the verified reproduction, then perform the locked separate analysis."""
-    manifest = _load_manifest(root)
-    if workspace_root.resolve() != _canonical_workspace_root(root):
-        raise ValueError("archive workspace differs from the canonical shared workspace")
-    registration = _verify_local_registration(root, manifest)
     _verify_archive_runtime(
         manifest=manifest,
         registration=registration,
@@ -1024,15 +1022,6 @@ def _archive_and_analyze_locked(
         assist_python=assist_python,
         workspace_root=workspace_root,
     )
-    if capsule.name != manifest["execution"]["capsule_id"]:
-        raise ValueError("capsule ID differs from registration")
-    registered_analysis = capsule / manifest["execution"]["analysis_file"]
-    if analysis_output.resolve() != registered_analysis.resolve():
-        raise ValueError("analysis output path differs from registration")
-    if os.environ.get("CODEX_THREAD_ID") != manifest["execution"]["coordination_thread_id"]:
-        raise ValueError("archive coordinator identity differs from registration")
-    if (output / INVALID).exists():
-        raise ValueError("a quarantined reproduction cannot be archived")
     attestation_files, intervals = verify_attestation_inventory(
         attestations, manifest=manifest, registration=registration
     )
@@ -1108,16 +1097,13 @@ def archive_and_analyze(
     workspace_root: Path,
 ) -> None:
     """Serialize archival and permanently quarantine integrity failures."""
-    manifest = _load_manifest(root)
-    if output.name != manifest["execution"]["output_id"]:
-        raise ValueError("raw output ID differs from registration")
-    if capsule.name != manifest["execution"]["capsule_id"]:
-        raise ValueError("capsule ID differs from registration")
-    if analysis_output.resolve() != (
-        capsule / manifest["execution"]["analysis_file"]
-    ).resolve():
+    if output.name != STUDY:
+        raise ValueError("raw output ID differs from the fixed reproduction")
+    if capsule.name != STUDY:
+        raise ValueError("capsule ID differs from the fixed reproduction")
+    if analysis_output.resolve() != (capsule / "reproduction-analysis.json").resolve():
         raise ValueError("analysis output path differs from registration")
-    if os.environ.get("CODEX_THREAD_ID") != manifest["execution"]["coordination_thread_id"]:
+    if os.environ.get("CODEX_THREAD_ID") != COORDINATION_THREAD_ID:
         raise ValueError("archive coordinator identity differs from registration")
     if workspace_root.resolve() != _canonical_workspace_root(root):
         raise ValueError("archive workspace differs from the canonical shared workspace")
@@ -1125,9 +1111,10 @@ def archive_and_analyze(
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")
         try:
+            manifest = _load_manifest(root)
+            registration = _verify_local_registration(root, manifest)
             if capsule.exists():
                 verify_reproduction_seal(capsule, manifest)
-                registration = _verify_local_registration(root, manifest)
                 analysis.verify_existing_analysis(
                     manifest,
                     capsule,
@@ -1142,6 +1129,8 @@ def archive_and_analyze(
                 capsule,
                 analysis_output,
                 attestations,
+                manifest=manifest,
+                registration=registration,
                 execution_root=execution_root,
                 assist_source=assist_source,
                 assist_python=assist_python,

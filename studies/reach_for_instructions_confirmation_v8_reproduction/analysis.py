@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
-from harness.records import AdmissionLog, RecordChain
+from harness.records import AdmissionLog, OUTCOME_KINDS, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
     verify_attestation_inventory,
     verify_execution_intervals,
@@ -181,7 +181,9 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
                 "denominator": 12,
                 "pass": reasons.get("pass", 0),
                 "pass_rate": reasons.get("pass", 0) / 12,
-                "reason_codes": dict(sorted(reasons.items())),
+                "reason_codes": {
+                    outcome: reasons.get(outcome, 0) for outcome in sorted(OUTCOME_KINDS)
+                },
                 "skill_loaded_before_first_read": process,
                 "skill_loaded_rate": process / process_observed if process_observed else None,
                 "skill_loaded_observed": process_observed,

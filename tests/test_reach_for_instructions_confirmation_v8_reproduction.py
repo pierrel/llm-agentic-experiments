@@ -632,6 +632,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         was_loaded = changed[0]["skill_loaded_before_first_read"] is True
         changed[0]["skill_loaded_before_first_read"] = None
         cell = analysis._cell_summary(bundle, changed)["cells"][cell_key]
+        self.assertEqual(set(cell["reason_codes"]), analysis.OUTCOME_KINDS)
+        self.assertEqual(sum(cell["reason_codes"].values()), 12)
         self.assertEqual(cell["skill_loaded_observed"], 11)
         self.assertEqual(cell["skill_loaded_missing"], 1)
         self.assertEqual(
@@ -791,7 +793,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         ]))
 
     def test_archive_failures_and_interruptions_quarantine_the_raw_cohort(self) -> None:
-        thread = "thread-1"
+        thread = runner.COORDINATION_THREAD_ID
         manifest = {
             "execution": {
                 "analysis_file": "reproduction-analysis.json",
@@ -800,8 +802,21 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 "output_id": runner.STUDY,
             }
         }
-        for error in (ValueError("bad attestation"), KeyboardInterrupt()):
-            with self.subTest(error=type(error).__name__), TemporaryDirectory() as temporary:
+        cases = (
+            ("registered-input", ValueError("changed registration")),
+            ("archive", ValueError("bad attestation")),
+            ("archive", KeyboardInterrupt()),
+        )
+        for stage, error in cases:
+            load_effect = (
+                {"side_effect": error}
+                if stage == "registered-input"
+                else {"return_value": manifest}
+            )
+            archive_effect = {} if stage == "registered-input" else {"side_effect": error}
+            with self.subTest(
+                stage=stage, error=type(error).__name__
+            ), TemporaryDirectory() as temporary:
                 parent = Path(temporary)
                 output = parent / runner.STUDY
                 output.mkdir(mode=0o700)
@@ -812,11 +827,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with patch.dict(
                     os.environ, {"CODEX_THREAD_ID": thread}
                 ), patch.object(
-                    runner, "_load_manifest", return_value=manifest
+                    runner,
+                    "_load_manifest",
+                    **load_effect,
                 ), patch.object(
                     runner, "_canonical_workspace_root", return_value=workspace
                 ), patch.object(
-                    runner, "_archive_and_analyze_locked", side_effect=error
+                    runner, "_verify_local_registration", return_value=TEST_REGISTRATION
+                ), patch.object(
+                    runner,
+                    "_archive_and_analyze_locked",
+                    **archive_effect,
                 ):
                     def archive() -> None:
                         runner.archive_and_analyze(
