@@ -67,7 +67,7 @@ The reproduction adds no model-visible treatment. Its wrapper:
    boundary's registered 900-second duration; ambiguity quarantines.
 8. Validates the exact persisted admission/outcome schemas and semantics rather
    than relying on hash-chain continuity alone.
-9. Refuses resume or analysis after any identity, request-fidelity, event,
+9. Refuses resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and
    gate before archival. It verifies and copies every per-invocation identity
@@ -92,6 +92,14 @@ the model/profile and weights. This improves execution identification but cannot
 retroactively prove the historical run used the newly recorded binary and flags.
 That asymmetry is a stated limitation, not a reason to alter either treatment or
 the comparator.
+
+The inherited worker persists its captured provider request only after a model
+call returns. A provider exception or timeout after request start can therefore
+retain the parent terminal outcome without exposing the request for fidelity
+verification. Successful returned payloads are verified exactly and detected
+drift quarantines the cohort. The ambiguous failure cases remain in the fixed
+denominator with fidelity explicitly unobserved; discarding and rerunning them
+would break the parent intention-to-treat rule.
 
 The workspace and capsule protocol is cooperative local integrity, not a
 cryptographic security boundary against another same-UID process that can rewrite

@@ -661,9 +661,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         cell_key = f'{changed[0]["trial"]["task"]}:{changed[0]["trial"]["condition"]}'
         was_loaded = changed[0]["skill_loaded_before_first_read"] is True
         changed[0]["skill_loaded_before_first_read"] = None
+        changed[0]["outcome"] = "timeout"
         cell = analysis._cell_summary(bundle, changed)["cells"][cell_key]
         self.assertEqual(set(cell["reason_codes"]), analysis.OUTCOME_KINDS)
         self.assertEqual(sum(cell["reason_codes"].values()), 12)
+        self.assertEqual(cell["request_fidelity_observed"], 11)
+        self.assertEqual(cell["request_fidelity_unobserved"], 1)
         self.assertEqual(cell["skill_loaded_observed"], 11)
         self.assertEqual(cell["skill_loaded_missing"], 1)
         self.assertEqual(

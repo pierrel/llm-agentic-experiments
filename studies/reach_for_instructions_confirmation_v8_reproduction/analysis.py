@@ -162,6 +162,9 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
             if len(entries) != 12:
                 raise ValueError(f"cell does not contain 12 episodes: {task}:{condition}")
             reasons = Counter(str(item["outcome"]) for item in entries)
+            request_fidelity_observed = sum(
+                item["outcome"] in {"pass", "artifact_failure"} for item in entries
+            )
             process = sum(item["skill_loaded_before_first_read"] is True for item in entries)
             process_observed = sum(isinstance(item["skill_loaded_before_first_read"], bool) for item in entries)
             tokens = [item["first_prompt_tokens"] for item in entries if isinstance(item["first_prompt_tokens"], int)]
@@ -184,6 +187,8 @@ def _cell_summary(bundle: StudyBundle, metadata: list[dict[str, Any]]) -> dict[s
                 "reason_codes": {
                     outcome: reasons.get(outcome, 0) for outcome in sorted(OUTCOME_KINDS)
                 },
+                "request_fidelity_observed": request_fidelity_observed,
+                "request_fidelity_unobserved": 12 - request_fidelity_observed,
                 "skill_loaded_before_first_read": process,
                 "skill_loaded_rate": process / process_observed if process_observed else None,
                 "skill_loaded_observed": process_observed,

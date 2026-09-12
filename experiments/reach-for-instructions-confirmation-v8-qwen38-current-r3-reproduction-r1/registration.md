@@ -104,6 +104,17 @@ expose the measure remains missing rather than being classified as no load. The
 execution retains every admitted terminal result with the parent reason codes,
 plus actual first-provider-request input tokens when available.
 
+For every worker payload that returns, the captured first provider request must
+equal its sealed request or the whole reproduction is quarantined. The inherited
+worker writes that capture only after `agent.invoke` returns. An admitted
+provider exception or timeout after the request-start marker can therefore end
+without a payload that exposes the actual request. Its request-fidelity status
+remains unobserved: it is neither called verified nor inferred to have drifted,
+and its parent terminal outcome remains in the denominator. Restarting the
+cohort on that outcome would violate the inherited intention-to-treat rule and
+could select on condition or context. The locked analysis reports verified and
+unobserved request-fidelity counts for every cell.
+
 ## Execution, stopping, and missingness
 
 The unchanged V8-r3 runner executes from a private clean detached checkout of
@@ -163,7 +174,7 @@ cadence in the final capsule. Admission
 and outcome records must also retain the exact parent schemas, scheduled trial
 identity, field types, and outcome semantics in addition to valid hash chains.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
-request-fidelity error, unexpected episode count, registration/import/dependency/
+detected request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
 reproduction. It cannot resume or be analyzed; a fresh registered reproduction
 would be required.
@@ -209,6 +220,9 @@ The locked analysis reports the two runs separately. For each of six cells it
 reports denominator, pass count/rate, every reason-code count, guide-load count/
 observed denominator, missing count, observed-case rate, input-token
 values and range, and outcome counts by within-pair position.
+It also reports the count of returned-payload episodes whose first request was
+verified and admitted terminal episodes whose inherited failure path left request
+fidelity unobserved.
 It reports G02 minus G01 pass-rate percentage points by dose. It does not pool
 runs, select another comparator, calculate an unregistered p-value or context
 threshold, or apply a binary replication-success rule. Interpretation remains
