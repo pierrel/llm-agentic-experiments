@@ -29,10 +29,8 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
     BATCH_EPISODES,
     DENIAL,
     DENIAL_RETRY_SECONDS,
-    events_match_admissions as _events_match_admissions,
     verify_attestation_inventory,
     verify_execution_intervals,
-    verify_event_interval as _verify_event_interval,
     verify_records,
 )
 
@@ -848,6 +846,17 @@ def _termination_interrupts():
             signal.signal(number, handler)
 
 
+@contextmanager
+def _defer_termination_signals():
+    """Defer terminating signals until cleanup and quarantine are durable."""
+    numbers = {signal.SIGHUP, signal.SIGINT, signal.SIGTERM}
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, numbers)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
 def _scope_cgroup(unit: str) -> Path:
     uid = os.getuid()
     return Path(
@@ -1037,21 +1046,24 @@ def _run_scoped(
             os.close(release_write)
             release_write = -1
             stdout, stderr = process.communicate()
-        _verify_scope_empty(scope)
+            _verify_scope_empty(scope)
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
-        cleanup_error: Exception | None = None
-        if process is not None:
-            try:
-                if scope is None:
-                    _kill_unbound_scope(process, unit, env)
-                else:
-                    _kill_scope(process, scope)
-            except Exception as scope_error:
-                cleanup_error = scope_error
-        _quarantine(output, f"{stage} could not be launched or was interrupted")
-        if cleanup_error is not None:
-            raise RuntimeError(f"{stage} process scope could not be terminated") from cleanup_error
+        with _defer_termination_signals():
+            cleanup_error: Exception | None = None
+            if process is not None:
+                try:
+                    if scope is None:
+                        _kill_unbound_scope(process, unit, env)
+                    else:
+                        _kill_scope(process, scope)
+                except Exception as scope_error:
+                    cleanup_error = scope_error
+            _quarantine(output, f"{stage} could not be launched or was interrupted")
+            if cleanup_error is not None:
+                raise RuntimeError(
+                    f"{stage} process scope could not be terminated"
+                ) from cleanup_error
         if not isinstance(error, Exception):
             raise
         raise ValueError(f"{stage} could not be launched") from error
@@ -1579,38 +1591,40 @@ def run_batch(
     )
     with _wrapper_lock(output):
         try:
-            if output.is_symlink() or (output.exists() and not output.is_dir()):
-                raise ValueError("reproduction output must be a real directory")
-            if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
-                raise ValueError("reproduction output must have mode 0700")
-            if (output / INVALID).exists():
-                raise ValueError("reproduction output is quarantined and cannot resume")
-            try:
-                manifest = _load_manifest(root)
-                registration = _verify_local_registration(root, manifest)
-            except Exception as error:
-                _quarantine(output, "registered reproduction inputs drifted")
-                raise ValueError(
-                    "registered reproduction inputs drifted; fresh reproduction required"
-                ) from error
-            return _run_batch_locked(
-                root,
-                output,
-                attestations,
-                manifest=manifest,
-                registration=registration,
-                execution_root=execution_root,
-                assist_source=assist_source,
-                assist_python=assist_python,
-                workspace_root=workspace_root,
-                model_path=model_path,
-                server_pid=server_pid,
-                llama_source=llama_source,
-                events=events,
-            )
+            with _termination_interrupts():
+                if output.is_symlink() or (output.exists() and not output.is_dir()):
+                    raise ValueError("reproduction output must be a real directory")
+                if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
+                    raise ValueError("reproduction output must have mode 0700")
+                if (output / INVALID).exists():
+                    raise ValueError("reproduction output is quarantined and cannot resume")
+                try:
+                    manifest = _load_manifest(root)
+                    registration = _verify_local_registration(root, manifest)
+                except Exception as error:
+                    _quarantine(output, "registered reproduction inputs drifted")
+                    raise ValueError(
+                        "registered reproduction inputs drifted; fresh reproduction required"
+                    ) from error
+                return _run_batch_locked(
+                    root,
+                    output,
+                    attestations,
+                    manifest=manifest,
+                    registration=registration,
+                    execution_root=execution_root,
+                    assist_source=assist_source,
+                    assist_python=assist_python,
+                    workspace_root=workspace_root,
+                    model_path=model_path,
+                    server_pid=server_pid,
+                    llama_source=llama_source,
+                    events=events,
+                )
         except BaseException as error:
-            if not isinstance(error, Exception):
-                _quarantine(output, "reproduction wrapper was interrupted")
+            with _defer_termination_signals():
+                if not isinstance(error, Exception):
+                    _quarantine(output, "reproduction wrapper was interrupted")
             raise
 
 
@@ -1852,7 +1866,8 @@ def archive_and_analyze(
                     workspace_root=workspace_root,
                 )
         except BaseException as error:
-            _quarantine(output, "archive or analysis integrity failed")
+            with _defer_termination_signals():
+                _quarantine(output, "archive or analysis integrity failed")
             if not isinstance(error, Exception):
                 raise
             raise ValueError("archive or analysis integrity failed; reproduction quarantined") from error

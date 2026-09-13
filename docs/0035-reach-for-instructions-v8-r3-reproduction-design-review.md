@@ -85,7 +85,9 @@ The reproduction adds no model-visible treatment. Its wrapper:
    scope. A startup handshake keeps the parent payload gated until that exact
    live cgroup is observed. The wrapper proves it empty after normal completion;
    on interruption it atomically kills the complete bound cgroup, reaps the
-   launcher, proves the scope empty, and refuses
+   launcher, proves the scope empty, and defers further terminating signals until
+   cleanup and quarantine are durable. Signal conversion remains active through
+   post-run reconciliation. The wrapper refuses
    resume or analysis after any identity, detected request-fidelity, event,
    parent-process, or terminal-count failure.
 10. Re-verifies the exact parent, Assist, interpreter, dependency closure, and

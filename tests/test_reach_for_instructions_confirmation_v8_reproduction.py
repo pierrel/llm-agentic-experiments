@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -18,6 +18,10 @@ from harness.bundle import StudyBundle, canonical_json, digest
 from studies.reach_for_instructions_confirmation_v2 import runner as core
 from studies.reach_for_instructions_confirmation_v8 import runner as parent_runner
 from studies.reach_for_instructions_confirmation_v8_reproduction import analysis, runner
+from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    events_match_admissions,
+    verify_event_interval,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -362,15 +366,15 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             {"thread": thread, "resource": "llm", "event": "resource_started"},
             {"thread": thread, "resource": "llm", "event": "resource_finished", "exit_code": 1},
         ]
-        self.assertTrue(runner._events_match_admissions(
+        self.assertTrue(events_match_admissions(
             new_admissions=admitted, new_outcomes=[{"outcome": "pass"}, {"outcome": "provider_error"}],
             new_events=events, thread_id=thread
         ))
-        self.assertFalse(runner._events_match_admissions(
+        self.assertFalse(events_match_admissions(
             new_admissions=admitted, new_outcomes=[{"outcome": "pass"}, {"outcome": "provider_error"}],
             new_events=events[:-1], thread_id=thread
         ))
-        self.assertTrue(runner._events_match_admissions(
+        self.assertTrue(events_match_admissions(
             new_admissions=[{"admitted": True}], new_outcomes=[{"outcome": "timeout"}],
             new_events=events[:1], thread_id=thread
         ))
@@ -387,7 +391,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertTrue(runner._true_denial(
             new_admissions=[admission], new_events=[event], thread_id=thread
         ))
-        self.assertTrue(runner._events_match_admissions(
+        self.assertTrue(events_match_admissions(
             new_admissions=[admission], new_outcomes=[], new_events=[event], thread_id=thread
         ))
         self.assertFalse(runner._true_denial(
@@ -404,7 +408,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             new_events=completed + [event],
             thread_id=thread,
         ))
-        self.assertTrue(runner._events_match_admissions(
+        self.assertTrue(events_match_admissions(
             new_admissions=[{"admitted": True}, admission],
             new_outcomes=[{"outcome": "pass"}],
             new_events=completed + [event],
@@ -497,6 +501,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         process = Mock()
         process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
         process.returncode = -9
+        cleanup_state: list[str] = []
+
+        @contextmanager
+        def defer_signals():
+            cleanup_state.append("entered")
+            try:
+                yield
+            finally:
+                cleanup_state.append("exited")
+
         with TemporaryDirectory() as temporary:
             output = Path(temporary) / runner.STUDY
             output.mkdir(mode=0o700)
@@ -506,7 +520,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_bind_scope", return_value=Path(temporary) / "scope"
             ), patch.object(runner, "_release_scope"), patch.object(
                 runner, "_kill_scope"
-            ) as terminate:
+            ) as terminate, patch.object(
+                runner, "_defer_termination_signals", side_effect=defer_signals
+            ):
                 with self.assertRaises(KeyboardInterrupt):
                     runner._run_scoped(
                         ["/unused-parent"],
@@ -517,6 +533,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     )
             self.assertTrue((output / runner.INVALID).exists())
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
+            self.assertEqual(cleanup_state, ["entered", "exited"])
             terminate.assert_called_once()
             self.assertIs(terminate.call_args.args[0], process)
             self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
@@ -848,13 +865,13 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "outcomes_after": 0,
             "outcomes_before": 0,
         }
-        self.assertEqual(runner._verify_event_interval(record), record["events"])
+        self.assertEqual(verify_event_interval(record), record["events"])
         with self.assertRaisesRegex(ValueError, "outside"):
-            runner._verify_event_interval(record | {
+            verify_event_interval(record | {
                 "events": [{"at": "2026-09-12T00:00:03+00:00"}]
             })
         with self.assertRaisesRegex(ValueError, "outside"):
-            runner._verify_event_interval(record | {"events": list(reversed(record["events"]))})
+            verify_event_interval(record | {"events": list(reversed(record["events"]))})
 
     def test_batch_cooldown_requires_an_integer_outcome_count(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -1162,8 +1179,18 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
                 shutil.rmtree(output)
                 shutil.rmtree(attestations)
+                def terminate_after_parent(*_args, **_kwargs):
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    self.fail("SIGTERM did not interrupt the wrapper")
+
+                attestations_after_parent = iter((b'{}\n', terminate_after_parent))
+
+                def attest_after_parent(*args, **kwargs):
+                    result = next(attestations_after_parent)
+                    return result(*args, **kwargs) if callable(result) else result
+
                 with self.subTest(stage="wrapper-interrupt"), patch.object(
-                    runner, "attest", side_effect=[b'{}\n', KeyboardInterrupt]
+                    runner, "attest", side_effect=attest_after_parent
                 ), patch.object(
                     runner, "_run_scoped",
                     return_value=subprocess.CompletedProcess([], 0, "", ""),
