@@ -1587,6 +1587,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 output,
                 [admission, {"admitted": True, "trial_sha256": "trial-1"}],
             ))
+            with self.assertRaisesRegex(ValueError, "latest denial"):
+                runner._denial_retry_not_before(
+                    output,
+                    [
+                        admission,
+                        {"admitted": True, "trial_sha256": "trial-1"},
+                        {"admitted": False, "trial_sha256": "trial-2"},
+                        {"admitted": True, "trial_sha256": "trial-2"},
+                    ],
+                )
         thread = "thread-1"
         intervals = [
             {
