@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
-import json
 from pathlib import Path
 from typing import Any
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, OUTCOME_KINDS, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    strict_json_loads,
     verify_attestation_inventory,
     verify_execution_intervals,
     verify_records,
@@ -31,18 +31,19 @@ def _sha256(path: Path) -> str:
 
 
 def _json(path: Path) -> Any:
-    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        value: dict[str, Any] = {}
-        for name, item in pairs:
-            if name in value:
-                raise ValueError(f"duplicate JSON member: {name}")
-            value[name] = item
-        return value
-
     try:
-        return json.loads(path.read_text(), object_pairs_hook=unique_object)
+        return strict_json_loads(path.read_bytes())
     except (OSError, ValueError) as error:
         raise ValueError(f"invalid JSON: {path}") from error
+
+
+def _verify_json_lines(path: Path) -> None:
+    """Reject ambiguous members in a JSONL evidence chain before verification."""
+    try:
+        for line in path.read_bytes().splitlines():
+            strict_json_loads(line)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"invalid JSONL: {path}") from error
 
 
 def _verify_capsule(
@@ -61,9 +62,16 @@ def _verify_capsule(
     if capsule.is_symlink() or not capsule.is_dir():
         raise ValueError("capsule must be a real directory")
     run_path = capsule / "run.json"
+    run = _json(run_path)
+    for name in (
+        "admissions.jsonl.seal", "bundle.json", "outcomes.jsonl.seal",
+        "report.json", "trial-metadata.json",
+    ):
+        _json(capsule / name)
+    for name in ("admissions.jsonl", "outcomes.jsonl"):
+        _verify_json_lines(capsule / name)
     if expected_run_sha256 is not None and _sha256(run_path) != expected_run_sha256:
         raise ValueError("historical capsule run record differs from registration")
-    run = _json(run_path)
     if not isinstance(run, dict):
         raise ValueError("capsule run record must be an object")
     claimed = run.pop("record_sha256", None)

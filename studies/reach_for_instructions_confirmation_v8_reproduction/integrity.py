@@ -23,6 +23,22 @@ DENIAL = re.compile(
 )
 
 
+def strict_json_loads(source: str | bytes) -> Any:
+    """Decode JSON evidence while rejecting ambiguous duplicate members."""
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for name, item in pairs:
+            if name in value:
+                raise ValueError(f"duplicate JSON member: {name}")
+            value[name] = item
+        return value
+
+    try:
+        return json.loads(source, object_pairs_hook=unique_object)
+    except (UnicodeDecodeError, ValueError) as error:
+        raise ValueError("JSON evidence is malformed or ambiguous") from error
+
+
 def verify_event_interval(record: Any) -> list[dict[str, Any]]:
     """Return ordered event records that fall inside their parent invocation."""
     expected = {
@@ -316,8 +332,8 @@ def verify_attestation_inventory(
     if any(path.read_bytes() != identity_bytes for path in paths if "-identity-" in path.name):
         raise ValueError("runtime identity differs across attestations")
     try:
-        identity = json.loads(identity_bytes)
-    except json.JSONDecodeError as error:
+        identity = strict_json_loads(identity_bytes)
+    except ValueError as error:
         raise ValueError("runtime identity attestation is malformed") from error
     expected_runtime = manifest["runtime"]["expected_attestation"]
     expected_identity = {
@@ -366,8 +382,13 @@ def verify_attestation_inventory(
         or any(server[key] != value for key, value in expected_server.items())
     ):
         raise ValueError("runtime server attestation differs from registration")
-    intervals = [
-        json.loads((attestations / f"{index:03d}-events.json").read_text())
-        for index in range(invocations)
-    ]
+    try:
+        intervals = [
+            strict_json_loads(
+                (attestations / f"{index:03d}-events.json").read_bytes()
+            )
+            for index in range(invocations)
+        ]
+    except (OSError, ValueError) as error:
+        raise ValueError("runtime event attestation is malformed") from error
     return paths, intervals

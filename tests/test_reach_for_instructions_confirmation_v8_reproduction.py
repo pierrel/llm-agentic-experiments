@@ -444,6 +444,33 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     bundle_sha256=manifest["parent"]["bundle_sha256"],
                 )
 
+    def test_capsule_rejects_duplicate_jsonl_seal_members(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = Path(temporary) / "capsule"
+            shutil.copytree(HISTORICAL, capsule)
+            seal_path = capsule / "admissions.jsonl.seal"
+            seal = json.loads(seal_path.read_text())
+            name = "record_tip_sha256"
+            member = canonical_json({name: seal[name]}).decode()[1:-1]
+            encoded = canonical_json(seal).decode()
+            self.assertEqual(encoded.count(member), 1)
+            seal_path.write_text(encoded.replace(member, f"{member},{member}") + "\n")
+            run_path = capsule / "run.json"
+            run = json.loads(run_path.read_text())
+            run.pop("record_sha256")
+            run["tracked_files"]["admissions.jsonl.seal"] = runner._sha256(
+                seal_path
+            )
+            run_path.write_bytes(
+                canonical_json(run | {"record_sha256": digest(run)}) + b"\n"
+            )
+            with self.assertRaisesRegex(ValueError, "invalid JSON"):
+                analysis._verify_capsule(
+                    capsule,
+                    bundle_sha256=manifest["parent"]["bundle_sha256"],
+                )
+
     def test_progress_guard_rejects_an_omitted_scheduled_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
         with TemporaryDirectory() as temporary:
@@ -586,6 +613,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             self.assertEqual((len(paths), len(intervals)), (9, 3))
             (root / "001-identity-after.json").write_bytes(b'{"identity":2}\n')
             with self.assertRaisesRegex(ValueError, "identity differs"):
+                runner.verify_attestation_inventory(
+                    root, manifest=manifest, registration=TEST_REGISTRATION
+                )
+
+    def test_attestation_inventory_rejects_duplicate_json_members(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = _reproduction_fixture(Path(temporary), manifest)
+            root = capsule / "runtime-attestations"
+            identity_paths = sorted(root.glob("*-identity-*.json"))
+            identity = json.loads(identity_paths[0].read_text())
+            name = "registered_model"
+            member = canonical_json({name: identity[name]}).decode()[1:-1]
+            encoded = canonical_json(identity).decode()
+            self.assertEqual(encoded.count(member), 1)
+            duplicated = encoded.replace(member, f"{member},{member}") + "\n"
+            for path in identity_paths:
+                path.write_text(duplicated)
+            with self.assertRaisesRegex(ValueError, "attestation is malformed"):
                 runner.verify_attestation_inventory(
                     root, manifest=manifest, registration=TEST_REGISTRATION
                 )
@@ -2280,6 +2326,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
             )
             runner.verify_reproduction_seal(capsule, manifest)
+            seal_path = capsule / "reproduction-seal.json"
+            stored = json.loads(seal_path.read_text())
+            name = "manifest_sha256"
+            member = canonical_json({name: stored[name]}).decode()[1:-1]
+            encoded = canonical_json(stored).decode()
+            seal_path.write_text(encoded.replace(member, f"{member},{member}") + "\n")
+            with self.assertRaisesRegex(ValueError, "seal is missing or malformed"):
+                runner.verify_reproduction_seal(capsule, manifest)
+            seal_path.write_bytes(
+                canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
+            )
             evidence.write_text("{\"changed\":true}\n")
             with self.assertRaisesRegex(ValueError, "sealed files differ"):
                 runner.verify_reproduction_seal(capsule, manifest)

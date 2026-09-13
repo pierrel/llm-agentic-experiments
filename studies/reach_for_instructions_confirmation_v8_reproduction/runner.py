@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 import errno
 import fcntl
 import hashlib
-import json
 import math
 import os
 from pathlib import Path
@@ -96,6 +95,7 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
     BATCH_EPISODES,
     DENIAL,
     DENIAL_RETRY_SECONDS,
+    strict_json_loads,
     verify_attestation_inventory,
     verify_execution_intervals,
     verify_records,
@@ -278,8 +278,8 @@ def _command(*arguments: str, cwd: Path | None = None) -> str:
 def _load_manifest(root: Path) -> dict[str, Any]:
     path = root / MANIFEST
     try:
-        stored = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        stored = strict_json_loads(path.read_bytes())
+    except (OSError, ValueError) as error:
         raise ValueError("reproduction manifest is missing or malformed") from error
     if not isinstance(stored, dict) or set(stored) != {"manifest", "sha256"}:
         raise ValueError("reproduction manifest shape is invalid")
@@ -435,8 +435,8 @@ def _decode_tag_approval(tag_record: bytes) -> Any:
     """Decode exactly one canonical JSON tag message and its Git newline."""
     try:
         approval_bytes = tag_record.split(b"\n\n", 1)[1]
-        approval = json.loads(approval_bytes)
-    except (IndexError, json.JSONDecodeError) as error:
+        approval = strict_json_loads(approval_bytes)
+    except (IndexError, ValueError) as error:
         raise ValueError("registration tag review approval is malformed") from error
     if approval_bytes != canonical_json(approval) + b"\n":
         raise ValueError("registration tag review approval is not canonical")
@@ -505,8 +505,8 @@ def _verify_publication(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
 
 def _read_publication_proof(path: Path, manifest: dict[str, Any], identity: dict[str, str]) -> dict[str, Any]:
     try:
-        stored = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        stored = strict_json_loads(path.read_bytes())
+    except (OSError, ValueError) as error:
         raise ValueError("initial publication proof is missing or malformed") from error
     if not isinstance(stored, dict) or set(stored) != {"proof", "sha256"}:
         raise ValueError("initial publication proof shape is invalid")
@@ -832,7 +832,7 @@ def _environment_identity(
     )
     if result.returncode:
         raise ValueError("worker environment attestation failed")
-    value = json.loads(result.stdout)
+    value = strict_json_loads(result.stdout)
     prefixes = {
         "studies.reach_for_instructions_confirmation_v8.runner": execution_root,
         "harness.bundle": execution_root,
@@ -1167,8 +1167,8 @@ def _read_denial_cooldown(
             raise ValueError("production-denial cooldown is missing")
         return None
     try:
-        record = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        record = strict_json_loads(path.read_bytes())
+    except (OSError, ValueError) as error:
         raise ValueError("production-denial cooldown is malformed") from error
     if (
         not isinstance(record, dict)
@@ -1208,8 +1208,8 @@ def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
         raise ValueError("reproduction capsule must be a real directory")
     path = capsule / "reproduction-seal.json"
     try:
-        seal = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        seal = strict_json_loads(path.read_bytes())
+    except (OSError, ValueError) as error:
         raise ValueError("reproduction seal is missing or malformed") from error
     if (
         not isinstance(seal, dict)
@@ -1339,8 +1339,8 @@ def _read_appended_events(
             if len(line) > EVENT_RECORD_BYTES:
                 raise ValueError("coordination event record is too large")
             try:
-                record = json.loads(line)
-            except json.JSONDecodeError as error:
+                record = strict_json_loads(line)
+            except ValueError as error:
                 raise ValueError("coordination event slice is malformed") from error
             if not isinstance(record, dict):
                 raise ValueError("coordination event slice is malformed")
@@ -1664,8 +1664,8 @@ def _read_batch_cooldown(path: Path) -> dict[str, int | float]:
     if path.is_symlink():
         raise ValueError("sealed batch cooldown must be a real file")
     try:
-        value = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        value = strict_json_loads(path.read_bytes())
+    except (OSError, ValueError) as error:
         raise ValueError("sealed batch cooldown is missing or malformed") from error
     if (
         not isinstance(value, dict)
@@ -2330,8 +2330,8 @@ def _trial_metadata_from_traces(
     for trial in bundle.schedule:
         trace_path = output / "traces" / f"{trial.sha256}.json"
         try:
-            trace = json.loads(trace_path.read_text())
-        except (OSError, json.JSONDecodeError) as error:
+            trace = strict_json_loads(trace_path.read_bytes())
+        except (OSError, ValueError) as error:
             raise ValueError("sealed trial trace is missing or malformed") from error
         if not isinstance(trace, dict) or trace.get("trial_sha256") != trial.sha256:
             raise ValueError("sealed trial trace identity differs from the schedule")
