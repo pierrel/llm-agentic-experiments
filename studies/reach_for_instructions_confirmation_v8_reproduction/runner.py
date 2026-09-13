@@ -1205,17 +1205,20 @@ def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
     expected = seal.get("sealed_files")
     if not isinstance(expected, dict):
         raise ValueError("reproduction seal inventory is malformed")
-    actual = {}
-    for item in sorted(capsule.rglob("*")):
-        relative = item.relative_to(capsule).as_posix()
-        if (
-            item.is_file()
-            and not item.is_symlink()
-            and relative not in {"learning.md", "assist-roadmap-proposal.md", path.name}
-        ):
-            actual[relative] = _sha256(item)
+    actual = _sealed_file_inventory(capsule)
     if any(item.is_symlink() for item in capsule.rglob("*")) or expected != actual:
         raise ValueError("reproduction sealed files differ")
+
+
+def _sealed_file_inventory(capsule: Path) -> dict[str, str]:
+    """Hash the files covered by the final reproduction evidence seal."""
+    excluded = {"learning.md", "assist-roadmap-proposal.md", "reproduction-seal.json"}
+    sealed = {}
+    for path in sorted(capsule.rglob("*")):
+        relative = path.relative_to(capsule).as_posix()
+        if path.is_file() and not path.is_symlink() and relative not in excluded:
+            sealed[relative] = _sha256(path)
+    return sealed
 
 
 def _true_denial(
@@ -2391,17 +2394,10 @@ def _archive_and_analyze_locked(
     )
     historical = root / manifest["historical_comparator"]["capsule"]
     analysis.analyze(manifest, capsule, historical, analysis_output, registration)
-    sealed_files = {}
-    for path in sorted(capsule.rglob("*")):
-        relative = path.relative_to(capsule).as_posix()
-        if path.is_file() and relative not in {
-            "learning.md", "assist-roadmap-proposal.md"
-        }:
-            sealed_files[relative] = _sha256(path)
     seal = {
         "schema": "reach-v8-exact-reproduction-seal-v1",
         "manifest_sha256": digest(manifest),
-        "sealed_files": sealed_files,
+        "sealed_files": _sealed_file_inventory(capsule),
     }
     atomic_write(capsule / "reproduction-seal.json", canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n")
     verify_reproduction_seal(capsule, manifest)

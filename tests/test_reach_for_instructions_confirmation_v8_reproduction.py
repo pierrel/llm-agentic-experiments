@@ -137,17 +137,10 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
 
 
 def _seal_capsule(capsule: Path, manifest: dict[str, object]) -> None:
-    sealed_files = {}
-    for path in sorted(capsule.rglob("*")):
-        relative = path.relative_to(capsule).as_posix()
-        if path.is_file() and relative not in {
-            "learning.md", "assist-roadmap-proposal.md"
-        }:
-            sealed_files[relative] = runner._sha256(path)
     seal = {
         "schema": "reach-v8-exact-reproduction-seal-v1",
         "manifest_sha256": digest(manifest),
-        "sealed_files": sealed_files,
+        "sealed_files": runner._sealed_file_inventory(capsule),
     }
     (capsule / "reproduction-seal.json").write_bytes(
         canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
