@@ -1853,6 +1853,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 ), patch.object(
                     runner, "_verified_progress",
                     return_value=([prior_admission], [completed]),
+                ), patch.object(
+                    runner, "attest", return_value=b'{}\n'
                 ), patch.object(runner, "_run_scoped", scoped):
                     with self.assertRaisesRegex(ValueError, "pre-invocation"):
                         runner.run_batch(ROOT, output, attestations, **common)
