@@ -1179,6 +1179,11 @@ def _denial_retry_not_before(
     denial = admissions[record["admission_count"] - 1]
     if denial.get("admitted") is not False or denial.get("trial_sha256") != record["trial_sha256"]:
         raise ValueError("production-denial cooldown differs from admissions")
+    if (
+        admissions[-1].get("admitted") is False
+        and record["admission_count"] != len(admissions)
+    ):
+        raise ValueError("production-denial cooldown differs from latest denial")
     if record["admission_count"] == len(admissions):
         return record["not_before_unix"]
     return None
@@ -1921,6 +1926,8 @@ def _run_batch_locked(
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
+        if _fidelity_error(existing_outcomes):
+            raise ValueError("persisted provider-request fidelity failure")
         denial_not_before = _denial_retry_not_before(output, prior_admissions)
     except Exception as error:
         _quarantine(output, "persisted reproduction progress is invalid")
@@ -1930,6 +1937,8 @@ def _run_batch_locked(
         prior_intervals = _prepare_attestation_directory(
             attestations, manifest=manifest, registration=registration
         )
+        if (prior_admissions or existing_outcomes) and not prior_intervals:
+            raise ValueError("persisted reproduction progress lacks runtime attestations")
         if prior_intervals:
             verify_execution_intervals(
                 prior_intervals,

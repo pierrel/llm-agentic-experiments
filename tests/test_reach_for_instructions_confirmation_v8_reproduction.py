@@ -1578,6 +1578,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             }
             (output / "denial-cooldown.json").write_bytes(canonical_json(cooldown) + b"\n")
             self.assertEqual(runner._denial_retry_not_before(output, [admission]), 700.0)
+            with self.assertRaisesRegex(ValueError, "latest denial"):
+                runner._denial_retry_not_before(
+                    output,
+                    [admission, {"admitted": False, "trial_sha256": "trial-2"}],
+                )
         thread = "thread-1"
         intervals = [
             {
@@ -1811,6 +1816,48 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "persisted reproduction progress"):
                         runner.run_batch(ROOT, output, attestations, **common)
                     self.assertTrue((output / runner.INVALID).exists())
+
+                shutil.rmtree(output)
+                if attestations.exists():
+                    shutil.rmtree(attestations)
+                resumed_bundle = SimpleNamespace(
+                    schedule=(
+                        SimpleNamespace(sha256="trial-1"),
+                        SimpleNamespace(sha256="trial-2"),
+                    )
+                )
+                prior_admission = {"admitted": True, "trial_sha256": "trial-1"}
+                fidelity_failure = {
+                    "outcome": "provider_error",
+                    "detail": "provider request differs from sealed request",
+                }
+                scoped = Mock()
+                with self.subTest(stage="persisted-fidelity-failure"), patch.object(
+                    runner.StudyBundle, "read_verified", return_value=resumed_bundle
+                ), patch.object(
+                    runner, "_verified_progress",
+                    return_value=([prior_admission], [fidelity_failure]),
+                ), patch.object(runner, "_run_scoped", scoped):
+                    with self.assertRaisesRegex(ValueError, "persisted reproduction progress"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+                    scoped.assert_not_called()
+
+                shutil.rmtree(output)
+                if attestations.exists():
+                    shutil.rmtree(attestations)
+                completed = {"outcome": "pass", "detail": ""}
+                scoped = Mock()
+                with self.subTest(stage="persisted-progress-without-attestation"), patch.object(
+                    runner.StudyBundle, "read_verified", return_value=resumed_bundle
+                ), patch.object(
+                    runner, "_verified_progress",
+                    return_value=([prior_admission], [completed]),
+                ), patch.object(runner, "_run_scoped", scoped):
+                    with self.assertRaisesRegex(ValueError, "pre-invocation"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    self.assertTrue((output / runner.INVALID).exists())
+                    scoped.assert_not_called()
 
                 shutil.rmtree(output)
                 if attestations.exists():

@@ -270,6 +270,12 @@ and outcome records must also retain the exact parent schemas, scheduled trial
 identity, field types, and outcome semantics in addition to valid hash chains.
 Every non-infrastructure outcome must carry the parent's request-start marker;
 an infrastructure-invalid outcome must not carry it.
+Before any resumed launch, nonempty persisted admissions or outcomes must have
+a complete corresponding runtime-attestation interval prefix. When the latest
+admission is a denial, its cooldown must bind that exact latest admission count
+and trial; an older valid cooldown cannot authorize another attempt. The wrapper
+also rescans all persisted outcomes for provider-request fidelity failures before
+admission rather than checking only outcomes returned by the current invocation.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
 detected request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
