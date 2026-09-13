@@ -31,9 +31,17 @@ def _sha256(path: Path) -> str:
 
 
 def _json(path: Path) -> Any:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for name, item in pairs:
+            if name in value:
+                raise ValueError(f"duplicate JSON member: {name}")
+            value[name] = item
+        return value
+
     try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as error:
+        return json.loads(path.read_text(), object_pairs_hook=unique_object)
+    except (OSError, ValueError) as error:
         raise ValueError(f"invalid JSON: {path}") from error
 
 

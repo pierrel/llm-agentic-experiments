@@ -385,7 +385,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
     def test_capsule_requires_one_raw_trace_hash_per_scheduled_trial(self) -> None:
         manifest = runner._load_manifest(ROOT)
-        for case in ("missing", "malformed"):
+        for case in ("missing", "malformed", "foreign-name"):
             with self.subTest(case=case), TemporaryDirectory() as temporary:
                 capsule = Path(temporary) / "capsule"
                 shutil.copytree(HISTORICAL, capsule)
@@ -401,9 +401,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 if case == "missing":
                     raw_hashes.pop(name)
                     seal["artifacts"].pop(f"traces/{name}")
-                else:
+                elif case == "malformed":
                     raw_hashes[name] = "g" * 64
                     seal["artifacts"][f"traces/{name}"] = "g" * 64
+                else:
+                    foreign = f"{'f' * 64}.json"
+                    self.assertNotIn(foreign, raw_hashes)
+                    raw_hashes[foreign] = raw_hashes.pop(name)
+                    seal["artifacts"][f"traces/{foreign}"] = seal[
+                        "artifacts"
+                    ].pop(f"traces/{name}")
                 seal_path.write_bytes(
                     canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
                 )
@@ -418,6 +425,24 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                         capsule,
                         bundle_sha256=manifest["parent"]["bundle_sha256"],
                     )
+
+    def test_capsule_rejects_duplicate_raw_trace_json_members(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = Path(temporary) / "capsule"
+            shutil.copytree(HISTORICAL, capsule)
+            run_path = capsule / "run.json"
+            run = json.loads(run_path.read_text())
+            name, value = next(iter(run["raw_trace_sha256"].items()))
+            member = canonical_json({name: value}).decode()[1:-1]
+            encoded = canonical_json(run).decode()
+            self.assertEqual(encoded.count(member), 1)
+            run_path.write_text(encoded.replace(member, f"{member},{member}") + "\n")
+            with self.assertRaisesRegex(ValueError, "invalid JSON"):
+                analysis._verify_capsule(
+                    capsule,
+                    bundle_sha256=manifest["parent"]["bundle_sha256"],
+                )
 
     def test_progress_guard_rejects_an_omitted_scheduled_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
