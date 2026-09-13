@@ -1163,20 +1163,26 @@ def _preflight_live_json(output: Path) -> None:
         )
     ]
     traces = output / "traces"
+    if traces.is_symlink():
+        raise ValueError("live trace path must be a real directory")
     if traces.exists():
-        if traces.is_symlink() or not traces.is_dir():
+        if not traces.is_dir():
             raise ValueError("live trace path must be a real directory")
         json_paths.extend(sorted(traces.glob("*.json")))
     try:
         for path in json_paths:
+            if path.is_symlink():
+                raise ValueError("live JSON evidence must be a real file")
             if path.exists():
-                if path.is_symlink() or not path.is_file():
+                if not path.is_file():
                     raise ValueError("live JSON evidence must be a real file")
                 strict_json_loads(path.read_bytes())
         for name in ("admissions.jsonl", "outcomes.jsonl"):
             path = output / name
+            if path.is_symlink():
+                raise ValueError("live JSONL evidence must be a real file")
             if path.exists():
-                if path.is_symlink() or not path.is_file():
+                if not path.is_file():
                     raise ValueError("live JSONL evidence must be a real file")
                 strict_json_lines(path.read_bytes())
     except (OSError, ValueError) as error:

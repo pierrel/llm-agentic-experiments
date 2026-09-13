@@ -32,7 +32,7 @@
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "d60772ae1b6be93efe9f2097b18833505844876485ba0e4c22befe0fe78a37e5",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "aa55589b6d1176d288c3d28e6435f99768211a4fff03d7402e95e76e5a8a2fa9",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "d6b4fd69cabe29a6b7e8cdad9d3077e3df24ddb75d4b2c5ddfedb48ed43aac18"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "c84be46fea456912c7c1ae8d6d4b250fce435462706363cbeef3d9137263204f"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -264,5 +264,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2"
   },
-  "sha256": "471386009057c971dc5d62074fd06f02a3f991f3afb83da21efb8f86fd67f927"
+  "sha256": "8e577c63a7acfd83adc03f2b522330aa17aa103d4e3b57c4764ff571d85f7389"
 }
