@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -151,6 +152,38 @@ def _seal_capsule(capsule: Path, manifest: dict[str, object]) -> None:
 
 
 class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
+    def test_sha256_streams_files_in_bounded_chunks(self) -> None:
+        payload = b"streamed model bytes"
+
+        class Source:
+            def __init__(self) -> None:
+                self.offset = 0
+                self.read_sizes: list[int] = []
+
+            def __enter__(self) -> Source:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+            def read(self, size: int) -> bytes:
+                self.read_sizes.append(size)
+                chunk = payload[self.offset:self.offset + 5]
+                self.offset += len(chunk)
+                return chunk
+
+        source = Source()
+
+        class File:
+            def open(self, mode: str) -> Source:
+                self.mode = mode
+                return source
+
+        path = File()
+        self.assertEqual(runner._sha256(path), hashlib.sha256(payload).hexdigest())
+        self.assertEqual(path.mode, "rb")
+        self.assertEqual(set(source.read_sizes), {runner.HASH_CHUNK_BYTES})
+
     def test_manifest_pins_the_exact_authoritative_parent(self) -> None:
         manifest = runner._load_manifest(ROOT)
         parent = manifest["parent"]

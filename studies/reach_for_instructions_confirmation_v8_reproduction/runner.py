@@ -44,6 +44,7 @@ PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
 COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
 RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
+HASH_CHUNK_BYTES = 1024 * 1024
 # systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
     'ready="$1"; release="$2"; shift 2; printf "R %s\\n" "$$$$" >&"$ready"; '
@@ -53,7 +54,11 @@ _SCOPE_BOOTSTRAP = (
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(HASH_CHUNK_BYTES):
+            value.update(chunk)
+    return value.hexdigest()
 
 
 def _verify_no_symlink_components(label: str, path: Path, base: Path) -> None:
