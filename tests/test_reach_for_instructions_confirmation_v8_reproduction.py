@@ -851,6 +851,18 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             finally:
                 os.close(descriptor)
 
+    def test_event_slice_rejects_crlf_records(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            prefix = b'{"event":"old"}\n'
+            events.write_bytes(prefix + b'{"event":"new"}\r\n')
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                with self.assertRaisesRegex(ValueError, "malformed"):
+                    runner._read_appended_events(descriptor, prefix)
+            finally:
+                os.close(descriptor)
+
     def test_termination_signals_become_cleanup_bearing_interruptions(self) -> None:
         with self.assertRaises(KeyboardInterrupt):
             with runner._termination_interrupts():

@@ -812,6 +812,8 @@ def _read_appended_events(descriptor: int, prefix: bytes) -> list[dict[str, Any]
     appended = complete[len(prefix):]
     if appended and not appended.endswith(b"\n"):
         raise ValueError("coordination event slice has an unterminated record")
+    if b"\r" in appended:
+        raise ValueError("coordination event slice is malformed")
     try:
         records = (
             [json.loads(line) for line in appended[:-1].split(b"\n")]
