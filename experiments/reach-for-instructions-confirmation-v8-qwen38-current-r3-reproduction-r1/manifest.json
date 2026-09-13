@@ -26,8 +26,8 @@
       "worker_workspace_relative": "worker-workspace"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "e34b5983e32eefc1ea392882c607bb7325256c65b288ccc8c32d8c8f37a7c16b",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "f6e84a3ef9109becfaa8974aec7a560b7c6400d10f6570c0a6df6882e7b13bbf",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "0a932fb262b137e0bc45f4f7a17743567273c6bfcdb9cd5ddaea5891dafc2f69",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "8abf96f504a50d4d37873741347c8719c5dd23a55533e71f0cb1d51aad9f2a53",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "7b721f9cf95091e7d911e4a8291a14bb46fd462190f122b24fc1a62e1806cf24",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "3de7eceea4801d00fc56c9687a207ce1a79829b5632c78bf777b497ad6d6874d",
@@ -262,5 +262,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "fe0f4816d605f1a8f36fe4aca650a5a893ff1be1b5dff6f3338d05fe0f722fe3"
+  "sha256": "f3a6a230e58dc00437a8fdac1cf1f0effe9d28f62c9101431b92a56b19253d7a"
 }

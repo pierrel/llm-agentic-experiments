@@ -59,9 +59,9 @@ The reproduction adds no model-visible treatment. Its wrapper:
    Preparation copies the hash-pinned gate and mode-0600 deployment environment into
    a private read-only worker-workspace snapshot with both content digests fixed.
    Each batch opens first, verifies through, and addresses that snapshot through a
-   directory descriptor held by the wrapper. The parent, exact code checkouts, and
-   interpreter environment all execute through similarly verified held descriptors,
-   including during archive. The inherited parent canonicalizes its descriptor path
+   directory descriptor held by the wrapper. The parent, exact code checkouts,
+   launcher, and dependency directory all execute through similarly verified held
+   descriptors, including during archive. The inherited parent canonicalizes its descriptor path
    to that same prepared checkout before work; the cooperative same-UID protocol, not
    an adversarial local security boundary, protects it after that inherited step.
 4. Attests the interpreter, resolved modules, the full non-extra dependency

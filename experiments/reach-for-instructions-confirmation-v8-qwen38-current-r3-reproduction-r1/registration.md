@@ -129,9 +129,10 @@ unobserved request-fidelity counts for every cell.
 The unchanged V8-r3 runner executes from a private clean detached checkout of
 the parent commit. Assist executes from a separate private clean detached
 checkout at commit `54b7b1049f43b86a0907203872b7b9c9ae8fb9a4`, tree
-`e3df40b30613c94a6d3455e920748b4c155a84a1`. The deployed Assist interpreter is
-used with `PYTHONSAFEPATH=1`, `PYTHONNOUSERSITE=1`, and a `PYTHONPATH` containing
-only those two source roots. The wrapper verifies exact imported files and every
+`e3df40b30613c94a6d3455e920748b4c155a84a1`. The fixed root-owned system
+interpreter is used through the registered `-S` launcher with
+`PYTHONSAFEPATH=1`, `PYTHONNOUSERSITE=1`, and a `PYTHONPATH` containing the two
+source roots plus the registered dependency tree. The wrapper verifies exact imported files and every
 installed file listed in each distribution RECORD in the non-extra dependency
 closure rooted at deepagents and langchain-openai. Declared RECORD hashes must
 match, and the actual bytes of both hashed and unhashed entries feed the closure
