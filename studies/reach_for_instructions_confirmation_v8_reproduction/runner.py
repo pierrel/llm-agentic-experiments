@@ -95,6 +95,7 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
     BATCH_EPISODES,
     DENIAL,
     DENIAL_RETRY_SECONDS,
+    strict_json_lines,
     strict_json_loads,
     verify_attestation_inventory,
     verify_execution_intervals,
@@ -1139,6 +1140,7 @@ def _verified_progress(
     output: Path, bundle: StudyBundle
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Verify that persisted admissions and outcomes retain one schedule prefix."""
+    _preflight_live_json(output)
     admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
     outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256).read_verified()
     admission_records = admissions.read_verified()
@@ -1149,6 +1151,36 @@ def _verified_progress(
     if index != len(outcomes) or admitted != completed or len(outcomes) > len(bundle.schedule):
         raise ValueError("persisted reproduction progress differs from the schedule")
     return admission_records, outcomes
+
+
+def _preflight_live_json(output: Path) -> None:
+    """Reject ambiguous active evidence before invoking a permissive parent reader."""
+    json_paths = [
+        output / name
+        for name in (
+            "bundle.json", "admissions.jsonl.seal", "outcomes.jsonl.seal",
+            "report.json", "trial-metadata.json",
+        )
+    ]
+    traces = output / "traces"
+    if traces.exists():
+        if traces.is_symlink() or not traces.is_dir():
+            raise ValueError("live trace path must be a real directory")
+        json_paths.extend(sorted(traces.glob("*.json")))
+    try:
+        for path in json_paths:
+            if path.exists():
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError("live JSON evidence must be a real file")
+                strict_json_loads(path.read_bytes())
+        for name in ("admissions.jsonl", "outcomes.jsonl"):
+            path = output / name
+            if path.exists():
+                if path.is_symlink() or not path.is_file():
+                    raise ValueError("live JSONL evidence must be a real file")
+                strict_json_lines(path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise ValueError("live reproduction JSON evidence is malformed or ambiguous") from error
 
 
 def _read_denial_cooldown(
@@ -2378,6 +2410,7 @@ def _archive_and_analyze_locked(
     attestation_files, intervals = verify_attestation_inventory(
         attestations, manifest=manifest, registration=registration
     )
+    _preflight_live_json(output)
     bundle = StudyBundle.read_verified(output / "bundle.json")
     admissions, outcomes = _verified_progress(output, bundle)
     if len(outcomes) != len(bundle.schedule):

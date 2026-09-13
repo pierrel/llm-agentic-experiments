@@ -481,6 +481,44 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "progress differs"):
                 runner._verified_progress(output, bundle)
 
+    def test_progress_guard_rejects_duplicate_active_admission_before_launch(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            shutil.copy2(HISTORICAL / "admissions.jsonl", output / "admissions.jsonl")
+            shutil.copy2(HISTORICAL / "outcomes.jsonl", output / "outcomes.jsonl")
+            lines = (output / "admissions.jsonl").read_text().splitlines()
+            record = json.loads(lines[0])
+            member = canonical_json({"trial_id": record["trial_id"]}).decode()[1:-1]
+            self.assertEqual(lines[0].count(member), 1)
+            lines[0] = lines[0].replace(member, f"{member},{member}")
+            (output / "admissions.jsonl").write_text("\n".join(lines) + "\n")
+            parent = Mock()
+            with patch.object(
+                runner.StudyBundle, "read_verified", return_value=bundle
+            ), patch.object(runner, "_run_scoped", parent):
+                with self.assertRaisesRegex(ValueError, "persisted reproduction progress"):
+                    runner._run_batch_locked(
+                        ROOT,
+                        output,
+                        output / "attestations",
+                        manifest={
+                            "execution": {"coordination_thread_id": "thread"},
+                            "parent": {"bundle_path": "bundle.json"},
+                        },
+                        registration=TEST_REGISTRATION,
+                        execution_root=output / "execution",
+                        assist_source=output / "assist",
+                        assist_python=output / "python",
+                        workspace_root=output / "workspace",
+                        model_path=output / "model",
+                        server_pid=1,
+                        llama_source=output / "llama",
+                        events=output / "events.jsonl",
+                    )
+            parent.assert_not_called()
+            self.assertTrue((output / runner.INVALID).exists())
+
     def test_progress_guard_rejects_a_rechained_invalid_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
         with TemporaryDirectory() as temporary:

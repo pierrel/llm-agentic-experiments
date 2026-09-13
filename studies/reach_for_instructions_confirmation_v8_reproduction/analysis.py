@@ -10,6 +10,7 @@ from typing import Any
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, OUTCOME_KINDS, RecordChain
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
+    strict_json_lines,
     strict_json_loads,
     verify_attestation_inventory,
     verify_execution_intervals,
@@ -40,8 +41,7 @@ def _json(path: Path) -> Any:
 def _verify_json_lines(path: Path) -> None:
     """Reject ambiguous members in a JSONL evidence chain before verification."""
     try:
-        for line in path.read_bytes().splitlines():
-            strict_json_loads(line)
+        strict_json_lines(path.read_bytes())
     except (OSError, ValueError) as error:
         raise ValueError(f"invalid JSONL: {path}") from error
 

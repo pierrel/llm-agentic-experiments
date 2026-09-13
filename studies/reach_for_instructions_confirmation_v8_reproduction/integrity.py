@@ -39,6 +39,11 @@ def strict_json_loads(source: str | bytes) -> Any:
         raise ValueError("JSON evidence is malformed or ambiguous") from error
 
 
+def strict_json_lines(source: str | bytes) -> list[Any]:
+    """Decode every JSONL record while rejecting ambiguous duplicate members."""
+    return [strict_json_loads(line) for line in source.splitlines()]
+
+
 def verify_event_interval(record: Any) -> list[dict[str, Any]]:
     """Return ordered event records that fall inside their parent invocation."""
     expected = {
