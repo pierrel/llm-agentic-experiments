@@ -1113,6 +1113,12 @@ def _quarantine(output: Path, reason: str) -> None:
     atomic_write(output / INVALID, canonical_json({"reason": reason, "resume": False}) + b"\n")
 
 
+def _is_quarantined(output: Path) -> bool:
+    """Treat any real or dangling quarantine marker as permanently invalid."""
+    marker = output / INVALID
+    return marker.is_symlink() or marker.exists()
+
+
 @contextmanager
 def _wrapper_lock(output: Path):
     """Serialize the full administrative wrapper without deadlocking its child."""
@@ -2260,7 +2266,7 @@ def _run_batch(
                     raise ValueError("reproduction output must be a real directory")
                 if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
                     raise ValueError("reproduction output must have mode 0700")
-                if (output / INVALID).exists():
+                if _is_quarantined(output):
                     raise ValueError("reproduction output is quarantined and cannot resume")
                 try:
                     manifest = _load_manifest(root)
@@ -2529,7 +2535,7 @@ def _archive_and_analyze(
             raise ValueError("reproduction output must be a real directory")
         if stat.S_IMODE(output.stat().st_mode) != 0o700:
             raise ValueError("reproduction output must have mode 0700")
-        if (output / INVALID).exists():
+        if _is_quarantined(output):
             raise ValueError("a quarantined reproduction cannot be archived")
         with _termination_interrupts():
             try:

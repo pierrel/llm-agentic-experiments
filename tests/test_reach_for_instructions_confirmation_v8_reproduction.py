@@ -2060,6 +2060,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     "python_environment": {},
                 },
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
+                output.mkdir(mode=0o700)
+                (output / runner.INVALID).symlink_to(output / "missing-invalid.json")
+                with self.subTest(stage="dangling-quarantine-marker"), patch.object(
+                    runner, "_run_batch_locked"
+                ) as launch:
+                    with self.assertRaisesRegex(ValueError, "quarantined"):
+                        runner.run_batch(ROOT, output, attestations, **common)
+                    launch.assert_not_called()
+
+                shutil.rmtree(output)
                 with self.subTest(stage="registered-input-drift"), patch.object(
                     runner, "_load_manifest", side_effect=ValueError("changed registration")
                 ):
