@@ -383,6 +383,42 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     TEST_REGISTRATION,
                 )
 
+    def test_capsule_requires_one_raw_trace_hash_per_scheduled_trial(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        for case in ("missing", "malformed"):
+            with self.subTest(case=case), TemporaryDirectory() as temporary:
+                capsule = Path(temporary) / "capsule"
+                shutil.copytree(HISTORICAL, capsule)
+                run_path = capsule / "run.json"
+                run = json.loads(run_path.read_text())
+                run.pop("record_sha256")
+                raw_hashes = run["raw_trace_sha256"]
+                assert isinstance(raw_hashes, dict)
+                name = next(iter(raw_hashes))
+                seal_path = capsule / "outcomes.jsonl.seal"
+                seal = json.loads(seal_path.read_text())
+                seal.pop("seal_sha256")
+                if case == "missing":
+                    raw_hashes.pop(name)
+                    seal["artifacts"].pop(f"traces/{name}")
+                else:
+                    raw_hashes[name] = "g" * 64
+                    seal["artifacts"][f"traces/{name}"] = "g" * 64
+                seal_path.write_bytes(
+                    canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
+                )
+                run["tracked_files"]["outcomes.jsonl.seal"] = runner._sha256(
+                    seal_path
+                )
+                run_path.write_bytes(
+                    canonical_json(run | {"record_sha256": digest(run)}) + b"\n"
+                )
+                with self.assertRaisesRegex(ValueError, "raw-trace inventory"):
+                    analysis._verify_capsule(
+                        capsule,
+                        bundle_sha256=manifest["parent"]["bundle_sha256"],
+                    )
+
     def test_progress_guard_rejects_an_omitted_scheduled_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
         with TemporaryDirectory() as temporary:
@@ -1639,6 +1675,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             thread_id=thread,
             schedule_size=1,
         )
+        intervals[0]["next_denial_not_before_unix"] = 1789171799.0
+        with self.assertRaisesRegex(ValueError, "shorter than registered"):
+            runner.verify_execution_intervals(
+                intervals,
+                admissions=[admission, {"admitted": True}],
+                outcomes=[{"outcome": "pass"}],
+                thread_id=thread,
+                schedule_size=1,
+            )
+        intervals[0]["next_denial_not_before_unix"] = 1789171800.0
         intervals[1]["started_at"] = "2026-09-12T00:09:59+00:00"
         with self.assertRaisesRegex(ValueError, "cadence"):
             runner.verify_execution_intervals(
@@ -1708,6 +1754,34 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "denial cooldown"):
                 runner._verify_live_cooldowns(
                     output, admissions, [denial_interval, batch_interval]
+                )
+
+    def test_live_cooldowns_reject_symlinked_records(self) -> None:
+        with TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            output = parent / "output"
+            output.mkdir()
+            external = parent / "external.json"
+            external.write_bytes(canonical_json({
+                "completed_outcomes": 24,
+                "not_before_unix": 1000.0,
+            }) + b"\n")
+            (output / "batch-cooldown.json").symlink_to(external)
+            with self.assertRaisesRegex(ValueError, "real file"):
+                runner._verify_live_cooldowns(output, [], [])
+
+            (output / "batch-cooldown.json").unlink()
+            external.write_bytes(canonical_json({
+                "admission_count": 1,
+                "not_before_unix": 700.0,
+                "trial_sha256": "trial-1",
+            }) + b"\n")
+            (output / "denial-cooldown.json").symlink_to(external)
+            with self.assertRaisesRegex(ValueError, "real file"):
+                runner._verify_live_cooldowns(
+                    output,
+                    [{"admitted": False, "trial_sha256": "trial-1"}],
+                    [],
                 )
 
     def test_archive_rechecks_live_cooldowns_before_copying(self) -> None:

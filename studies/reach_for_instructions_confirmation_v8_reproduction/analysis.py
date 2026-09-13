@@ -114,6 +114,14 @@ def _verify_capsule(
     raw_hashes = run.get("raw_trace_sha256")
     if not isinstance(raw_hashes, dict):
         raise ValueError("capsule raw-trace inventory is missing")
+    expected_raw_names = {f"{trial.sha256}.json" for trial in bundle.schedule}
+    if set(raw_hashes) != expected_raw_names or any(
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+        for value in raw_hashes.values()
+    ):
+        raise ValueError("capsule raw-trace inventory is incomplete or malformed")
     expected_artifacts = {"report.json": _sha256(capsule / "report.json")} | {
         f"traces/{name}": value for name, value in raw_hashes.items()
     }

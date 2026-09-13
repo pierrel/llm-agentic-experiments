@@ -245,7 +245,7 @@ def verify_execution_intervals(
         started = datetime.fromisoformat(current["started_at"]).timestamp()
         finished = datetime.fromisoformat(current["finished_at"]).timestamp()
         if denied:
-            if denial_not_before < finished + DENIAL_RETRY_SECONDS - 1:
+            if denial_not_before < finished + DENIAL_RETRY_SECONDS:
                 raise ValueError("production-denial cooldown is shorter than registered")
             if index + 1 < len(intervals):
                 resumed = datetime.fromisoformat(intervals[index + 1]["started_at"]).timestamp()

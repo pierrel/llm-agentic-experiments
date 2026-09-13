@@ -1160,6 +1160,8 @@ def _read_denial_cooldown(
         index for index, admission in enumerate(admissions, start=1)
         if admission.get("admitted") is False
     ]
+    if path.is_symlink():
+        raise ValueError("production-denial cooldown must be a real file")
     if not path.exists():
         if denial_counts:
             raise ValueError("production-denial cooldown is missing")
@@ -1659,6 +1661,8 @@ def _run_scoped(
 
 def _read_batch_cooldown(path: Path) -> dict[str, int | float]:
     """Read the exact inherited batch-cooldown record shape."""
+    if path.is_symlink():
+        raise ValueError("sealed batch cooldown must be a real file")
     try:
         value = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
@@ -1688,6 +1692,8 @@ def _verify_live_cooldowns(
         if interval["next_batch_not_before_unix"] is not None
     ]
     batch_path = output / "batch-cooldown.json"
+    if batch_path.is_symlink():
+        raise ValueError("sealed batch cooldown must be a real file")
     if batch_intervals:
         expected_batch = batch_intervals[-1]
         batch = _read_batch_cooldown(batch_path)
