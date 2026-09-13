@@ -145,6 +145,27 @@ published registration, private directories, wrapper lock, append-only event
 slices, and final seals prevent accidental or ordinary operator substitution.
 They do not claim to prove provenance against a malicious local administrator.
 
+## Review decisions before admission
+
+Successive pre-admission reviews found and fixed concrete integrity gaps before
+any Qwen episode ran: unbounded preparatory subprocesses, termination windows,
+incomplete launcher cleanup, inherited Git/system loader variables, repository-
+local URL rewriting, caller virtual-environment startup hooks, opaque review-hash
+claims, preparation without the registered coordinator, and the unchanged
+parent's removal of the explicit dependency path before nested workers. The
+current construction bounds and reaps every preparatory process group, keeps the
+full signal guard active, uses fixed minimal metadata environments, runs the
+fixed system interpreter with `-S`, embeds and hashes review results in the tag,
+coordinator-binds preparation, and restores the descriptor-bound dependency path
+inside the fixed launcher.
+
+One adversarial review asked for cryptographic authentication of the public
+coordinator UUID against another same-UID process. That finding is declined: the
+workspace protocol explicitly defines the UUID as a cooperative operational
+binding, not a secret credential or a security boundary against a malicious
+local peer. Adding a new secret-authentication system would not make this exact
+reproduction more valid within its registered threat model.
+
 ## Independent preregistration review
 
 Before any model admission, independent Terra reviewers examine four lenses:
