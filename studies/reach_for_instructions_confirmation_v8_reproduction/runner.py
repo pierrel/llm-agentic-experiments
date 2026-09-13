@@ -831,10 +831,16 @@ def _time_bound() -> str:
 
 @contextmanager
 def _termination_interrupts():
-    """Convert terminating wrapper signals into cleanup-bearing exceptions."""
-    originals = {number: signal.getsignal(number) for number in (signal.SIGHUP, signal.SIGTERM)}
+    """Raise on the first terminating signal and coalesce repeats through cleanup."""
+    numbers = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    originals = {number: signal.getsignal(number) for number in numbers}
+    interrupted = False
 
     def interrupt(number: int, _frame: Any) -> None:
+        nonlocal interrupted
+        if interrupted:
+            return
+        interrupted = True
         raise KeyboardInterrupt(f"wrapper received signal {number}")
 
     try:
@@ -1013,7 +1019,7 @@ def _kill_unbound_scope(
 def _run_scoped(
     command: list[str], *, cwd: Path, env: dict[str, str], output: Path, stage: str
 ) -> subprocess.CompletedProcess[str]:
-    """Run one child tree in a killable user scope and reap it on interruption."""
+    """Run and reap one child tree under the caller's termination guard."""
     _scope_capability()
     unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
     ready_read, ready_write = os.pipe()
@@ -1026,27 +1032,26 @@ def _run_scoped(
     process: subprocess.Popen[str] | None = None
     scope: Path | None = None
     try:
-        with _termination_interrupts():
-            process = subprocess.Popen(
-                scoped_command,
-                cwd=cwd,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-                pass_fds=(ready_write, release_read),
-            )
-            os.close(ready_write)
-            ready_write = -1
-            os.close(release_read)
-            release_read = -1
-            scope = _bind_scope(unit, ready_read)
-            _release_scope(release_write)
-            os.close(release_write)
-            release_write = -1
-            stdout, stderr = process.communicate()
-            _verify_scope_empty(scope)
+        process = subprocess.Popen(
+            scoped_command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            pass_fds=(ready_write, release_read),
+        )
+        os.close(ready_write)
+        ready_write = -1
+        os.close(release_read)
+        release_read = -1
+        scope = _bind_scope(unit, ready_read)
+        _release_scope(release_write)
+        os.close(release_write)
+        release_write = -1
+        stdout, stderr = process.communicate()
+        _verify_scope_empty(scope)
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
         with _defer_termination_signals():
@@ -1590,8 +1595,8 @@ def run_batch(
         root, output, attestations, execution_root, assist_source, workspace_root, events
     )
     with _wrapper_lock(output):
-        try:
-            with _termination_interrupts():
+        with _termination_interrupts():
+            try:
                 if output.is_symlink() or (output.exists() and not output.is_dir()):
                     raise ValueError("reproduction output must be a real directory")
                 if output.exists() and stat.S_IMODE(output.stat().st_mode) != 0o700:
@@ -1621,11 +1626,11 @@ def run_batch(
                     llama_source=llama_source,
                     events=events,
                 )
-        except BaseException as error:
-            with _defer_termination_signals():
-                if not isinstance(error, Exception):
-                    _quarantine(output, "reproduction wrapper was interrupted")
-            raise
+            except BaseException as error:
+                with _defer_termination_signals():
+                    if not isinstance(error, Exception):
+                        _quarantine(output, "reproduction wrapper was interrupted")
+                raise
 
 
 def _verify_archive_runtime(
@@ -1838,8 +1843,8 @@ def archive_and_analyze(
             raise ValueError("reproduction output must have mode 0700")
         if (output / INVALID).exists():
             raise ValueError("a quarantined reproduction cannot be archived")
-        try:
-            with _termination_interrupts():
+        with _termination_interrupts():
+            try:
                 manifest = _load_manifest(root)
                 registration = _verify_local_registration(root, manifest)
                 if capsule.exists():
@@ -1865,12 +1870,14 @@ def archive_and_analyze(
                     assist_python=assist_python,
                     workspace_root=workspace_root,
                 )
-        except BaseException as error:
-            with _defer_termination_signals():
-                _quarantine(output, "archive or analysis integrity failed")
-            if not isinstance(error, Exception):
-                raise
-            raise ValueError("archive or analysis integrity failed; reproduction quarantined") from error
+            except BaseException as error:
+                with _defer_termination_signals():
+                    _quarantine(output, "archive or analysis integrity failed")
+                if not isinstance(error, Exception):
+                    raise
+                raise ValueError(
+                    "archive or analysis integrity failed; reproduction quarantined"
+                ) from error
 
 
 def main() -> None:

@@ -499,13 +499,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
     def test_scoped_child_interruption_kills_the_complete_systemd_scope(self) -> None:
         process = Mock()
-        process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+
+        def interrupt_child(*_args, **_kwargs):
+            os.kill(os.getpid(), signal.SIGTERM)
+            self.fail("SIGTERM did not interrupt the scoped child")
+
+        process.communicate.side_effect = interrupt_child
         process.returncode = -9
         cleanup_state: list[str] = []
 
         @contextmanager
         def defer_signals():
             cleanup_state.append("entered")
+            os.kill(os.getpid(), signal.SIGTERM)
             try:
                 yield
             finally:
@@ -524,13 +530,14 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_defer_termination_signals", side_effect=defer_signals
             ):
                 with self.assertRaises(KeyboardInterrupt):
-                    runner._run_scoped(
-                        ["/unused-parent"],
-                        cwd=Path(temporary),
-                        env={},
-                        output=output,
-                        stage="archive worker",
-                    )
+                    with runner._termination_interrupts():
+                        runner._run_scoped(
+                            ["/unused-parent"],
+                            cwd=Path(temporary),
+                            env={},
+                            output=output,
+                            stage="archive worker",
+                        )
             self.assertTrue((output / runner.INVALID).exists())
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
             self.assertEqual(cleanup_state, ["entered", "exited"])

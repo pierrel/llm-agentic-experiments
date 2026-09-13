@@ -177,9 +177,10 @@ the parent payload from starting until the wrapper observes and validates that
 exact live cgroup. Normal completion requires the previously bound scope to be
 empty. Wrapper interruption kills the complete bound scope through the cgroup's
 atomic `cgroup.kill` control, reaps its launcher, and verifies no scope member
-remains before quarantine and lock release. Signal conversion remains active
-through post-run reconciliation, while further terminating signals are deferred
-until scope cleanup and quarantine are durable. A failure before binding can stop only
+remains before quarantine and lock release. One signal guard remains active
+through child cleanup and post-run reconciliation. Repeated signals are coalesced
+until cleanup begins, then kernel-level deferral protects the kill, reap, and
+quarantine sequence until it is durable. A failure before binding can stop only
 the still-gated bootstrap and can never release the parent payload.
 
 The wrapper hashes that exact shared gate before and after every invocation and
