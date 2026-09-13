@@ -45,6 +45,10 @@ COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
 RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 HASH_CHUNK_BYTES = 1024 * 1024
+EVENT_READ_BYTES = 64 * 1024
+EVENT_RECORD_BYTES = 1024 * 1024
+MAX_ATTESTED_EVENTS = 2 * BATCH_EPISODES
+
 # systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
     'ready="$1"; release="$2"; shift 2; printf "R %s\\n" "$$$$" >&"$ready"; '
@@ -800,35 +804,79 @@ def _prepare_attestation_directory(
     return []
 
 
-def _read_event_descriptor(descriptor: int) -> bytes:
-    """Read one stable event-log inode at its current exact length."""
+def _descriptor_sha256(descriptor: int, size: int) -> str:
+    """Hash an exact descriptor prefix without allocating it as one object."""
+    value = hashlib.sha256()
+    offset = 0
+    while offset < size:
+        chunk = os.pread(descriptor, min(HASH_CHUNK_BYTES, size - offset), offset)
+        if not chunk:
+            raise ValueError("coordination event log changed while being read")
+        value.update(chunk)
+        offset += len(chunk)
+    return value.hexdigest()
+
+
+def _read_event_descriptor(descriptor: int) -> tuple[int, str, bool]:
+    """Fingerprint one stable event-log inode at its current exact length."""
     size = os.fstat(descriptor).st_size
-    complete = os.pread(descriptor, size, 0)
-    if len(complete) != size:
+    digest_value = _descriptor_sha256(descriptor, size)
+    final = os.pread(descriptor, 1, size - 1) if size else b""
+    if size and len(final) != 1:
         raise ValueError("coordination event log changed while being read")
-    return complete
+    return size, digest_value, final == b"\n"
 
 
-def _read_appended_events(descriptor: int, prefix: bytes) -> list[dict[str, Any]]:
-    """Read complete records appended to an unchanged, already-open inode."""
-    complete = _read_event_descriptor(descriptor)
-    if complete[:len(prefix)] != prefix:
+def _read_appended_events(
+    descriptor: int, prefix: tuple[int, str, bool], thread_id: str
+) -> list[dict[str, Any]]:
+    """Validate an append-only event slice and retain its bounded relevant records."""
+    prefix_size, prefix_sha256, _ = prefix
+    complete_size = os.fstat(descriptor).st_size
+    if (
+        complete_size < prefix_size
+        or _descriptor_sha256(descriptor, prefix_size) != prefix_sha256
+    ):
         raise ValueError("coordination event log changed non-append-only")
-    appended = complete[len(prefix):]
-    if appended and not appended.endswith(b"\n"):
-        raise ValueError("coordination event slice has an unterminated record")
-    if b"\r" in appended:
-        raise ValueError("coordination event slice is malformed")
-    try:
-        records = (
-            [json.loads(line) for line in appended[:-1].split(b"\n")]
-            if appended
-            else []
+    records: list[dict[str, Any]] = []
+    buffer = b""
+    offset = prefix_size
+    while offset < complete_size:
+        chunk = os.pread(
+            descriptor, min(EVENT_READ_BYTES, complete_size - offset), offset
         )
-    except json.JSONDecodeError as error:
-        raise ValueError("coordination event slice is malformed") from error
-    if not all(isinstance(record, dict) for record in records):
-        raise ValueError("coordination event slice is malformed")
+        if not chunk:
+            raise ValueError("coordination event log changed while being read")
+        if b"\r" in chunk:
+            raise ValueError("coordination event slice is malformed")
+        offset += len(chunk)
+        lines = (buffer + chunk).split(b"\n")
+        buffer = lines.pop()
+        for line in lines:
+            if len(line) > EVENT_RECORD_BYTES:
+                raise ValueError("coordination event record is too large")
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError("coordination event slice is malformed") from error
+            if not isinstance(record, dict):
+                raise ValueError("coordination event slice is malformed")
+            if (
+                record.get("thread") == thread_id
+                and record.get("resource") == "llm"
+                and record.get("event") in {
+                    "production_admission_denied", "resource_started", "resource_finished"
+                }
+            ):
+                records.append(record)
+                if len(records) > MAX_ATTESTED_EVENTS:
+                    raise ValueError(
+                        "coordination event slice has too many relevant events"
+                    )
+        if len(buffer) > EVENT_RECORD_BYTES:
+            raise ValueError("coordination event record is too large")
+    if buffer:
+        raise ValueError("coordination event slice has an unterminated record")
     return records
 
 
@@ -1010,6 +1058,15 @@ def _kill_unbound_scope(
         )
     except (OSError, subprocess.TimeoutExpired):
         pass
+    scope = _scope_cgroup(unit)
+    _verify_no_symlink_components("startup-gated process scope", scope, Path("/"))
+    scope_error: Exception | None = None
+    if scope.exists():
+        try:
+            _kill_scope(process, scope)
+            return
+        except Exception as error:
+            scope_error = error
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -1018,9 +1075,12 @@ def _kill_unbound_scope(
         process.communicate(timeout=10)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError("startup-gated scope launcher could not be reaped") from error
-    scope = _scope_cgroup(unit)
-    _verify_no_symlink_components("startup-gated process scope", scope, Path("/"))
-    _verify_scope_empty(scope)
+    try:
+        _verify_scope_empty(scope)
+    except Exception:
+        if scope_error is not None:
+            raise RuntimeError("startup-gated scope could not be killed") from scope_error
+        raise
 
 
 def _run_scoped(
@@ -1440,13 +1500,13 @@ def _run_batch_locked(
         if not stat.S_ISREG(event_metadata.st_mode):
             raise ValueError("coordination event log is not a regular file")
         prefix = _read_event_descriptor(event_descriptor)
-    except (OSError, ValueError) as error:
+    except Exception as error:
         if event_descriptor >= 0:
             os.close(event_descriptor)
             event_descriptor = -1
         _quarantine(output, "coordination event log is unavailable")
         raise ValueError("coordination event log is unavailable") from error
-    if prefix and not prefix.endswith(b"\n"):
+    if prefix[0] and not prefix[2]:
         os.close(event_descriptor)
         event_descriptor = -1
         _quarantine(output, "coordination event log has an unterminated prefix")
@@ -1474,8 +1534,8 @@ def _run_batch_locked(
                 stage="parent runner",
             )
             finished_at = _time_bound()
-        new_events = _read_appended_events(event_descriptor, prefix)
-    except (OSError, ValueError):
+        new_events = _read_appended_events(event_descriptor, prefix, thread_id)
+    except Exception:
         _quarantine(output, "bound runtime or event attestation failed")
         raise
     finally:

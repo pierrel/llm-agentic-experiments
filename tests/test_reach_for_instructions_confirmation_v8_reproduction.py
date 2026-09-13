@@ -607,6 +607,20 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             terminate.assert_called_once()
             self.assertIs(terminate.call_args.args[0], process)
 
+    def test_failed_systemd_kill_uses_the_live_unbound_scope_control(self) -> None:
+        process = Mock()
+        with TemporaryDirectory() as temporary:
+            scope = Path(temporary) / "live.scope"
+            scope.mkdir()
+            with patch.object(
+                runner.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)
+            ), patch.object(
+                runner, "_scope_cgroup", return_value=scope
+            ), patch.object(runner, "_kill_scope") as atomic_kill:
+                runner._kill_unbound_scope(process, "live", {})
+        atomic_kill.assert_called_once_with(process, scope)
+        process.communicate.assert_not_called()
+
     def test_scope_bootstrap_never_releases_payload_on_pipe_eof(self) -> None:
         with TemporaryDirectory() as temporary:
             marker = Path(temporary) / "payload-ran"
@@ -841,16 +855,20 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
             prefix = b'{"event":"old"}\n'
-            appended = b'{"event":"new"}\n'
+            prefix_identity = (len(prefix), hashlib.sha256(prefix).hexdigest(), True)
+            appended = (
+                b'{"event":"resource_started","resource":"llm","thread":"thread"}\n'
+            )
             events.write_bytes(prefix + appended)
             descriptor = os.open(events, os.O_RDONLY)
             try:
                 self.assertEqual(
-                    runner._read_appended_events(descriptor, prefix), [{"event": "new"}]
+                    runner._read_appended_events(descriptor, prefix_identity, "thread"),
+                    [{"event": "resource_started", "resource": "llm", "thread": "thread"}],
                 )
                 events.write_bytes(b'{"event":"bad"}\n' + appended)
                 with self.assertRaisesRegex(ValueError, "non-append-only"):
-                    runner._read_appended_events(descriptor, prefix)
+                    runner._read_appended_events(descriptor, prefix_identity, "thread")
             finally:
                 os.close(descriptor)
 
@@ -858,14 +876,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
             prefix = b'{"event":"old"}\n'
-            events.write_bytes(prefix + b'{"event":"real"}\n')
+            prefix_identity = (len(prefix), hashlib.sha256(prefix).hexdigest(), True)
+            real = b'{"event":"resource_started","resource":"llm","thread":"thread"}\n'
+            events.write_bytes(prefix + real)
             descriptor = os.open(events, os.O_RDONLY)
             try:
                 replacement = events.with_suffix(".replacement")
                 replacement.write_bytes(prefix + b'{"event":"fabricated"}\n')
                 replacement.replace(events)
                 self.assertEqual(
-                    runner._read_appended_events(descriptor, prefix), [{"event": "real"}]
+                    runner._read_appended_events(descriptor, prefix_identity, "thread"),
+                    [{"event": "resource_started", "resource": "llm", "thread": "thread"}],
                 )
             finally:
                 os.close(descriptor)
@@ -877,10 +898,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             events.write_bytes(
                 prefix + b'{"event":"started"}\r{"event":"finished"}\n'
             )
+            prefix_identity = (len(prefix), hashlib.sha256(prefix).hexdigest(), True)
             descriptor = os.open(events, os.O_RDONLY)
             try:
                 with self.assertRaisesRegex(ValueError, "malformed"):
-                    runner._read_appended_events(descriptor, prefix)
+                    runner._read_appended_events(descriptor, prefix_identity, "thread")
             finally:
                 os.close(descriptor)
 
@@ -889,10 +911,44 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             events = Path(temporary) / "events.jsonl"
             prefix = b'{"event":"old"}\n'
             events.write_bytes(prefix + b'{"event":"new"}\r\n')
+            prefix_identity = (len(prefix), hashlib.sha256(prefix).hexdigest(), True)
             descriptor = os.open(events, os.O_RDONLY)
             try:
                 with self.assertRaisesRegex(ValueError, "malformed"):
-                    runner._read_appended_events(descriptor, prefix)
+                    runner._read_appended_events(descriptor, prefix_identity, "thread")
+            finally:
+                os.close(descriptor)
+
+    def test_event_descriptor_hashes_with_bounded_reads(self) -> None:
+        size = runner.HASH_CHUNK_BYTES * 2 + 17
+        calls: list[tuple[int, int]] = []
+
+        def pread(_descriptor: int, count: int, offset: int) -> bytes:
+            calls.append((count, offset))
+            return b"x" * count
+
+        with patch.object(runner.os, "pread", side_effect=pread):
+            result = runner._descriptor_sha256(7, size)
+        self.assertEqual(result, hashlib.sha256(b"x" * size).hexdigest())
+        self.assertEqual(
+            calls,
+            [
+                (runner.HASH_CHUNK_BYTES, 0),
+                (runner.HASH_CHUNK_BYTES, runner.HASH_CHUNK_BYTES),
+                (17, runner.HASH_CHUNK_BYTES * 2),
+            ],
+        )
+
+    def test_event_slice_rejects_an_oversized_record(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            prefix = b'{"event":"old"}\n'
+            events.write_bytes(prefix + b"{" + b"x" * runner.EVENT_RECORD_BYTES + b"}\n")
+            prefix_identity = (len(prefix), hashlib.sha256(prefix).hexdigest(), True)
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                with self.assertRaisesRegex(ValueError, "too large"):
+                    runner._read_appended_events(descriptor, prefix_identity, "thread")
             finally:
                 os.close(descriptor)
 
