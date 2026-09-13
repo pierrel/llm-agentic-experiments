@@ -2423,8 +2423,17 @@ def _archive_and_analyze_locked(
         attestations, manifest=manifest, registration=registration
     )
     _preflight_live_json(output)
-    bundle = StudyBundle.read_verified(output / "bundle.json")
+    bundle_path = output / "bundle.json"
+    bundle = StudyBundle.read_verified(bundle_path)
+    parent = manifest["parent"]
+    if (
+        bundle.sha256 != parent["bundle_sha256"]
+        or _sha256(bundle_path) != parent["bundle_file_sha256"]
+    ):
+        raise ValueError("live parent bundle differs from registration")
     admissions, outcomes = _verified_progress(output, bundle)
+    if _fidelity_error(outcomes):
+        raise ValueError("persisted provider-request fidelity failure")
     if len(outcomes) != len(bundle.schedule):
         raise ValueError("incomplete reproduction cannot be archived")
     execution_events = verify_execution_intervals(

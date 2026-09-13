@@ -1905,14 +1905,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
 
     def test_archive_rechecks_live_cooldowns_before_copying(self) -> None:
         scoped = Mock()
-        manifest = {"execution": {"coordination_thread_id": "thread"}}
+        manifest = {
+            "execution": {"coordination_thread_id": "thread"},
+            "parent": {"bundle_file_sha256": "file", "bundle_sha256": "bundle"},
+        }
         with patch.object(
             runner, "_verify_archive_runtime"
         ), patch.object(
             runner, "verify_attestation_inventory", return_value=([], [])
         ), patch.object(
             runner.StudyBundle, "read_verified",
-            return_value=SimpleNamespace(schedule=()),
+            return_value=SimpleNamespace(schedule=(), sha256="bundle"),
+        ), patch.object(
+            runner, "_sha256", return_value="file"
         ), patch.object(
             runner, "_verified_progress", return_value=([], [])
         ), patch.object(
@@ -1934,6 +1939,54 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     assist_python=Path("python"),
                     workspace_root=Path("workspace"),
                 )
+        scoped.assert_not_called()
+
+    def test_archive_rejects_bundle_or_fidelity_drift_before_parent_worker(self) -> None:
+        scoped = Mock()
+        manifest = {
+            "execution": {"coordination_thread_id": "thread"},
+            "parent": {"bundle_file_sha256": "file", "bundle_sha256": "bundle"},
+        }
+        common = {
+            "manifest": manifest,
+            "registration": TEST_REGISTRATION,
+            "execution_root": Path("execution"),
+            "assist_source": Path("assist"),
+            "assist_python": Path("python"),
+            "workspace_root": Path("workspace"),
+        }
+        with patch.object(
+            runner, "_verify_archive_runtime"
+        ), patch.object(
+            runner, "verify_attestation_inventory", return_value=([], [])
+        ), patch.object(runner, "_run_scoped", scoped):
+            with self.subTest(case="bundle"), patch.object(
+                runner.StudyBundle, "read_verified",
+                return_value=SimpleNamespace(schedule=(), sha256="wrong"),
+            ):
+                with self.assertRaisesRegex(ValueError, "parent bundle"):
+                    runner._archive_and_analyze_locked(
+                        ROOT, Path("output"), Path("capsule"), Path("analysis"),
+                        Path("attestations"), **common,
+                    )
+
+            with self.subTest(case="fidelity"), patch.object(
+                runner.StudyBundle, "read_verified",
+                return_value=SimpleNamespace(schedule=(), sha256="bundle"),
+            ), patch.object(
+                runner, "_sha256", return_value="file"
+            ), patch.object(
+                runner, "_verified_progress",
+                return_value=([], [{
+                    "detail": "provider request differs from sealed request",
+                    "outcome": "provider_error",
+                }]),
+            ):
+                with self.assertRaisesRegex(ValueError, "fidelity"):
+                    runner._archive_and_analyze_locked(
+                        ROOT, Path("output"), Path("capsule"), Path("analysis"),
+                        Path("attestations"), **common,
+                    )
         scoped.assert_not_called()
 
     def test_process_rate_uses_only_observed_secondary_measurements(self) -> None:
