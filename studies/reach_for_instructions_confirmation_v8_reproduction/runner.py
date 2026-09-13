@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
+import errno
 import fcntl
 import hashlib
 import json
@@ -101,7 +102,7 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
 )
 
 
-STUDY = "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
+STUDY = "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2"
 MANIFEST = Path("experiments") / STUDY / "manifest.json"
 INVALID = "REPRODUCTION_INVALID.json"
 REGISTRATION_TAG = f"{STUDY}"
@@ -1204,12 +1205,15 @@ def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
     expected = seal.get("sealed_files")
     if not isinstance(expected, dict):
         raise ValueError("reproduction seal inventory is malformed")
-    actual = {
-        item.relative_to(capsule).as_posix(): _sha256(item)
-        for item in sorted(capsule.rglob("*"))
-        if item.is_file() and not item.is_symlink()
-        and item.name not in {"learning.md", "assist-roadmap-proposal.md", path.name}
-    }
+    actual = {}
+    for item in sorted(capsule.rglob("*")):
+        relative = item.relative_to(capsule).as_posix()
+        if (
+            item.is_file()
+            and not item.is_symlink()
+            and relative not in {"learning.md", "assist-roadmap-proposal.md", path.name}
+        ):
+            actual[relative] = _sha256(item)
     if any(item.is_symlink() for item in capsule.rglob("*")) or expected != actual:
         raise ValueError("reproduction sealed files differ")
 
@@ -1460,8 +1464,10 @@ def _verify_scope_empty(scope: Path) -> None:
     )
     try:
         members = (scope / "cgroup.procs").read_text().strip()
-    except FileNotFoundError:
-        return
+    except OSError as error:
+        if error.errno in {errno.ENOENT, errno.ENODEV}:
+            return
+        raise
     if members:
         raise RuntimeError("scoped process still contains live members")
 
@@ -1575,7 +1581,7 @@ def _run_scoped(
 ) -> subprocess.CompletedProcess[str]:
     """Run and reap one child tree under the caller's termination guard."""
     _scope_capability()
-    unit = f"reach-v8-r1-{os.getpid()}-{time.monotonic_ns()}"
+    unit = f"reach-v8-r2-{os.getpid()}-{time.monotonic_ns()}"
     ready_read, ready_write = os.pipe()
     release_read, release_write = os.pipe()
     scoped_command = [
@@ -2385,11 +2391,13 @@ def _archive_and_analyze_locked(
     )
     historical = root / manifest["historical_comparator"]["capsule"]
     analysis.analyze(manifest, capsule, historical, analysis_output, registration)
-    sealed_files = {
-        path.relative_to(capsule).as_posix(): _sha256(path)
-        for path in sorted(capsule.rglob("*"))
-        if path.is_file() and path.name not in {"learning.md", "assist-roadmap-proposal.md"}
-    }
+    sealed_files = {}
+    for path in sorted(capsule.rglob("*")):
+        relative = path.relative_to(capsule).as_posix()
+        if path.is_file() and relative not in {
+            "learning.md", "assist-roadmap-proposal.md"
+        }:
+            sealed_files[relative] = _sha256(path)
     seal = {
         "schema": "reach-v8-exact-reproduction-seal-v1",
         "manifest_sha256": digest(manifest),

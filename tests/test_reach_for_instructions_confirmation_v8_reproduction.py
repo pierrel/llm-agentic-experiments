@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+import errno
 import hashlib
 import json
 import os
@@ -136,12 +137,13 @@ def _reproduction_fixture(parent: Path, manifest: dict[str, object]) -> Path:
 
 
 def _seal_capsule(capsule: Path, manifest: dict[str, object]) -> None:
-    sealed_files = {
-        path.relative_to(capsule).as_posix(): runner._sha256(path)
-        for path in sorted(capsule.rglob("*"))
-        if path.is_file()
-        and path.name not in {"learning.md", "assist-roadmap-proposal.md"}
-    }
+    sealed_files = {}
+    for path in sorted(capsule.rglob("*")):
+        relative = path.relative_to(capsule).as_posix()
+        if path.is_file() and relative not in {
+            "learning.md", "assist-roadmap-proposal.md"
+        }:
+            sealed_files[relative] = runner._sha256(path)
     seal = {
         "schema": "reach-v8-exact-reproduction-seal-v1",
         "manifest_sha256": digest(manifest),
@@ -420,6 +422,31 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outcome record"):
                 runner._verified_progress(output, bundle)
 
+    def test_progress_guard_requires_a_request_for_every_non_infrastructure_outcome(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            shutil.copy2(HISTORICAL / "admissions.jsonl", output / "admissions.jsonl")
+            records = [
+                json.loads(line)
+                for line in (HISTORICAL / "outcomes.jsonl").read_text().splitlines()
+            ]
+            changed = next(
+                index for index, record in enumerate(records)
+                if record["outcome"] != "infrastructure_invalid"
+            )
+            records[changed]["model_request_made"] = False
+            previous = bundle.sha256
+            encoded = []
+            for record in records:
+                record.pop("record_sha256")
+                record["previous_sha256"] = previous
+                previous = digest(record)
+                encoded.append(canonical_json(record | {"record_sha256": previous}))
+            (output / "outcomes.jsonl").write_bytes(b"\n".join(encoded) + b"\n")
+            with self.assertRaisesRegex(ValueError, "outcome record"):
+                runner._verified_progress(output, bundle)
+
     def test_opaque_condition_labels_never_reach_model_prompts(self) -> None:
         bundle = StudyBundle.read_verified(ROOT / runner._load_manifest(ROOT)["parent"]["bundle_path"])
         with parent_runner._configured():
@@ -672,7 +699,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 timeout=runner.BATCH_SCOPE_TIMEOUT_SECONDS
             )
             self.assertEqual(terminate.call_args.args, (process, scope))
-            self.assertTrue(terminate.call_args.kwargs["unit"].startswith("reach-v8-r1-"))
+            self.assertTrue(terminate.call_args.kwargs["unit"].startswith("reach-v8-r2-"))
             self.assertEqual(terminate.call_args.kwargs["env"], {})
             self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
 
@@ -682,6 +709,35 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "kill control is unavailable"):
                 runner._kill_scope(process, Path(temporary) / "missing-scope")
         process.communicate.assert_not_called()
+
+    def test_normal_scope_completion_accepts_kernel_collected_cgroup(self) -> None:
+        process = Mock()
+        process.communicate.return_value = ("", "")
+        scope = Path("/sys/fs/cgroup/user.slice/collected.scope")
+        with patch.object(
+            runner, "_scope_capability"
+        ), patch.object(
+            runner.subprocess, "Popen", return_value=process
+        ), patch.object(
+            runner, "_bind_scope", return_value=scope
+        ), patch.object(runner, "_release_scope"), patch.object(
+            runner.Path, "read_text", side_effect=OSError(errno.ENODEV, "collected")
+        ):
+            result = runner._run_scoped(
+                ["/unused-parent"],
+                cwd=Path("/tmp"),
+                env={},
+                output=Path("/tmp") / runner.STUDY,
+                stage="parent runner",
+            )
+        self.assertEqual(result.returncode, process.returncode)
+
+    def test_scope_completion_rejects_unreadable_live_membership(self) -> None:
+        with patch.object(
+            runner.Path, "read_text", side_effect=OSError(errno.EIO, "failed")
+        ):
+            with self.assertRaises(OSError):
+                runner._verify_scope_empty(Path("/sys/fs/cgroup/live.scope"))
 
     def test_bound_scope_cleanup_also_kills_and_reaps_the_launcher_group(self) -> None:
         process = Mock()
@@ -1959,11 +2015,17 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             evidence = capsule / "evidence.json"
             evidence.write_text("{}\n")
             (capsule / "learning.md").write_text("interpretation is intentionally outside the data seal\n")
+            nested = capsule / "nested" / "learning.md"
+            nested.parent.mkdir()
+            nested.write_text("nested evidence remains sealed\n")
             manifest = {"study_id": runner.STUDY}
             seal = {
                 "schema": "reach-v8-exact-reproduction-seal-v1",
                 "manifest_sha256": digest(manifest),
-                "sealed_files": {"evidence.json": runner._sha256(evidence)},
+                "sealed_files": {
+                    "evidence.json": runner._sha256(evidence),
+                    "nested/learning.md": runner._sha256(nested),
+                },
             }
             (capsule / "reproduction-seal.json").write_bytes(
                 canonical_json(seal | {"seal_sha256": digest(seal)}) + b"\n"
@@ -1973,6 +2035,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "sealed files differ"):
                 runner.verify_reproduction_seal(capsule, manifest)
             evidence.write_text("{}\n")
+            nested.write_text("changed nested evidence\n")
+            with self.assertRaisesRegex(ValueError, "sealed files differ"):
+                runner.verify_reproduction_seal(capsule, manifest)
+            nested.write_text("nested evidence remains sealed\n")
             for change in ({"schema": "other"}, {"extra": True}):
                 changed = seal | change
                 (capsule / "reproduction-seal.json").write_bytes(

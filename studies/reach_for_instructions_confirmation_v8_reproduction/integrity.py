@@ -181,7 +181,8 @@ def verify_records(
             or not isinstance(record["artifact_success"], bool)
             or not isinstance(record["detail"], str)
             or (record["outcome"] == "pass") is not record["artifact_success"]
-            or (record["outcome"] == "infrastructure_invalid" and record["model_request_made"])
+            or record["model_request_made"]
+            is not (record["outcome"] != "infrastructure_invalid")
         ):
             raise ValueError("outcome record differs from the scheduled trial contract")
 
