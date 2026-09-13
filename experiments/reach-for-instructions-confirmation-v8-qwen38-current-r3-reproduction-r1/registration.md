@@ -191,8 +191,11 @@ file hashes are streamed in 1 MiB chunks. Each appended event record is at most
 exceeding a bound is malformed event evidence and quarantines the cohort. A different
 tool or caller-selected event log cannot authorize an admission or retry. The
 shared workspace itself is derived from the registered worktree's Git common
-directory; a caller-supplied copied workspace cannot substitute its own lock or
-event namespace.
+directory. The wrapper derives its source checkout from its own imported module,
+requires `--root` to name that exact path, and strips caller-supplied `GIT_*`
+repository and configuration overrides from every fixed `/usr/bin/git` command.
+A caller-supplied
+copied workspace cannot substitute its own lock or event namespace.
 
 A production-priority denial is administrative missingness and retries the same
 trial only when all three facts agree: the parent admission is false with the

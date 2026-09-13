@@ -51,6 +51,8 @@ EVENT_SLICE_BYTES = 16 * 1024 * 1024
 EVENT_SLICE_RECORDS = 16 * 1024
 MAX_ATTESTED_EVENTS = 2 * BATCH_EPISODES
 MODEL_LISTENER = "0100007F:1F40"
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+GIT_BINARY = "/usr/bin/git"
 
 # systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
@@ -83,8 +85,30 @@ def _verify_no_symlink_components(label: str, path: Path, base: Path) -> None:
             raise ValueError(f"{label} contains a symlinked path component")
 
 
+def _git_environment() -> dict[str, str]:
+    """Return the caller environment without Git repository/config overrides."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update({
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+    })
+    return env
+
+
 def _command(*arguments: str, cwd: Path | None = None) -> str:
-    result = subprocess.run(arguments, cwd=cwd, text=True, capture_output=True)
+    command = (
+        (GIT_BINARY, *arguments[1:])
+        if Path(arguments[0]).name == "git"
+        else arguments
+    )
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        env=_git_environment() if command[0] == GIT_BINARY else None,
+        text=True,
+        capture_output=True,
+    )
     if result.returncode:
         raise ValueError(f"command failed: {Path(arguments[0]).name}")
     return result.stdout.strip()
@@ -141,6 +165,8 @@ def _git_identity(root: Path) -> dict[str, str]:
 
 def _canonical_workspace_root(root: Path) -> Path:
     """Locate the one shared workspace from this registered worktree's Git metadata."""
+    if Path(os.path.abspath(root)) != SOURCE_ROOT:
+        raise ValueError("root is not this registered reproduction checkout")
     common = Path(
         _command("git", "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root)
     ).resolve()
@@ -179,7 +205,8 @@ def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str
     if current != {"commit": commit, "tree": tree, "status": ""}:
         raise ValueError("reproduction checkout is not the clean registered commit")
     tagged_manifest = subprocess.run(
-        ["git", "show", f"{commit}:{MANIFEST.as_posix()}"], cwd=root, capture_output=True
+        [GIT_BINARY, "show", f"{commit}:{MANIFEST.as_posix()}"], cwd=root,
+        env=_git_environment(), capture_output=True,
     )
     if tagged_manifest.returncode or tagged_manifest.stdout != (root / MANIFEST).read_bytes():
         raise ValueError("registered commit does not retain the exact manifest")
@@ -311,20 +338,20 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
             if _sha256(worker_tools / "agentic") != expected_gate["sha256"]:
                 raise ValueError("prepared shared LLM gate differs from registration")
             subprocess.run(
-                ["git", "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)],
-                check=True,
+                [GIT_BINARY, "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)],
+                check=True, env=_git_environment(),
             )
             subprocess.run(
-                ["git", "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]],
-                check=True,
+                [GIT_BINARY, "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]],
+                check=True, env=_git_environment(),
             )
             subprocess.run(
-                ["git", "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)],
-                check=True,
+                [GIT_BINARY, "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)],
+                check=True, env=_git_environment(),
             )
             subprocess.run(
-                ["git", "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]],
-                check=True,
+                [GIT_BINARY, "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]],
+                check=True, env=_git_environment(),
             )
             _verify_execution(experiment, manifest)
             if _git_identity(assist) != {

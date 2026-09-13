@@ -888,6 +888,28 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 )
         execute.assert_not_called()
 
+    def test_source_checkout_and_git_environment_cannot_be_redirected(self) -> None:
+        with TemporaryDirectory() as temporary, patch.object(
+            runner, "_command"
+        ) as command:
+            with self.assertRaisesRegex(ValueError, "registered reproduction checkout"):
+                runner._canonical_workspace_root(Path(temporary))
+        command.assert_not_called()
+
+        completed = subprocess.CompletedProcess([], 0, "verified\n", "")
+        with patch.dict(
+            os.environ,
+            {"GIT_DIR": "/redirected", "GIT_CONFIG_COUNT": "1", "UNRELATED": "kept"},
+        ), patch.object(runner.subprocess, "run", return_value=completed) as execute:
+            self.assertEqual(runner._command("git", "status", cwd=ROOT), "verified")
+        self.assertEqual(execute.call_args.args[0][0], runner.GIT_BINARY)
+        git_environment = execute.call_args.kwargs["env"]
+        self.assertNotIn("GIT_DIR", git_environment)
+        self.assertNotIn("GIT_CONFIG_COUNT", git_environment)
+        self.assertEqual(git_environment["GIT_CONFIG_GLOBAL"], "/dev/null")
+        self.assertEqual(git_environment["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(git_environment["UNRELATED"], "kept")
+
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
         with TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
