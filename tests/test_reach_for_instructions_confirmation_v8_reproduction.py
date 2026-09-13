@@ -1141,6 +1141,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "terra_approvals_sha256": terra_digest,
         }
         runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+        harness = approval["reviews"]["harness-integrity"]
+        original_result = harness["result"]
+        harness["result"] += "\n"
+        harness["result_sha256"] = hashlib.sha256(harness["result"].encode()).hexdigest()
+        approval["terra_approvals_sha256"] = digest(terra_reviews)
+        with self.assertRaisesRegex(ValueError, "review approval differs"):
+            runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+        harness["result"] = original_result
+        harness["result_sha256"] = hashlib.sha256(original_result.encode()).hexdigest()
+        approval["terra_approvals_sha256"] = digest(terra_reviews)
         approval["reviews"]["scientific-validity"]["disposition"] = "revisions-required"
         with self.assertRaisesRegex(ValueError, "review approval differs"):
             runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
@@ -1262,6 +1272,15 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(SystemExit, "unexpectedly returned"):
                 runner._ensure_clean_entrypoint()
+
+    def test_fixed_system_python_must_be_root_owned(self) -> None:
+        with TemporaryDirectory() as temporary, patch.object(
+            runner, "SYSTEM_PYTHON", Path(temporary) / "python"
+        ):
+            runner.SYSTEM_PYTHON.write_bytes(b"python")
+            runner.SYSTEM_PYTHON.chmod(0o755)
+            with self.assertRaisesRegex(ValueError, "ownership differs"):
+                runner._verify_system_python_ownership()
 
     def test_tag_approval_rejects_surrounding_whitespace(self) -> None:
         record = b"object deadbeef\ntype commit\ntag test\n\n{}\n"

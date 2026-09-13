@@ -43,8 +43,26 @@ def _clean_entrypoint_environment() -> dict[str, str]:
     }
 
 
+def _verify_system_python_ownership() -> None:
+    """Require the fixed interpreter to remain a root-owned system executable."""
+    try:
+        metadata = SYSTEM_PYTHON.stat()
+    except OSError as error:
+        raise ValueError("fixed reproduction interpreter is unavailable") from error
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise ValueError("fixed reproduction interpreter ownership differs")
+
+
 def _ensure_clean_entrypoint() -> None:
     """Re-exec the CLI before importing any experiment or dependency module."""
+    try:
+        _verify_system_python_ownership()
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     environment = _clean_entrypoint_environment()
     if os.environ.get(_CLEAN_ENTRYPOINT) == "1":
         try:
@@ -386,7 +404,8 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
             or review["model"] != model
             or not isinstance(result, str)
             or not 1 <= len(result.encode()) <= 65_536
-            or result.rstrip().splitlines()[-1:] != ["ACCEPTED"]
+            or not result.endswith("ACCEPTED")
+            or result.splitlines()[-1:] != ["ACCEPTED"]
             or not exact_identity
             or len(summaries) != 1
             or len(summaries[0].strip()) < 20
@@ -536,6 +555,7 @@ def _verify_fixed_path(
 
 def _python_environment_identity(assist_python: Path) -> dict[str, str]:
     """Bind execution to one system interpreter and one explicit dependency tree."""
+    _verify_system_python_ownership()
     try:
         executable = assist_python.resolve(strict=True)
     except OSError as error:
