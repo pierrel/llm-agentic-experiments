@@ -57,6 +57,9 @@ CANONICAL_GIT_COMMON_SHA256 = "4ec5804c9e8fe8ab2ce302ffcee710702e46712c98b1852dd
 CANONICAL_WORKSPACE_SHA256 = "20019c25d374d76060ac0b3b62eb95e4a0703fc69135092b70f444c7cc18f3d1"
 BATCH_SCOPE_TIMEOUT_SECONDS = 18_000
 ARCHIVE_SCOPE_TIMEOUT_SECONDS = 900
+INTEGRITY_COMMAND_TIMEOUT_SECONDS = 900
+SYSTEM_COMMAND_TIMEOUT_SECONDS = 10
+COMMAND_REAP_TIMEOUT_SECONDS = 10
 SAFE_GIT_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -108,18 +111,54 @@ def _git_environment() -> dict[str, str]:
     return env
 
 
+def _run_integrity_command(
+    command: tuple[str, ...] | list[str], *, cwd: Path | None = None,
+    env: dict[str, str] | None = None, text: bool = False, check: bool = False,
+    timeout_seconds: int = INTEGRITY_COMMAND_TIMEOUT_SECONDS,
+) -> subprocess.CompletedProcess[Any]:
+    """Run a preparatory command with a hard deadline for its whole process group."""
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        text=text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except BaseException as error:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            process.communicate(timeout=COMMAND_REAP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as reap_error:
+            raise RuntimeError("integrity command process group could not be reaped") from reap_error
+        if isinstance(error, subprocess.TimeoutExpired):
+            raise ValueError("integrity command exceeded its fixed deadline") from error
+        raise
+    result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    if check and result.returncode:
+        raise subprocess.CalledProcessError(
+            result.returncode, command, output=stdout, stderr=stderr
+        )
+    return result
+
+
 def _command(*arguments: str, cwd: Path | None = None) -> str:
     command = (
         (GIT_BINARY, *arguments[1:])
         if Path(arguments[0]).name == "git"
         else arguments
     )
-    result = subprocess.run(
+    result = _run_integrity_command(
         command,
         cwd=cwd,
         env=_git_environment() if command[0] == GIT_BINARY else None,
         text=True,
-        capture_output=True,
     )
     if result.returncode:
         raise ValueError(f"command failed: {Path(arguments[0]).name}")
@@ -222,9 +261,9 @@ def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str
     current = _git_identity(root)
     if current != {"commit": commit, "tree": tree, "status": ""}:
         raise ValueError("reproduction checkout is not the clean registered commit")
-    tagged_manifest = subprocess.run(
+    tagged_manifest = _run_integrity_command(
         [GIT_BINARY, "show", f"{commit}:{MANIFEST.as_posix()}"], cwd=root,
-        env=_git_environment(), capture_output=True,
+        env=_git_environment(),
     )
     if tagged_manifest.returncode or tagged_manifest.stdout != (root / MANIFEST).read_bytes():
         raise ValueError("registered commit does not retain the exact manifest")
@@ -240,7 +279,7 @@ def _verify_publication(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     tag = registration["tag"]
     published = _command(
         "git", "ls-remote", remote, f"refs/heads/{branch}", f"refs/tags/{tag}",
-        f"refs/tags/{tag}^{{}}", cwd=root,
+        f"refs/tags/{tag}^{{}}", cwd=Path("/"),
     ).splitlines()
     refs = {line.split("\t", 1)[1]: line.split("\t", 1)[0] for line in published if "\t" in line}
     if refs.get(f"refs/heads/{branch}") != identity["commit"]:
@@ -355,21 +394,21 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
             expected_gate = manifest["runtime"]["expected_attestation"]["shared_gate"]
             if _sha256(worker_tools / "agentic") != expected_gate["sha256"]:
                 raise ValueError("prepared shared LLM gate differs from registration")
-            subprocess.run(
+            _run_integrity_command(
                 [GIT_BINARY, "clone", "--quiet", "--shared", "--no-checkout", str(root), str(experiment)],
-                check=True, env=_git_environment(),
+                check=True, env=_git_environment(), timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
             )
-            subprocess.run(
+            _run_integrity_command(
                 [GIT_BINARY, "-C", str(experiment), "checkout", "--quiet", "--detach", manifest["parent"]["commit"]],
-                check=True, env=_git_environment(),
+                check=True, env=_git_environment(), timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
             )
-            subprocess.run(
+            _run_integrity_command(
                 [GIT_BINARY, "clone", "--quiet", "--shared", "--no-checkout", str(assist_repository), str(assist)],
-                check=True, env=_git_environment(),
+                check=True, env=_git_environment(), timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
             )
-            subprocess.run(
+            _run_integrity_command(
                 [GIT_BINARY, "-C", str(assist), "checkout", "--quiet", "--detach", manifest["runtime"]["assist_commit"]],
-                check=True, env=_git_environment(),
+                check=True, env=_git_environment(), timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
             )
             _verify_execution(experiment, manifest)
             if _git_identity(assist) != {
@@ -521,14 +560,15 @@ def _environment_identity(
     ):
         raise ValueError("worker deployment snapshot must be a real mode-0400 file")
     source_path = f"{execution_root}:{assist_source}"
-    result = subprocess.run(
+    result = _run_integrity_command(
         [
             "sh", "-c",
             _ENVIRONMENT_SHELL,
             "sh", str(deploy_environment), source_path,
             str(assist_python), "-c", _ENVIRONMENT_SCRIPT,
         ], cwd=workspace_root,
-        env=env, text=True, capture_output=True,
+        env=env, text=True,
+        timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
     )
     if result.returncode:
         raise ValueError("worker environment attestation failed")
@@ -604,10 +644,10 @@ def _execution_environment(
 
 def _production_threads_directory(expected_sha256: str) -> Path:
     """Resolve the hash-pinned production-status root from the Assist service."""
-    result = subprocess.run(
+    result = _run_integrity_command(
         ["/usr/bin/systemctl", "show", "assist-web", "-p", "Environment", "--value"],
         text=True,
-        capture_output=True,
+        timeout_seconds=SYSTEM_COMMAND_TIMEOUT_SECONDS,
     )
     if result.returncode:
         raise ValueError("production status directory is unavailable")
@@ -1193,17 +1233,16 @@ def _kill_unbound_scope(
 ) -> None:
     """Stop a startup-gated launcher before any payload command can begin."""
     try:
-        subprocess.run(
+        _run_integrity_command(
             [
                 "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
                 "--signal=SIGKILL", f"{unit}.scope",
             ],
             env=env,
             text=True,
-            capture_output=True,
-            timeout=10,
+            timeout_seconds=SYSTEM_COMMAND_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, RuntimeError):
         pass
     scope = _scope_cgroup(unit)
     _verify_no_symlink_components("startup-gated process scope", scope, Path("/"))

@@ -161,9 +161,14 @@ The inherited archive worker also runs in a transient scope using the same gated
 startup and whole-cgroup cleanup mechanism. Terminating signals during any part
 of the archive transaction become cleanup-bearing interruptions; the worker tree
 is killed and reaped before lock release, and the raw cohort is quarantined.
-The complete bounded parent invocation has an 18,000-second scope deadline and
-the archive worker a 900-second deadline. Expiry uses the same whole-cgroup
-kill/reap/quarantine path; it never creates or retries a scored outcome.
+After scope binding and gated release, the complete parent payload has an
+18,000-second limit and the archive payload a 900-second limit. Expiry uses the
+same whole-cgroup kill/reap/quarantine path; it never creates or retries a scored
+outcome.
+Every preparatory Git or environment-attestation subprocess has a separate
+900-second process-group deadline. Expiry kills and boundedly reaps that complete
+group before the surrounding preparation fails or the raw cohort is quarantined;
+the local systemd metadata probes use a ten-second deadline through the same helper.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
@@ -186,8 +191,9 @@ until cleanup begins, then kernel-level deferral protects the kill, reap, and
 quarantine sequence until it is durable. A failure before binding can stop only
 the still-gated bootstrap and can never release the parent payload.
 
-The wrapper hashes that exact shared gate before and after every invocation and
-opens its sibling `.coordination/events.jsonl` once before execution, then reads the
+The wrapper hashes that exact shared gate before and after every parent batch
+invocation and once more before archive, and opens its sibling
+`.coordination/events.jsonl` once before execution, then reads the
 appended evidence from that same inode. The prior prefix is fingerprinted and all
 file hashes are streamed in 1 MiB chunks. Each appended event record is at most
 1 MiB, and the complete invocation slice is limited to 16 MiB and 16,384 records;
@@ -247,7 +253,7 @@ observed server: llama.cpp source commit
 `5f17bef5a18d0da06d59744b46b8f2203d889c83`, server binary SHA-256
 `b97a9b61c878c52f1025dbe3f3494cc44e9611449cfeab4a0f1a25c84dea7f3a`,
 and the normalized launch arguments in `manifest.json`. The actual PID and
-process start identity are captured before and after every bounded invocation,
+process start identity are captured before and after every parent batch invocation,
 and that exact process, in the same network namespace as the wrapper and workers,
 must own the unique IPv4 listener at `127.0.0.1:8000`.
 The 17,559,178,144-byte model and server binary are re-hashed each time, and all

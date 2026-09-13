@@ -13,7 +13,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from harness.bundle import StudyBundle, canonical_json, digest
 from studies.reach_for_instructions_confirmation_v2 import runner as core
@@ -511,7 +511,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
     def test_wrong_coordinator_identity_rejects_before_any_subprocess(self) -> None:
         output = Path("/tmp") / runner.STUDY
         with patch.dict(os.environ, {"CODEX_THREAD_ID": "wrong-thread"}), patch(
-            "studies.reach_for_instructions_confirmation_v8_reproduction.runner.subprocess.run"
+            "studies.reach_for_instructions_confirmation_v8_reproduction.runner.subprocess.Popen"
         ) as execute:
             with self.assertRaisesRegex(ValueError, "thread identity"):
                 runner.run_batch(
@@ -561,7 +561,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ), patch.object(runner, "_load_manifest", return_value=manifest), patch.object(
                 runner, "_verify_publication", return_value={}
             ), patch.object(
-                runner.subprocess, "run", side_effect=OSError("clone failed")
+                runner, "_run_integrity_command", side_effect=OSError("clone failed")
             ):
                 with self.assertRaisesRegex(OSError, "clone failed"):
                     runner.prepare_runtime(ROOT, Path("/unused-assist"), runtime)
@@ -569,6 +569,28 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             self.assertEqual(
                 list(runtime.parent.glob(f".{runner.STUDY}.preparing-*")), []
             )
+
+    def test_integrity_command_deadline_kills_and_reaps_its_process_group(self) -> None:
+        process = Mock()
+        process.pid = 123
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["git"], runner.INTEGRITY_COMMAND_TIMEOUT_SECONDS),
+            (b"", b""),
+        ]
+        with patch.object(
+            runner.subprocess, "Popen", return_value=process
+        ) as launch, patch.object(runner.os, "killpg") as kill_group:
+            with self.assertRaisesRegex(ValueError, "fixed deadline"):
+                runner._run_integrity_command(["git"], check=True)
+        self.assertTrue(launch.call_args.kwargs["start_new_session"])
+        kill_group.assert_called_once_with(123, signal.SIGKILL)
+        self.assertEqual(
+            process.communicate.call_args_list,
+            [
+                call(timeout=runner.INTEGRITY_COMMAND_TIMEOUT_SECONDS),
+                call(timeout=runner.COMMAND_REAP_TIMEOUT_SECONDS),
+            ],
+        )
 
     def test_scoped_child_interruption_kills_the_complete_systemd_scope(self) -> None:
         process = Mock()
@@ -684,7 +706,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             scope = Path(temporary) / "live.scope"
             scope.mkdir()
             with patch.object(
-                runner.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)
+                runner, "_run_integrity_command", return_value=subprocess.CompletedProcess([], 1)
             ), patch.object(
                 runner, "_scope_cgroup", return_value=scope
             ), patch.object(runner, "_kill_scope") as atomic_kill:
@@ -739,9 +761,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             service = subprocess.CompletedProcess(
                 [], 0, stdout=f"OTHER=value ASSIST_THREADS_DIR={threads}\n", stderr=""
             )
-            with patch.object(runner.subprocess, "run", return_value=service):
+            with patch.object(runner, "_run_integrity_command", return_value=service):
                 self.assertEqual(runner._production_threads_directory(expected), threads)
-            with patch.object(runner.subprocess, "run", return_value=service):
+            with patch.object(runner, "_run_integrity_command", return_value=service):
                 with self.assertRaisesRegex(ValueError, "differs from registration"):
                     runner._production_threads_directory("0" * 64)
 
@@ -881,7 +903,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             os.environ, {"CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID}
         ), patch.object(
             runner, "_canonical_workspace_root", return_value=workspace
-        ), patch.object(runner.subprocess, "run") as execute:
+        ), patch.object(runner.subprocess, "Popen") as execute:
             with self.assertRaisesRegex(ValueError, "canonical shared workspace"):
                 runner.run_batch(
                     ROOT, Path("/tmp") / runner.STUDY, Path("/unused-attestations"),
@@ -952,13 +974,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "workspace identity differs"):
                     runner._canonical_workspace_root(clone_root)
 
-        completed = subprocess.CompletedProcess([], 0, "verified\n", "")
+        process = Mock()
+        process.communicate.return_value = ("verified\n", "")
+        process.returncode = 0
         with patch.dict(
             os.environ,
             {"GIT_DIR": "/redirected", "GIT_CONFIG_COUNT": "1", "UNRELATED": "kept"},
-        ), patch.object(runner.subprocess, "run", return_value=completed) as execute:
+        ), patch.object(runner.subprocess, "Popen", return_value=process) as execute:
             self.assertEqual(runner._command("git", "status", cwd=ROOT), "verified")
         self.assertEqual(execute.call_args.args[0][0], runner.GIT_BINARY)
+        self.assertTrue(execute.call_args.kwargs["start_new_session"])
+        process.communicate.assert_called_once_with(
+            timeout=runner.INTEGRITY_COMMAND_TIMEOUT_SECONDS
+        )
         git_environment = execute.call_args.kwargs["env"]
         self.assertNotIn("GIT_DIR", git_environment)
         self.assertEqual(git_environment["GIT_CONFIG_COUNT"], "3")
@@ -968,6 +996,26 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(git_environment["GIT_CONFIG_KEY_2"], "core.hooksPath")
         self.assertEqual(git_environment["GIT_CONFIG_VALUE_2"], "/dev/null")
         self.assertEqual(git_environment["UNRELATED"], "kept")
+
+    def test_remote_publication_check_has_no_repository_config_context(self) -> None:
+        manifest = {
+            "registration": {
+                "publication_branch": runner.PUBLICATION_BRANCH,
+                "publication_remote": runner.PUBLICATION_REMOTE,
+                "tag": runner.REGISTRATION_TAG,
+            }
+        }
+        refs = (
+            f"{'1' * 40}\trefs/heads/{runner.PUBLICATION_BRANCH}\n"
+            f"{'2' * 40}\trefs/tags/{runner.REGISTRATION_TAG}\n"
+            f"{'1' * 40}\trefs/tags/{runner.REGISTRATION_TAG}^{{}}\n"
+        )
+        with patch.object(
+            runner, "_verify_local_registration", return_value=TEST_REGISTRATION
+        ), patch.object(runner, "_command", return_value=refs) as command:
+            runner._verify_publication(ROOT, manifest)
+        self.assertEqual(command.call_args.kwargs["cwd"], Path("/"))
+        self.assertEqual(command.call_args.args[:3], ("git", "ls-remote", runner.PUBLICATION_REMOTE))
 
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
         with TemporaryDirectory() as temporary:

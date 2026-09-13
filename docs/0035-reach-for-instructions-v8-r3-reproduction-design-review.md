@@ -62,7 +62,8 @@ The reproduction adds no model-visible treatment. Its wrapper:
    closure rooted at deepagents and langchain-openai, Assist commit/tree, parent
    commit/tree/tag/bundle, llama.cpp commit/tree, running server binary/arguments/
    PID/start identity, and complete model bytes before and after every inherited
-   bounded invocation.
+   parent batch invocation. Archive separately repeats the registered code,
+   interpreter, dependency, environment, and shared-gate checks before its worker.
 5. Requires identical attestation bytes across the whole reproduction, including
    the normalized parent environment and hashes of its systemd scope tools.
 6. Holds a distinct nonblocking wrapper lock across progress inspection,
