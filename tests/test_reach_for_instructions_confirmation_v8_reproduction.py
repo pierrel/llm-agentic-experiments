@@ -1096,19 +1096,35 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(command.call_args.args[:3], ("git", "ls-remote", runner.PUBLICATION_REMOTE))
 
     def test_registration_approval_binds_every_required_review(self) -> None:
-        terra_result = "Independent Terra review\nACCEPTED"
         terra_reviews = {
             lens: {
                 "disposition": "accepted",
                 "model": model,
-                "result": terra_result,
-                "result_sha256": hashlib.sha256(terra_result.encode()).hexdigest(),
+                "result": (
+                    f"CANDIDATE_COMMIT={'1' * 40}\n"
+                    f"CANDIDATE_TREE={'2' * 40}\n"
+                    f"COORDINATION_THREAD_ID={runner.COORDINATION_THREAD_ID}\n"
+                    f"REVIEW_LENS={lens}\nREVIEW_MODEL={model}\n"
+                    "DISPOSITION=accepted\n"
+                    "REVIEW_SUMMARY=The exact protocol preserves every required invariant.\n"
+                    "ACCEPTED"
+                ),
             }
             for lens, model in runner.REQUIRED_REVIEW_MODELS.items()
             if lens != "design-final"
         }
+        for review in terra_reviews.values():
+            review["result_sha256"] = hashlib.sha256(review["result"].encode()).hexdigest()
         terra_digest = digest(terra_reviews)
-        sol_result = f"Dependent Sol review\nTERRA_APPROVALS_SHA256={terra_digest}\nACCEPTED"
+        sol_result = (
+            f"CANDIDATE_COMMIT={'1' * 40}\n"
+            f"CANDIDATE_TREE={'2' * 40}\n"
+            f"COORDINATION_THREAD_ID={runner.COORDINATION_THREAD_ID}\n"
+            "REVIEW_LENS=design-final\nREVIEW_MODEL=gpt-5.6-sol\n"
+            "DISPOSITION=accepted\n"
+            "REVIEW_SUMMARY=The design is approved after all Terra reviews converged.\n"
+            f"TERRA_APPROVALS_SHA256={terra_digest}\nACCEPTED"
+        )
         approval = {
             "candidate_commit": "1" * 40,
             "candidate_tree": "2" * 40,
@@ -1148,6 +1164,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "review approval differs"):
             runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+
+    def test_tag_approval_rejects_surrounding_whitespace(self) -> None:
+        record = b"object deadbeef\ntype commit\ntag test\n\n{}\n"
+        self.assertEqual(runner._decode_tag_approval(record), {})
+        for changed in (
+            record.replace(b"\n\n{}", b"\n\n {}"),
+            record + b"\n",
+        ):
+            with self.assertRaisesRegex(ValueError, "not canonical"):
+                runner._decode_tag_approval(changed)
 
     def test_public_entrypoints_install_termination_handling_before_preflight(self) -> None:
         active: list[bool] = []
@@ -1829,6 +1855,14 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             evidence.write_text("{\"changed\":true}\n")
             with self.assertRaisesRegex(ValueError, "sealed files differ"):
                 runner.verify_reproduction_seal(capsule, manifest)
+            evidence.write_text("{}\n")
+            for change in ({"schema": "other"}, {"extra": True}):
+                changed = seal | change
+                (capsule / "reproduction-seal.json").write_bytes(
+                    canonical_json(changed | {"seal_sha256": digest(changed)}) + b"\n"
+                )
+                with self.assertRaisesRegex(ValueError, "seal is malformed"):
+                    runner.verify_reproduction_seal(capsule, manifest)
 
 
 if __name__ == "__main__":

@@ -314,17 +314,34 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
     assert isinstance(reviews, dict)
     for lens, model in REQUIRED_REVIEW_MODELS.items():
         review = reviews[lens]
+        result = review.get("result") if isinstance(review, dict) else None
+        lines = result.splitlines() if isinstance(result, str) else []
+        required_lines = {
+            f"CANDIDATE_COMMIT={commit}",
+            f"CANDIDATE_TREE={tree}",
+            f"COORDINATION_THREAD_ID={COORDINATION_THREAD_ID}",
+            f"REVIEW_LENS={lens}",
+            f"REVIEW_MODEL={model}",
+            "DISPOSITION=accepted",
+        }
+        summaries = [
+            line.removeprefix("REVIEW_SUMMARY=")
+            for line in lines if line.startswith("REVIEW_SUMMARY=")
+        ]
         if (
             not isinstance(review, dict)
             or set(review) != {"disposition", "model", "result", "result_sha256"}
             or review["disposition"] != "accepted"
             or review["model"] != model
-            or not isinstance(review["result"], str)
-            or not 1 <= len(review["result"].encode()) <= 65_536
-            or review["result"].rstrip().splitlines()[-1:] != ["ACCEPTED"]
+            or not isinstance(result, str)
+            or not 1 <= len(result.encode()) <= 65_536
+            or result.rstrip().splitlines()[-1:] != ["ACCEPTED"]
+            or not required_lines.issubset(lines)
+            or len(summaries) != 1
+            or len(summaries[0].strip()) < 20
             or not isinstance(review["result_sha256"], str)
             or re.fullmatch(r"[0-9a-f]{64}", review["result_sha256"]) is None
-            or hashlib.sha256(review["result"].encode()).hexdigest()
+            or hashlib.sha256(result.encode()).hexdigest()
             != review["result_sha256"]
         ):
             raise ValueError("registration tag review approval differs")
@@ -341,6 +358,18 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
         raise ValueError("registration tag Sol approval is not Terra-dependent")
 
 
+def _decode_tag_approval(tag_record: bytes) -> Any:
+    """Decode exactly one canonical JSON tag message and its Git newline."""
+    try:
+        approval_bytes = tag_record.split(b"\n\n", 1)[1]
+        approval = json.loads(approval_bytes)
+    except (IndexError, json.JSONDecodeError) as error:
+        raise ValueError("registration tag review approval is malformed") from error
+    if approval_bytes != canonical_json(approval) + b"\n":
+        raise ValueError("registration tag review approval is not canonical")
+    return approval
+
+
 def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
     registration = manifest["registration"]
     tag = registration["tag"]
@@ -355,15 +384,12 @@ def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str
     tag_object = _command("git", "rev-parse", tag, cwd=root)
     commit = _command("git", "rev-parse", f"{tag}^{{commit}}", cwd=root)
     tree = _command("git", "rev-parse", f"{tag}^{{tree}}", cwd=root)
-    try:
-        approval_text = _command(
-            "git", "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}", cwd=root,
-        )
-        approval = json.loads(approval_text)
-    except json.JSONDecodeError as error:
-        raise ValueError("registration tag review approval is malformed") from error
-    if approval_text != canonical_json(approval).decode():
-        raise ValueError("registration tag review approval is not canonical")
+    tag_record = _run_integrity_command(
+        [GIT_BINARY, "cat-file", "tag", tag], cwd=root, env=_git_environment()
+    )
+    if tag_record.returncode:
+        raise ValueError("registration tag review approval is unavailable")
+    approval = _decode_tag_approval(tag_record.stdout)
     _verify_review_approval(approval, commit=commit, tree=tree)
     current = _git_identity(root)
     if current != {"commit": commit, "tree": tree, "status": ""}:
@@ -1093,7 +1119,11 @@ def verify_reproduction_seal(capsule: Path, manifest: dict[str, Any]) -> None:
         seal = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError("reproduction seal is missing or malformed") from error
-    if not isinstance(seal, dict):
+    if (
+        not isinstance(seal, dict)
+        or set(seal) != {"manifest_sha256", "schema", "seal_sha256", "sealed_files"}
+        or seal.get("schema") != "reach-v8-exact-reproduction-seal-v1"
+    ):
         raise ValueError("reproduction seal is malformed")
     claimed = seal.pop("seal_sha256", None)
     if claimed != digest(seal) or seal.get("manifest_sha256") != digest(manifest):

@@ -188,7 +188,10 @@ independent Sol design signoff follows Terra convergence. The annotated
 registration tag embeds the complete text and SHA-256 of all four accepted Terra
 artifacts and the Sol signoff, plus their required model identities and the exact
 candidate commit/tree. Runtime registration verification recomputes every hash,
-requires an accepted final line, and requires the Sol result to name the digest
-of the four embedded Terra approvals. It rejects any missing, non-accepted,
+requires each artifact text to identify the exact commit, tree, coordinator,
+lens, model, disposition, and a substantive summary before its accepted final
+line, and requires the Sol result to name the digest of the four embedded Terra
+approvals. It reads the raw tag-object message and rejects any bytes beyond one
+canonical JSON record and final newline. It rejects any missing, non-accepted,
 opaque, or non-dependent approval before preparation. No model work begins before
 that tag is published.

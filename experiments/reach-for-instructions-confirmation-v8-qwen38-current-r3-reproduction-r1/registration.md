@@ -29,11 +29,14 @@ The annotated tag message is canonical JSON binding the exact candidate commit,
 tree, coordinator, and the complete accepted scientific, statistical, harness,
 and minimum-setup Terra review artifact texts plus the final Sol design-signoff
 artifact text. The runner recomputes every artifact hash, requires each result to
-end in `ACCEPTED`, requires the registered reviewer model for every entry, and
-requires the Sol artifact to name the digest of the four embedded Terra
-approvals before preparation. The tag object is therefore the durable artifact
-container and executable review-admission gate rather than an opaque assertion
-that external artifacts exist.
+end in `ACCEPTED`, and requires the artifact itself to name the exact candidate
+commit/tree, coordinator, lens, reviewer model, accepted disposition, and a
+substantive summary. It also requires the Sol artifact to name the digest of the
+four embedded Terra approvals before preparation. The tag message bytes must be
+exactly one canonical JSON record plus its final newline; surrounding whitespace
+is rejected. The tag object is therefore the durable artifact container and
+executable review-admission gate rather than an opaque assertion that external
+artifacts exist.
 
 Execution is bound to the registered immutable coordinator identity
 `01a09689-f137-7cf1-a5c0-f32e7537fefa`. A different `CODEX_THREAD_ID` cannot
