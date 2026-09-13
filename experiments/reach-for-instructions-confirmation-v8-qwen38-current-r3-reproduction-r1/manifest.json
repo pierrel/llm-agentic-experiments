@@ -26,12 +26,12 @@
       "worker_workspace_relative": "worker-workspace"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "73de3011a41d545a7e9fd001aa110f044a6653d618681579c6d06eb717ecd185",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "075679754f1548ea27918fbd561f2ebf9d91f8d85705a4299303999ea66d1a7e",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "44c137ce886b606b6f4856c2f76ce73a6f097853390d60cd96ff6a90a942e206",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "c51eeb763b5784b981b51e97869f92261d12e5787a222c0def4804a28771f420",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "7b721f9cf95091e7d911e4a8291a14bb46fd462190f122b24fc1a62e1806cf24",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "3de7eceea4801d00fc56c9687a207ce1a79829b5632c78bf777b497ad6d6874d",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "4657b3130510765005920a8cae3ea3b4f263fb471997f269702cd955ad5cdb5d"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "da8ea670a6d5c7fe2495b738071c18d62d89b00270685931d6f3b0897ece1812"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -263,5 +263,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "b8728f39af7f5c3859581378627c24640dc8ed48cb8424371c6824655596a8cb"
+  "sha256": "b01a34aec01bc77e58b01eba0a08a560dee2dacb686ca66eb90629066912af6e"
 }

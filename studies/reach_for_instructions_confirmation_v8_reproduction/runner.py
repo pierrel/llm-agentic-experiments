@@ -19,9 +19,56 @@ import shlex
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
+
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+SYSTEM_PYTHON = Path("/usr/bin/python3.14")
+_CLEAN_ENTRYPOINT = "REACH_REPRODUCTION_CLEAN_ENTRYPOINT"
+
+
+def _clean_entrypoint_environment() -> dict[str, str]:
+    """Return the complete environment for the fixed wrapper interpreter."""
+    return {
+        "CODEX_THREAD_ID": os.environ.get("CODEX_THREAD_ID", ""),
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/bin:/bin",
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONPATH": str(SOURCE_ROOT),
+        "PYTHONSAFEPATH": "1",
+        _CLEAN_ENTRYPOINT: "1",
+    }
+
+
+def _ensure_clean_entrypoint() -> None:
+    """Re-exec the CLI before importing any experiment or dependency module."""
+    environment = _clean_entrypoint_environment()
+    if os.environ.get(_CLEAN_ENTRYPOINT) == "1":
+        try:
+            executable = Path(sys.executable).resolve(strict=True)
+        except OSError as error:
+            raise SystemExit("fixed reproduction interpreter is unavailable") from error
+        if (
+            executable != SYSTEM_PYTHON
+            or not sys.flags.no_site
+            or dict(os.environ) != environment
+        ):
+            raise SystemExit("reproduction entrypoint environment differs")
+        return
+    os.execve(
+        str(SYSTEM_PYTHON),
+        [str(SYSTEM_PYTHON), "-S", str(Path(__file__).resolve()), *sys.argv[1:]],
+        environment,
+    )
+    raise SystemExit("fixed reproduction re-exec unexpectedly returned")
+
+
+if __name__ == "__main__":
+    _ensure_clean_entrypoint()
+
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
@@ -52,7 +99,6 @@ EVENT_SLICE_BYTES = 16 * 1024 * 1024
 EVENT_SLICE_RECORDS = 16 * 1024
 MAX_ATTESTED_EVENTS = 2 * BATCH_EPISODES
 MODEL_LISTENER = "0100007F:1F40"
-SOURCE_ROOT = Path(__file__).resolve().parents[2]
 GIT_BINARY = "/usr/bin/git"
 CANONICAL_GIT_COMMON_SHA256 = "4ec5804c9e8fe8ab2ce302ffcee710702e46712c98b1852ddffaaf4a2f87a352"
 CANONICAL_WORKSPACE_SHA256 = "20019c25d374d76060ac0b3b62eb95e4a0703fc69135092b70f444c7cc18f3d1"
@@ -82,7 +128,6 @@ exec /usr/bin/python3.14 -S "$@"
 PYTHON_LAUNCHER_SHA256 = (
     "6404791c0db83b83b9b054ff5c8f4e663b6c0c024d1919a1ed4bc82a64014284"
 )
-SYSTEM_PYTHON = Path("/usr/bin/python3.14")
 REQUIRED_REVIEW_MODELS = {
     "harness-integrity": "gpt-5.6-terra",
     "minimum-adequate-setup": "gpt-5.6-terra",
@@ -316,14 +361,20 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
         review = reviews[lens]
         result = review.get("result") if isinstance(review, dict) else None
         lines = result.splitlines() if isinstance(result, str) else []
-        required_lines = {
-            f"CANDIDATE_COMMIT={commit}",
-            f"CANDIDATE_TREE={tree}",
-            f"COORDINATION_THREAD_ID={COORDINATION_THREAD_ID}",
-            f"REVIEW_LENS={lens}",
-            f"REVIEW_MODEL={model}",
-            "DISPOSITION=accepted",
+        required_fields = {
+            "CANDIDATE_COMMIT=": f"CANDIDATE_COMMIT={commit}",
+            "CANDIDATE_TREE=": f"CANDIDATE_TREE={tree}",
+            "COORDINATION_THREAD_ID=": (
+                f"COORDINATION_THREAD_ID={COORDINATION_THREAD_ID}"
+            ),
+            "REVIEW_LENS=": f"REVIEW_LENS={lens}",
+            "REVIEW_MODEL=": f"REVIEW_MODEL={model}",
+            "DISPOSITION=": "DISPOSITION=accepted",
         }
+        exact_identity = all(
+            [line for line in lines if line.startswith(prefix)] == [expected]
+            for prefix, expected in required_fields.items()
+        )
         summaries = [
             line.removeprefix("REVIEW_SUMMARY=")
             for line in lines if line.startswith("REVIEW_SUMMARY=")
@@ -336,7 +387,7 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
             or not isinstance(result, str)
             or not 1 <= len(result.encode()) <= 65_536
             or result.rstrip().splitlines()[-1:] != ["ACCEPTED"]
-            or not required_lines.issubset(lines)
+            or not exact_identity
             or len(summaries) != 1
             or len(summaries[0].strip()) < 20
             or not isinstance(review["result_sha256"], str)
@@ -352,8 +403,10 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
     terra_digest = digest(terra_reviews)
     if (
         approval["terra_approvals_sha256"] != terra_digest
-        or f"TERRA_APPROVALS_SHA256={terra_digest}"
-        not in reviews["design-final"]["result"].splitlines()
+        or [
+            line for line in reviews["design-final"]["result"].splitlines()
+            if line.startswith("TERRA_APPROVALS_SHA256=")
+        ] != [f"TERRA_APPROVALS_SHA256={terra_digest}"]
     ):
         raise ValueError("registration tag Sol approval is not Terra-dependent")
 

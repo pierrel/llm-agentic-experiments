@@ -31,8 +31,9 @@ and minimum-setup Terra review artifact texts plus the final Sol design-signoff
 artifact text. The runner recomputes every artifact hash, requires each result to
 end in `ACCEPTED`, and requires the artifact itself to name the exact candidate
 commit/tree, coordinator, lens, reviewer model, accepted disposition, and a
-substantive summary. It also requires the Sol artifact to name the digest of the
-four embedded Terra approvals before preparation. The tag message bytes must be
+substantive summary exactly once; conflicting or duplicate identity fields are
+rejected. It also requires the Sol artifact to name exactly once the digest of
+the four embedded Terra approvals before preparation. The tag message bytes must be
 exactly one canonical JSON record plus its final newline; surrounding whitespace
 is rejected. The tag object is therefore the durable artifact container and
 executable review-admission gate rather than an opaque assertion that external
@@ -165,6 +166,11 @@ that always supplies `-S`. The registered dependency-tree directory is opened an
 held independently, then added explicitly to `PYTHONPATH`. It is not selected as
 a virtual environment or processed as a site directory, so its `.pth`,
 `sitecustomize`, and `usercustomize` files cannot execute at startup.
+The public administrative CLI first re-executes itself through that same fixed
+system Python with `-S` and a complete minimal environment before importing any
+experiment, harness, or installed dependency module. A forged clean-entry marker,
+different interpreter, enabled site startup, or extra environment field fails
+closed.
 The inherited exact parent replaces `PYTHONPATH` with its two source roots before
 each worker. The pinned launcher restores the descriptor-bound dependency path
 from the wrapper's fixed environment before starting system Python with `-S`.

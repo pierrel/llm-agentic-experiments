@@ -1165,6 +1165,104 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "review approval differs"):
             runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
 
+    def test_registration_approval_rejects_conflicting_identity_lines(self) -> None:
+        reviews = {}
+        for lens, model in runner.REQUIRED_REVIEW_MODELS.items():
+            result = (
+                f"CANDIDATE_COMMIT={'1' * 40}\n"
+                f"CANDIDATE_TREE={'2' * 40}\n"
+                f"COORDINATION_THREAD_ID={runner.COORDINATION_THREAD_ID}\n"
+                f"REVIEW_LENS={lens}\nREVIEW_MODEL={model}\n"
+                "DISPOSITION=accepted\n"
+                "REVIEW_SUMMARY=Every required identity field is unique.\n"
+                "ACCEPTED"
+            )
+            reviews[lens] = {
+                "disposition": "accepted",
+                "model": model,
+                "result": result,
+                "result_sha256": hashlib.sha256(result.encode()).hexdigest(),
+            }
+        terra_reviews = {
+            lens: review for lens, review in reviews.items() if lens != "design-final"
+        }
+        terra_digest = digest(terra_reviews)
+        sol = reviews["design-final"]
+        sol["result"] = sol["result"].replace(
+            "\nACCEPTED", f"\nTERRA_APPROVALS_SHA256={terra_digest}\nACCEPTED"
+        )
+        sol["result_sha256"] = hashlib.sha256(sol["result"].encode()).hexdigest()
+        approval = {
+            "candidate_commit": "1" * 40,
+            "candidate_tree": "2" * 40,
+            "coordination_thread_id": runner.COORDINATION_THREAD_ID,
+            "reviews": reviews,
+            "schema": "reach-v8-r3-reproduction-review-approval-v2",
+            "terra_approvals_sha256": terra_digest,
+        }
+        runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+        scientific = reviews["scientific-validity"]
+        original_scientific_result = scientific["result"]
+        scientific["result"] = scientific["result"].replace(
+            "REVIEW_LENS=scientific-validity\n",
+            "REVIEW_LENS=other\nREVIEW_LENS=scientific-validity\n",
+        )
+        scientific["result_sha256"] = hashlib.sha256(
+            scientific["result"].encode()
+        ).hexdigest()
+        approval["terra_approvals_sha256"] = digest(
+            {lens: review for lens, review in reviews.items() if lens != "design-final"}
+        )
+        with self.assertRaisesRegex(ValueError, "review approval differs"):
+            runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+        scientific["result"] = original_scientific_result
+        scientific["result_sha256"] = hashlib.sha256(
+            scientific["result"].encode()
+        ).hexdigest()
+        terra_digest = digest(
+            {lens: review for lens, review in reviews.items() if lens != "design-final"}
+        )
+        approval["terra_approvals_sha256"] = terra_digest
+        sol["result"] = sol["result"].replace(
+            f"TERRA_APPROVALS_SHA256={terra_digest}\n",
+            f"TERRA_APPROVALS_SHA256={'0' * 64}\n"
+            f"TERRA_APPROVALS_SHA256={terra_digest}\n",
+        )
+        sol["result_sha256"] = hashlib.sha256(sol["result"].encode()).hexdigest()
+        with self.assertRaisesRegex(ValueError, "not Terra-dependent"):
+            runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+
+    def test_cli_reexecs_with_only_the_fixed_python_environment(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID,
+                "LD_PRELOAD": "/attacker.so",
+                "PYTHONPATH": "/attacker",
+            },
+            clear=True,
+        ), patch.object(runner.os, "execve", side_effect=RuntimeError) as execute:
+            with self.assertRaises(RuntimeError):
+                runner._ensure_clean_entrypoint()
+        executable, arguments, environment = execute.call_args.args
+        self.assertEqual(executable, "/usr/bin/python3.14")
+        self.assertEqual(arguments[:2], ["/usr/bin/python3.14", "-S"])
+        self.assertEqual(environment, {
+            "CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID,
+            "HOME": str(Path.home()),
+            "LANG": "C.UTF-8",
+            "PATH": "/usr/bin:/bin",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONPATH": str(ROOT),
+            "PYTHONSAFEPATH": "1",
+            runner._CLEAN_ENTRYPOINT: "1",
+        })
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+            runner.os, "execve", return_value=None
+        ):
+            with self.assertRaisesRegex(SystemExit, "unexpectedly returned"):
+                runner._ensure_clean_entrypoint()
+
     def test_tag_approval_rejects_surrounding_whitespace(self) -> None:
         record = b"object deadbeef\ntype commit\ntag test\n\n{}\n"
         self.assertEqual(runner._decode_tag_approval(record), {})

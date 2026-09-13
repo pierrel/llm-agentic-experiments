@@ -50,8 +50,10 @@ The reproduction adds no model-visible treatment. Its wrapper:
    inherited environment from shadowing either clean clone or redirecting admission.
    Git and systemd metadata commands receive fixed minimal environments, excluding
    caller-controlled dynamic-loader variables. The fixed root-owned system Python
-   runs through a hash-pinned `-S` launcher with the registered dependency
-   directory added explicitly to `PYTHONPATH`;
+   first re-executes the administrative CLI with `-S` and a complete minimal
+   environment before any experiment, harness, or installed dependency import,
+   then runs inherited workers through a hash-pinned `-S` launcher with the
+   registered dependency directory added explicitly to `PYTHONPATH`;
    a caller-selected virtual environment and its `.pth`/`sitecustomize` startup
    surface never become interpreter inputs.
    When the unchanged parent worker command resets `PYTHONPATH` to its two source
@@ -153,9 +155,13 @@ incomplete launcher cleanup, inherited Git/system loader variables, repository-
 local URL rewriting, caller virtual-environment startup hooks, opaque review-hash
 claims, preparation without the registered coordinator, and the unchanged
 parent's removal of the explicit dependency path before nested workers. The
+last exact wave also found presence-only review identity checks that admitted
+contradictory duplicate lines and project imports before the administrative CLI
+had entered the fixed interpreter environment. The
 current construction bounds and reaps every preparatory process group, keeps the
 full signal guard active, uses fixed minimal metadata environments, runs the
-fixed system interpreter with `-S`, embeds and hashes review results in the tag,
+fixed system interpreter with `-S` before project imports, embeds and hashes
+uniquely self-identifying review results in the tag,
 coordinator-binds preparation, and restores the descriptor-bound dependency path
 inside the fixed launcher.
 
@@ -189,9 +195,9 @@ registration tag embeds the complete text and SHA-256 of all four accepted Terra
 artifacts and the Sol signoff, plus their required model identities and the exact
 candidate commit/tree. Runtime registration verification recomputes every hash,
 requires each artifact text to identify the exact commit, tree, coordinator,
-lens, model, disposition, and a substantive summary before its accepted final
-line, and requires the Sol result to name the digest of the four embedded Terra
-approvals. It reads the raw tag-object message and rejects any bytes beyond one
-canonical JSON record and final newline. It rejects any missing, non-accepted,
+lens, model, disposition, and a substantive summary exactly once before its
+accepted final line, and requires the Sol result to name the digest of the four
+embedded Terra approvals exactly once. It reads the raw tag-object message and
+rejects any bytes beyond one canonical JSON record and final newline. It rejects any missing, non-accepted,
 opaque, or non-dependent approval before preparation. No model work begins before
 that tag is published.
