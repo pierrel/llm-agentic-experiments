@@ -49,6 +49,7 @@ def _identity(manifest: dict[str, object]) -> bytes:
         "environment": {
             key: expected[key] for key in ("distributions", "environment", "modules", "python")
         },
+        "python_environment": expected["python_environment"],
         "process_scope": expected["process_scope"],
         "execution": {
             "commit": parent["commit"], "status": "", "tree": parent["tree"],
@@ -570,7 +571,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 list(runtime.parent.glob(f".{runner.STUDY}.preparing-*")), []
             )
 
-    def test_integrity_command_deadline_kills_and_reaps_its_process_group(self) -> None:
+    def test_integrity_command_deadline_kills_group_and_reaps_launcher(self) -> None:
         process = Mock()
         process.pid = 123
         process.communicate.side_effect = [
@@ -668,7 +669,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             process.communicate.assert_called_once_with(
                 timeout=runner.BATCH_SCOPE_TIMEOUT_SECONDS
             )
-            terminate.assert_called_once_with(process, scope)
+            self.assertEqual(terminate.call_args.args, (process, scope))
+            self.assertTrue(terminate.call_args.kwargs["unit"].startswith("reach-v8-r1-"))
+            self.assertEqual(terminate.call_args.kwargs["env"], {})
             self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
 
     def test_bound_scope_cleanup_rejects_a_missing_atomic_kill_control(self) -> None:
@@ -677,6 +680,20 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "kill control is unavailable"):
                 runner._kill_scope(process, Path(temporary) / "missing-scope")
         process.communicate.assert_not_called()
+
+    def test_bound_scope_cleanup_also_kills_and_reaps_the_launcher_group(self) -> None:
+        process = Mock()
+        process.pid = 123
+        process.communicate.return_value = ("", "")
+        with TemporaryDirectory() as temporary:
+            scope = Path(temporary) / "scope"
+            scope.mkdir()
+            (scope / "cgroup.kill").write_text("")
+            (scope / "cgroup.procs").write_text("")
+            with patch.object(runner.os, "killpg") as kill_group:
+                runner._kill_scope(process, scope)
+        kill_group.assert_called_once_with(123, signal.SIGKILL)
+        process.communicate.assert_called_once_with(timeout=10)
 
     def test_scope_binding_failure_kills_the_still_gated_launcher(self) -> None:
         process = Mock()
@@ -711,7 +728,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_scope_cgroup", return_value=scope
             ), patch.object(runner, "_kill_scope") as atomic_kill:
                 runner._kill_unbound_scope(process, "live", {})
-        atomic_kill.assert_called_once_with(process, scope)
+        atomic_kill.assert_called_once_with(process, scope, unit="live", env={})
         process.communicate.assert_not_called()
 
     def test_scope_bootstrap_never_releases_payload_on_pipe_eof(self) -> None:
@@ -743,16 +760,55 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 workspace_root=Path("/workspace"),
                 execution_root=Path("/execution"),
                 assist_source=Path("/assist"),
+                site_packages=Path("/dependencies"),
                 production_threads_path_sha256="0" * 64,
             )
         self.assertEqual(environment["AGENTIC_ROOT"], "/workspace")
         self.assertEqual(environment["AGENTIC_PRODUCTION_THREADS_DIR"], "/production")
         self.assertEqual(environment["PATH"], "/usr/bin:/bin")
         self.assertEqual(environment["CODEX_THREAD_ID"], runner.COORDINATION_THREAD_ID)
+        self.assertEqual(environment["PYTHONPATH"], "/execution:/assist:/dependencies")
         self.assertEqual(
             {key: environment[key] for key in runner.SAFE_GIT_ENVIRONMENT},
             runner.SAFE_GIT_ENVIRONMENT,
         )
+
+    def test_python_environment_ignores_caller_venv_startup_hooks(self) -> None:
+        expected = runner._python_environment_identity(
+            Path.home() / "deploy/assist/code/.venv/bin/python"
+        )
+        self.assertEqual(
+            expected["startup_mode"],
+            "fixed-system-interpreter-minus-S-with-explicit-pythonpath",
+        )
+        with TemporaryDirectory() as temporary, patch.object(
+            runner, "_production_threads_directory", return_value=Path("/production")
+        ):
+            root = Path(temporary)
+            marker = root / "pth-ran"
+            custom_marker = root / "sitecustomize-ran"
+            (root / "injected.pth").write_text(
+                f"import pathlib; pathlib.Path({str(marker)!r}).touch()\n"
+            )
+            (root / "sitecustomize.py").write_text(
+                f"import pathlib; pathlib.Path({str(custom_marker)!r}).touch()\n"
+            )
+            launcher = root / "python"
+            launcher.write_bytes(runner.PYTHON_LAUNCHER)
+            launcher.chmod(0o500)
+            environment = runner._execution_environment(
+                workspace_root=Path("/workspace"),
+                execution_root=Path("/execution"),
+                assist_source=Path("/assist"),
+                site_packages=root,
+                production_threads_path_sha256="0" * 64,
+            )
+            result = runner._run_integrity_command(
+                [str(launcher), "-c", "pass"], env=environment
+            )
+            self.assertEqual(result.returncode, 0)
+            self.assertFalse(marker.exists())
+            self.assertFalse(custom_marker.exists())
 
     def test_production_status_directory_is_hash_pinned_from_systemd(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -761,8 +817,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             service = subprocess.CompletedProcess(
                 [], 0, stdout=f"OTHER=value ASSIST_THREADS_DIR={threads}\n", stderr=""
             )
-            with patch.object(runner, "_run_integrity_command", return_value=service):
+            with patch.dict(os.environ, {"LD_PRELOAD": "/attacker.so"}), patch.object(
+                runner, "_run_integrity_command", return_value=service
+            ) as execute:
                 self.assertEqual(runner._production_threads_directory(expected), threads)
+            self.assertNotIn("LD_PRELOAD", execute.call_args.kwargs["env"])
             with patch.object(runner, "_run_integrity_command", return_value=service):
                 with self.assertRaisesRegex(ValueError, "differs from registration"):
                     runner._production_threads_directory("0" * 64)
@@ -792,12 +851,15 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             workspace = runtime / "worker-workspace"
             gate = workspace / "tools" / "agentic"
             deploy_environment = workspace / "assist" / ".deploy.env"
+            python_launcher = workspace / "python"
             gate.parent.mkdir(parents=True, mode=0o700)
             deploy_environment.parent.mkdir(mode=0o700)
             gate.write_text("gate")
             gate.chmod(0o500)
             deploy_environment.write_text("environment")
             deploy_environment.chmod(0o400)
+            python_launcher.write_bytes(runner.PYTHON_LAUNCHER)
+            python_launcher.chmod(0o500)
             gate.parent.chmod(0o500)
             deploy_environment.parent.chmod(0o500)
             workspace.chmod(0o500)
@@ -979,7 +1041,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         process.returncode = 0
         with patch.dict(
             os.environ,
-            {"GIT_DIR": "/redirected", "GIT_CONFIG_COUNT": "1", "UNRELATED": "kept"},
+            {
+                "GIT_DIR": "/redirected",
+                "GIT_CONFIG_COUNT": "1",
+                "LD_PRELOAD": "/attacker.so",
+                "UNRELATED": "discarded",
+            },
         ), patch.object(runner.subprocess, "Popen", return_value=process) as execute:
             self.assertEqual(runner._command("git", "status", cwd=ROOT), "verified")
         self.assertEqual(execute.call_args.args[0][0], runner.GIT_BINARY)
@@ -995,7 +1062,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(git_environment["GIT_CONFIG_KEY_0"], "core.fsmonitor")
         self.assertEqual(git_environment["GIT_CONFIG_KEY_2"], "core.hooksPath")
         self.assertEqual(git_environment["GIT_CONFIG_VALUE_2"], "/dev/null")
-        self.assertEqual(git_environment["UNRELATED"], "kept")
+        self.assertNotIn("LD_PRELOAD", git_environment)
+        self.assertNotIn("UNRELATED", git_environment)
 
     def test_remote_publication_check_has_no_repository_config_context(self) -> None:
         manifest = {
@@ -1016,6 +1084,45 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             runner._verify_publication(ROOT, manifest)
         self.assertEqual(command.call_args.kwargs["cwd"], Path("/"))
         self.assertEqual(command.call_args.args[:3], ("git", "ls-remote", runner.PUBLICATION_REMOTE))
+
+    def test_registration_approval_binds_every_required_review(self) -> None:
+        approval = {
+            "candidate_commit": "1" * 40,
+            "candidate_tree": "2" * 40,
+            "coordination_thread_id": runner.COORDINATION_THREAD_ID,
+            "reviews": {
+                lens: {
+                    "disposition": "accepted",
+                    "model": model,
+                    "result_sha256": "3" * 64,
+                }
+                for lens, model in runner.REQUIRED_REVIEW_MODELS.items()
+            },
+            "schema": "reach-v8-r3-reproduction-review-approval-v1",
+        }
+        runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+        approval["reviews"]["scientific-validity"]["disposition"] = "revisions-required"
+        with self.assertRaisesRegex(ValueError, "review approval differs"):
+            runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+
+    def test_public_entrypoints_install_termination_handling_before_preflight(self) -> None:
+        active: list[bool] = []
+
+        @contextmanager
+        def guard():
+            active.append(True)
+            try:
+                yield
+            finally:
+                active.pop()
+
+        def preflight(*_args, **_kwargs):
+            self.assertEqual(active, [True])
+
+        with patch.object(runner, "_termination_interrupts", side_effect=guard), patch.object(
+            runner, "_prepare_runtime", side_effect=preflight
+        ):
+            runner.prepare_runtime(Path("/root"), Path("/assist"), Path("/runtime"))
 
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -1345,6 +1452,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     "modules": {},
                     "production_threads_path_sha256": "0" * 64,
                     "python": {},
+                    "python_environment": {},
                 }
             },
         }
@@ -1390,13 +1498,15 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     "assist": runtime / "assist",
                     "execution": runtime / "experiment",
                     "python": parent / "python",
+                    "site_packages": parent / "site-packages",
                     "worker": workspace,
                 }),
             ), patch.object(
                 runner,
                 "_environment_identity",
                 return_value={
-                    "distributions": {}, "environment": {}, "modules": {}, "python": {}
+                    "distributions": {}, "environment": {}, "modules": {}, "python": {},
+                    "python_environment": {},
                 },
             ), patch.object(runner, "_verified_progress", return_value=([], [])):
                 with self.subTest(stage="registered-input-drift"), patch.object(
@@ -1568,7 +1678,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     else:
                         with self.assertRaises(KeyboardInterrupt):
                             archive()
-                termination_guard.assert_called_once_with()
+                self.assertEqual(termination_guard.call_count, 2)
                 self.assertTrue((output / runner.INVALID).exists())
 
     def test_archive_retry_accepts_an_existing_valid_seal(self) -> None:

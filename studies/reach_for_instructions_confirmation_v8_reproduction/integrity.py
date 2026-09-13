@@ -330,6 +330,7 @@ def verify_attestation_inventory(
             key: expected_runtime[key]
             for key in ("distributions", "environment", "modules", "python")
         },
+        "python_environment": expected_runtime["python_environment"],
         "execution": {
             "commit": manifest["parent"]["commit"],
             "status": "",

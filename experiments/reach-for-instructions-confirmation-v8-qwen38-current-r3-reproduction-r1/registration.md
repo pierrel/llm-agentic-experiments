@@ -25,6 +25,12 @@ the names are only discovery handles. Runtime preparation makes this publication
 check once, saves its self-digested proof inside the private runtime root, and
 subsequent pre/post attestations require that proof plus the still-clean local
 tagged checkout. They do not depend on a later mutable branch lookup.
+The annotated tag message is canonical JSON binding the exact candidate commit,
+tree, coordinator, and accepted scientific, statistical, harness, and minimum-
+setup Terra review artifact hashes plus the final Sol design-signoff artifact
+hash. The runner requires the registered reviewer model for every entry and an
+accepted disposition before preparation, so publication is also the executable
+review-admission gate.
 
 Execution is bound to the registered immutable coordinator identity
 `01a09689-f137-7cf1-a5c0-f32e7537fefa`. A different `CODEX_THREAD_ID` cannot
@@ -145,6 +151,13 @@ endpoint to remain exactly `http://127.0.0.1:8000/v1` without recording secret
 environment values. The normalized fixed path and workspace root, plus hashes of
 the systemd scope tools used to contain the parent process tree, are part of every
 runtime identity attestation.
+Git and systemd metadata subprocesses receive fixed minimal environments rather
+than inherited loader, helper, proxy, or configuration variables. Execution uses
+the one path-hash-pinned root-owned system Python through a hash-pinned launcher
+that always supplies `-S`. The registered dependency-tree directory is opened and
+held independently, then added explicitly to `PYTHONPATH`. It is not selected as
+a virtual environment or processed as a site directory, so its `.pth`,
+`sitecustomize`, and `usercustomize` files cannot execute at startup.
 At preparation, the exact gate and deployment environment are copied into a private
 worker-workspace whose directories and gate are mode 0500 and whose environment is
 mode 0400. The manifest fixes both file digests. Each invocation opens the snapshot,
@@ -166,8 +179,8 @@ After scope binding and gated release, the complete parent payload has an
 same whole-cgroup kill/reap/quarantine path; it never creates or retries a scored
 outcome.
 Every preparatory Git or environment-attestation subprocess has a separate
-900-second process-group deadline. Expiry kills and boundedly reaps that complete
-group before the surrounding preparation fails or the raw cohort is quarantined;
+900-second process-group deadline. Expiry kills that complete group and boundedly
+reaps its launcher before preparation fails or the raw cohort is quarantined;
 the local systemd metadata probes use a ten-second deadline through the same helper.
 
 Every model-capable worker remains inside the shared workspace

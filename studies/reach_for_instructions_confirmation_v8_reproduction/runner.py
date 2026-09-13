@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import pwd
+import re
 import select
 import shutil
 import shlex
@@ -60,6 +61,26 @@ ARCHIVE_SCOPE_TIMEOUT_SECONDS = 900
 INTEGRITY_COMMAND_TIMEOUT_SECONDS = 900
 SYSTEM_COMMAND_TIMEOUT_SECONDS = 10
 COMMAND_REAP_TIMEOUT_SECONDS = 10
+ASSIST_SITE_PACKAGES_RELATIVE = Path(
+    "deploy/assist/code/.venv/lib/python3.14/site-packages"
+)
+CANONICAL_ASSIST_SITE_PACKAGES_SHA256 = (
+    "be8f93081203b389ed84a4213f6e98f019638c1c9cd275e6be6fd7384571c4d0"
+)
+CANONICAL_PYTHON_PATH_SHA256 = (
+    "c03c93ec8cafc307d5de617b0988d1c401bf0aae3f19e8b03174a9bc0f3cb5d7"
+)
+PYTHON_LAUNCHER = b'#!/bin/sh\nexec /usr/bin/python3.14 -S "$@"\n'
+PYTHON_LAUNCHER_SHA256 = (
+    "95978039ce0f1be9755f26b347ce84cd40ef4c7dac97c94a5ebbfb3e1a89270b"
+)
+REQUIRED_REVIEW_MODELS = {
+    "harness-integrity": "gpt-5.6-terra",
+    "minimum-adequate-setup": "gpt-5.6-terra",
+    "scientific-validity": "gpt-5.6-terra",
+    "statistical-validity": "gpt-5.6-terra",
+    "design-final": "gpt-5.6-sol",
+}
 SAFE_GIT_ENVIRONMENT = {
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "GIT_CONFIG_NOSYSTEM": "1",
@@ -105,10 +126,26 @@ def _verify_no_symlink_components(label: str, path: Path, base: Path) -> None:
 
 
 def _git_environment() -> dict[str, str]:
-    """Return the caller environment without Git repository/config overrides."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    """Return a fixed Git environment without caller-controlled loader or config state."""
+    env = {
+        "HOME": pwd.getpwuid(os.getuid()).pw_dir,
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/bin:/bin",
+    }
     env.update(SAFE_GIT_ENVIRONMENT)
     return env
+
+
+def _system_environment() -> dict[str, str]:
+    """Return the minimal environment required by local systemd metadata commands."""
+    uid = os.getuid()
+    return {
+        "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus",
+        "HOME": pwd.getpwuid(uid).pw_dir,
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/bin:/bin",
+        "XDG_RUNTIME_DIR": f"/run/user/{uid}",
+    }
 
 
 def _run_integrity_command(
@@ -244,6 +281,40 @@ def _canonical_workspace_root(root: Path) -> Path:
     return workspace
 
 
+def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
+    """Require the tag-bound independent review approvals for this exact candidate."""
+    try:
+        reviews = approval.get("reviews") if isinstance(approval, dict) else None
+        valid_shape = (
+            isinstance(approval, dict)
+            and set(approval) == {
+                "candidate_commit", "candidate_tree", "coordination_thread_id", "reviews", "schema"
+            }
+            and approval["schema"] == "reach-v8-r3-reproduction-review-approval-v1"
+            and approval["candidate_commit"] == commit
+            and approval["candidate_tree"] == tree
+            and approval["coordination_thread_id"] == COORDINATION_THREAD_ID
+            and isinstance(reviews, dict)
+            and set(reviews) == set(REQUIRED_REVIEW_MODELS)
+        )
+    except (KeyError, TypeError):
+        valid_shape = False
+    if not valid_shape:
+        raise ValueError("registration tag does not bind the required review approvals")
+    assert isinstance(reviews, dict)
+    for lens, model in REQUIRED_REVIEW_MODELS.items():
+        review = reviews[lens]
+        if (
+            not isinstance(review, dict)
+            or set(review) != {"disposition", "model", "result_sha256"}
+            or review["disposition"] != "accepted"
+            or review["model"] != model
+            or not isinstance(review["result_sha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", review["result_sha256"]) is None
+        ):
+            raise ValueError("registration tag review approval differs")
+
+
 def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
     registration = manifest["registration"]
     tag = registration["tag"]
@@ -258,6 +329,16 @@ def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str
     tag_object = _command("git", "rev-parse", tag, cwd=root)
     commit = _command("git", "rev-parse", f"{tag}^{{commit}}", cwd=root)
     tree = _command("git", "rev-parse", f"{tag}^{{tree}}", cwd=root)
+    try:
+        approval_text = _command(
+            "git", "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}", cwd=root,
+        )
+        approval = json.loads(approval_text)
+    except json.JSONDecodeError as error:
+        raise ValueError("registration tag review approval is malformed") from error
+    if approval_text != canonical_json(approval).decode():
+        raise ValueError("registration tag review approval is not canonical")
+    _verify_review_approval(approval, commit=commit, tree=tree)
     current = _git_identity(root)
     if current != {"commit": commit, "tree": tree, "status": ""}:
         raise ValueError("reproduction checkout is not the clean registered commit")
@@ -348,7 +429,34 @@ def _verify_fixed_path(
     _verify_no_symlink_components(label, registered_path, workspace)
 
 
-def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
+def _python_environment_identity(assist_python: Path) -> dict[str, str]:
+    """Bind execution to one system interpreter and one explicit dependency tree."""
+    try:
+        executable = assist_python.resolve(strict=True)
+    except OSError as error:
+        raise ValueError("Assist interpreter is unavailable") from error
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    site_packages = home / ASSIST_SITE_PACKAGES_RELATIVE
+    if (
+        hashlib.sha256(str(executable).encode()).hexdigest()
+        != CANONICAL_PYTHON_PATH_SHA256
+        or hashlib.sha256(str(site_packages).encode()).hexdigest()
+        != CANONICAL_ASSIST_SITE_PACKAGES_SHA256
+    ):
+        raise ValueError("Assist interpreter environment path differs from registration")
+    _verify_no_symlink_components("Assist dependency tree", site_packages, home)
+    if not site_packages.is_dir() or site_packages.is_symlink():
+        raise ValueError("Assist dependency tree is unavailable")
+    return {
+        "executable_path_sha256": CANONICAL_PYTHON_PATH_SHA256,
+        "site_packages_path_sha256": CANONICAL_ASSIST_SITE_PACKAGES_SHA256,
+        "site_packages_relative": "lib/python3.14/site-packages",
+        "startup_mode": "fixed-system-interpreter-minus-S-with-explicit-pythonpath",
+        "launcher_sha256": PYTHON_LAUNCHER_SHA256,
+    }
+
+
+def _prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
     """Atomically publish private clean detached clones without fetching."""
     workspace_root = _canonical_workspace_root(root)
     expected_root = workspace_root / RUNTIME_RELATIVE
@@ -372,6 +480,7 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
             worker_workspace = staging / "worker-workspace"
             worker_tools = worker_workspace / "tools"
             worker_assist = worker_workspace / "assist"
+            worker_python = worker_workspace / "python"
             worker_tools.mkdir(parents=True, mode=0o700)
             worker_assist.mkdir(mode=0o700)
             gate_source = workspace_root / "tools" / "agentic"
@@ -386,8 +495,10 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
                 raise ValueError("worker deployment environment must be a real mode-0600 file")
             shutil.copyfile(gate_source, worker_tools / "agentic")
             shutil.copyfile(deploy_source, worker_assist / ".deploy.env")
+            atomic_write(worker_python, PYTHON_LAUNCHER)
             (worker_tools / "agentic").chmod(0o500)
             (worker_assist / ".deploy.env").chmod(0o400)
+            worker_python.chmod(0o500)
             worker_tools.chmod(0o500)
             worker_assist.chmod(0o500)
             worker_workspace.chmod(0o500)
@@ -431,6 +542,12 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
                 shutil.rmtree(staging)
 
 
+def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
+    """Prepare the fixed runtime with termination cleanup active from entry."""
+    with _termination_interrupts():
+        _prepare_runtime(root, assist_repository, runtime_root)
+
+
 _ENVIRONMENT_SHELL = (
     'set -a; . "$1"; '
     'test "${GIT_CONFIG_GLOBAL-}" = /dev/null '
@@ -449,6 +566,7 @@ _ENVIRONMENT_SHELL = (
     'GIT_CONFIG_KEY_0=core.fsmonitor; GIT_CONFIG_VALUE_0=false; '
     'GIT_CONFIG_KEY_1=core.untrackedCache; GIT_CONFIG_VALUE_1=false; '
     'GIT_CONFIG_KEY_2=core.hooksPath; GIT_CONFIG_VALUE_2=/dev/null; '
+    'unset LD_AUDIT LD_PRELOAD PYTHONHOME PYTHONINSPECT PYTHONSTARTUP; '
     'export PYTHONPATH GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM '
     'GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 '
     'GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 '
@@ -544,12 +662,17 @@ print(json.dumps({
 def _environment_identity(
     *, assist_python: Path, workspace_root: Path, execution_root: Path,
     assist_source: Path, production_threads_path_sha256: str,
-    worker_workspace: Path | None = None,
+    worker_workspace: Path | None = None, site_packages: Path | None = None,
 ) -> dict[str, Any]:
+    python_environment = _python_environment_identity(assist_python)
+    site_packages = site_packages or (
+        Path(pwd.getpwuid(os.getuid()).pw_dir) / ASSIST_SITE_PACKAGES_RELATIVE
+    )
     env = _execution_environment(
         workspace_root=workspace_root,
         execution_root=execution_root,
         assist_source=assist_source,
+        site_packages=site_packages,
         production_threads_path_sha256=production_threads_path_sha256,
     )
     worker_workspace = worker_workspace or execution_root.parent / "worker-workspace"
@@ -565,7 +688,7 @@ def _environment_identity(
             "sh", "-c",
             _ENVIRONMENT_SHELL,
             "sh", str(deploy_environment), source_path,
-            str(assist_python), "-c", _ENVIRONMENT_SCRIPT,
+            str(assist_python.resolve(strict=True)), "-S", "-c", _ENVIRONMENT_SCRIPT,
         ], cwd=workspace_root,
         env=env, text=True,
         timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
@@ -612,13 +735,17 @@ def _environment_identity(
     value["environment"]["agentic_production_threads_dir"] = "registered-systemd-directory"
     value["environment"]["dbus_session_bus_address"] = "user-runtime-bus"
     value["environment"]["path"] = ["/usr/bin", "/bin"]
-    value["environment"]["python_path"] = ["exact-parent-checkout", "exact-assist-checkout"]
+    value["environment"]["python_path"] = [
+        "exact-parent-checkout", "exact-assist-checkout", "exact-dependency-tree"
+    ]
     value["environment"]["xdg_runtime_dir"] = "user-runtime"
+    value["python_environment"] = python_environment
     return value
 
 
 def _execution_environment(
     *, workspace_root: Path, execution_root: Path, assist_source: Path,
+    site_packages: Path,
     production_threads_path_sha256: str
 ) -> dict[str, str]:
     """Build the fixed minimal environment used by parent-runner subprocesses."""
@@ -633,7 +760,7 @@ def _execution_environment(
         "NO_PROXY": "127.0.0.1,localhost",
         "PATH": "/usr/bin:/bin",
         "PYTHONNOUSERSITE": "1",
-        "PYTHONPATH": f"{execution_root}:{assist_source}",
+        "PYTHONPATH": f"{execution_root}:{assist_source}:{site_packages}",
         "PYTHONSAFEPATH": "1",
         "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
         "no_proxy": "127.0.0.1,localhost",
@@ -646,6 +773,7 @@ def _production_threads_directory(expected_sha256: str) -> Path:
     """Resolve the hash-pinned production-status root from the Assist service."""
     result = _run_integrity_command(
         ["/usr/bin/systemctl", "show", "assist-web", "-p", "Environment", "--value"],
+        env=_system_environment(),
         text=True,
         timeout_seconds=SYSTEM_COMMAND_TIMEOUT_SECONDS,
     )
@@ -823,7 +951,7 @@ def attest(
     if server["source"] != server_expected["source"]:
         raise ValueError("llama.cpp source differs from registration")
     environment = value["environment"]
-    for key in ("distributions", "environment", "modules", "python"):
+    for key in ("distributions", "environment", "modules", "python", "python_environment"):
         if environment[key] != expected[key]:
             raise ValueError(f"worker {key} differs from registration")
     if value["shared_gate"] != expected["shared_gate"]:
@@ -1195,7 +1323,10 @@ def _verify_scope_empty(scope: Path) -> None:
         raise RuntimeError("scoped process still contains live members")
 
 
-def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
+def _kill_scope(
+    process: subprocess.Popen[str], scope: Path, *, unit: str | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
     """Atomically kill the complete transient cgroup and prove it is empty."""
     def kill_members() -> None:
         path = scope / "cgroup.kill"
@@ -1216,11 +1347,37 @@ def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
         finally:
             os.close(descriptor)
 
-    kill_members()
+    def kill_bound_members() -> None:
+        try:
+            kill_members()
+        except Exception as direct_error:
+            if unit is None or env is None:
+                raise
+            fallback = _run_integrity_command(
+                [
+                    "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
+                    "--signal=SIGKILL", f"{unit}.scope",
+                ],
+                env=env,
+                text=True,
+                timeout_seconds=SYSTEM_COMMAND_TIMEOUT_SECONDS,
+            )
+            if fallback.returncode:
+                raise RuntimeError("bound scope could not be killed") from direct_error
+
+    kill_bound_members()
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
     try:
         process.communicate(timeout=10)
     except subprocess.TimeoutExpired:
-        kill_members()
+        kill_bound_members()
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         try:
             process.communicate(timeout=10)
         except subprocess.TimeoutExpired as error:
@@ -1249,7 +1406,7 @@ def _kill_unbound_scope(
     scope_error: Exception | None = None
     if scope.exists():
         try:
-            _kill_scope(process, scope)
+            _kill_scope(process, scope, unit=unit, env=env)
             return
         except Exception as error:
             scope_error = error
@@ -1315,7 +1472,7 @@ def _run_scoped(
                     if scope is None:
                         _kill_unbound_scope(process, unit, env)
                     else:
-                        _kill_scope(process, scope)
+                        _kill_scope(process, scope, unit=unit, env=env)
                 except Exception as scope_error:
                     cleanup_error = scope_error
             _quarantine(output, f"{stage} could not be launched or was interrupted")
@@ -1401,6 +1558,7 @@ def _verify_worker_workspace_path(
     """Verify the private gate/environment snapshot used by the exact parent."""
     gate = workspace / "tools" / "agentic"
     deploy_environment = workspace / "assist" / ".deploy.env"
+    python_launcher = workspace / "python"
     _verify_no_symlink_components("prepared shared LLM gate", gate, workspace)
     _verify_no_symlink_components(
         "prepared deployment environment", deploy_environment, workspace
@@ -1410,6 +1568,7 @@ def _verify_worker_workspace_path(
         workspace / "assist",
         gate,
         deploy_environment,
+        python_launcher,
     }
     actual_entries = set(workspace.rglob("*"))
     if actual_entries != expected_entries:
@@ -1434,6 +1593,11 @@ def _verify_worker_workspace_path(
         or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o400
         or _sha256(deploy_environment)
         != manifest["runtime"]["expected_attestation"]["deployment_environment"]["sha256"]
+        or not python_launcher.is_file()
+        or python_launcher.is_symlink()
+        or python_launcher.stat().st_uid != os.getuid()
+        or stat.S_IMODE(python_launcher.stat().st_mode) != 0o500
+        or _sha256(python_launcher) != PYTHON_LAUNCHER_SHA256
     ):
         raise ValueError("prepared worker workspace differs from registration")
     return workspace
@@ -1477,8 +1641,11 @@ def _bound_invocation_paths(
     manifest: dict[str, Any],
 ):
     """Open first and verify every code/config path used by the exact parent."""
-    venv_root = assist_python.parent.parent
-    sources = (execution_root, assist_source, venv_root)
+    python_environment = _python_environment_identity(assist_python)
+    site_packages = (
+        Path(pwd.getpwuid(os.getuid()).pw_dir) / ASSIST_SITE_PACKAGES_RELATIVE
+    )
+    sources = (execution_root, assist_source, site_packages)
     descriptors: list[int] = []
     try:
         for source in sources:
@@ -1487,14 +1654,15 @@ def _bound_invocation_paths(
                 os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
                 | getattr(os, "O_NOFOLLOW", 0),
             ))
+        expected_owners = (os.getuid(), os.getuid(), os.getuid())
         if any(
             not stat.S_ISDIR(os.fstat(descriptor).st_mode)
-            or os.fstat(descriptor).st_uid != os.getuid()
-            for descriptor in descriptors
+            or os.fstat(descriptor).st_uid != expected_owner
+            for descriptor, expected_owner in zip(descriptors, expected_owners, strict=True)
         ):
             raise ValueError("bound invocation directory differs from registration")
         references = [Path(f"/proc/{os.getpid()}/fd/{value}") for value in descriptors]
-        execution_reference, assist_reference, venv_reference = references
+        execution_reference, assist_reference, site_packages_reference = references
         with _bound_worker_workspace(worker_workspace, manifest) as worker_reference:
             _verify_execution(execution_reference, manifest)
             if _git_identity(assist_reference) != {
@@ -1503,21 +1671,18 @@ def _bound_invocation_paths(
                 "status": "",
             }:
                 raise ValueError("bound Assist checkout differs from registration")
-            try:
-                python_relative = assist_python.relative_to(venv_root)
-            except ValueError as error:
-                raise ValueError("Assist interpreter escapes its environment") from error
-            python_reference = venv_reference / python_relative
+            python_reference = worker_reference / "python"
             if (
                 not python_reference.is_file()
-                or _sha256(python_reference)
-                != manifest["runtime"]["expected_attestation"]["python"]["sha256"]
+                or _sha256(python_reference) != PYTHON_LAUNCHER_SHA256
             ):
-                raise ValueError("bound Assist interpreter differs from registration")
+                raise ValueError("bound Assist interpreter launcher differs from registration")
             yield {
                 "assist": assist_reference,
                 "execution": execution_reference,
                 "python": python_reference,
+                "python_environment": python_environment,
+                "site_packages": site_packages_reference,
                 "worker": worker_reference,
             }
     finally:
@@ -1537,14 +1702,16 @@ def _bound_execution_environment(
         assist_source=bound["assist"],
         production_threads_path_sha256=expected["production_threads_path_sha256"],
         worker_workspace=bound["worker"],
+        site_packages=bound["site_packages"],
     )
-    for key in ("distributions", "environment", "modules", "python"):
+    for key in ("distributions", "environment", "modules", "python", "python_environment"):
         if identity[key] != expected[key]:
             raise ValueError(f"bound {label} {key} differs from registration")
     return _execution_environment(
         workspace_root=workspace_root,
         execution_root=bound["execution"],
         assist_source=bound["assist"],
+        site_packages=bound["site_packages"],
         production_threads_path_sha256=expected["production_threads_path_sha256"],
     )
 
@@ -1831,7 +1998,7 @@ def _run_batch_locked(
     return "complete" if len(outcomes) == len(bundle.schedule) else "batch-complete"
 
 
-def run_batch(
+def _run_batch(
     root: Path,
     output: Path,
     attestations: Path,
@@ -1888,6 +2055,37 @@ def run_batch(
                 raise
 
 
+def run_batch(
+    root: Path,
+    output: Path,
+    attestations: Path,
+    *,
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    workspace_root: Path,
+    model_path: Path,
+    server_pid: int,
+    llama_source: Path,
+    events: Path,
+) -> str:
+    """Run one batch with termination handling active before path or Git checks."""
+    with _termination_interrupts():
+        return _run_batch(
+            root,
+            output,
+            attestations,
+            execution_root=execution_root,
+            assist_source=assist_source,
+            assist_python=assist_python,
+            workspace_root=workspace_root,
+            model_path=model_path,
+            server_pid=server_pid,
+            llama_source=llama_source,
+            events=events,
+        )
+
+
 def _verify_archive_runtime(
     *,
     manifest: dict[str, Any],
@@ -1916,7 +2114,7 @@ def _verify_archive_runtime(
         production_threads_path_sha256=manifest["runtime"]["expected_attestation"]["production_threads_path_sha256"],
     )
     expected = manifest["runtime"]["expected_attestation"]
-    for key in ("distributions", "environment", "modules", "python"):
+    for key in ("distributions", "environment", "modules", "python", "python_environment"):
         if environment[key] != expected[key]:
             raise ValueError(f"archive worker {key} differs from registration")
     worker_workspace = _verify_worker_workspace(execution_root, manifest)
@@ -2057,7 +2255,7 @@ def _archive_and_analyze_locked(
     verify_reproduction_seal(capsule, manifest)
 
 
-def archive_and_analyze(
+def _archive_and_analyze(
     root: Path,
     output: Path,
     capsule: Path,
@@ -2134,6 +2332,33 @@ def archive_and_analyze(
                 raise ValueError(
                     "archive or analysis integrity failed; reproduction quarantined"
                 ) from error
+
+
+def archive_and_analyze(
+    root: Path,
+    output: Path,
+    capsule: Path,
+    analysis_output: Path,
+    attestations: Path,
+    *,
+    execution_root: Path,
+    assist_source: Path,
+    assist_python: Path,
+    workspace_root: Path,
+) -> None:
+    """Archive with termination handling active before path or Git checks."""
+    with _termination_interrupts():
+        _archive_and_analyze(
+            root,
+            output,
+            capsule,
+            analysis_output,
+            attestations,
+            execution_root=execution_root,
+            assist_source=assist_source,
+            assist_python=assist_python,
+            workspace_root=workspace_root,
+        )
 
 
 def main() -> None:
