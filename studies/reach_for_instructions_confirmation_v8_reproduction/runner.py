@@ -1000,13 +1000,13 @@ def _server_identity(server_pid: int, model_path: Path, llama_source: Path) -> d
     index = 1
     while index < len(argv):
         value = argv[index]
-        normalized.append(value)
         if value == "--model" and index + 1 < len(argv):
             argument = Path(argv[index + 1])
             model_arguments.append(argument)
-            normalized.append(argument.name)
+            normalized.extend((value, argument.name))
             index += 2
         else:
+            normalized.append(value)
             index += 1
     if len(model_arguments) != 1:
         raise ValueError("llama server must have exactly one model argument")
@@ -1537,49 +1537,34 @@ def _verify_scope_empty(scope: Path) -> None:
         raise RuntimeError("scoped process still contains live members")
 
 
-def _kill_scope(
-    process: subprocess.Popen[str], scope: Path, *, unit: str | None = None,
-    env: dict[str, str] | None = None,
-) -> None:
+def _kill_scope(process: subprocess.Popen[str], scope: Path) -> None:
     """Atomically kill the complete transient cgroup and prove it is empty."""
     def kill_members() -> None:
         path = scope / "cgroup.kill"
         _verify_no_symlink_components(
             "scoped process kill control", path, Path("/")
         )
+        descriptor = -1
         try:
             descriptor = os.open(
                 path,
                 os.O_WRONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
             )
-        except OSError as error:
-            raise RuntimeError("bound scope kill control is unavailable") from error
-        try:
             if not stat.S_ISREG(os.fstat(descriptor).st_mode):
                 raise RuntimeError("scope kill control is not a regular cgroup file")
             os.write(descriptor, b"1")
+        except OSError as error:
+            try:
+                (scope / "cgroup.procs").read_text()
+            except OSError as membership_error:
+                if membership_error.errno in {errno.ENOENT, errno.ENODEV}:
+                    return
+            raise RuntimeError("bound scope kill control is unavailable") from error
         finally:
-            os.close(descriptor)
+            if descriptor >= 0:
+                os.close(descriptor)
 
-    def kill_bound_members() -> None:
-        try:
-            kill_members()
-        except Exception as direct_error:
-            if unit is None or env is None:
-                raise
-            fallback = _run_integrity_command(
-                [
-                    "/usr/bin/systemctl", "--user", "kill", "--kill-whom=all",
-                    "--signal=SIGKILL", f"{unit}.scope",
-                ],
-                env=env,
-                text=True,
-                timeout_seconds=SYSTEM_COMMAND_TIMEOUT_SECONDS,
-            )
-            if fallback.returncode:
-                raise RuntimeError("bound scope could not be killed") from direct_error
-
-    kill_bound_members()
+    kill_members()
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -1587,7 +1572,7 @@ def _kill_scope(
     try:
         process.communicate(timeout=10)
     except subprocess.TimeoutExpired:
-        kill_bound_members()
+        kill_members()
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -1620,7 +1605,7 @@ def _kill_unbound_scope(
     scope_error: Exception | None = None
     if scope.exists():
         try:
-            _kill_scope(process, scope, unit=unit, env=env)
+            _kill_scope(process, scope)
             return
         except Exception as error:
             scope_error = error
@@ -1686,7 +1671,7 @@ def _run_scoped(
                     if scope is None:
                         _kill_unbound_scope(process, unit, env)
                     else:
-                        _kill_scope(process, scope, unit=unit, env=env)
+                        _kill_scope(process, scope)
                 except Exception as scope_error:
                     cleanup_error = scope_error
             _quarantine(output, f"{stage} could not be launched or was interrupted")
@@ -2379,12 +2364,30 @@ def _trial_metadata_from_traces(
             raise ValueError("sealed trial trace is missing or malformed") from error
         if not isinstance(trace, dict) or trace.get("trial_sha256") != trial.sha256:
             raise ValueError("sealed trial trace identity differs from the schedule")
-        result = trace.get("result", {})
-        if not isinstance(result, dict):
-            result = {}
         record = by_trial.get(trial.sha256)
         if record is None:
             raise ValueError("sealed outcome is missing from trial metadata")
+        if "result" not in trace:
+            if record["outcome"] not in {
+                "timeout", "provider_error", "infrastructure_invalid",
+            }:
+                raise ValueError("sealed returned trace lacks secondary metadata")
+            result = {}
+        else:
+            result = trace["result"]
+            if not isinstance(result, dict) or not {
+                "first_prompt_tokens", "skill_loaded_before_first_read",
+            }.issubset(result):
+                raise ValueError("sealed returned trace has malformed secondary metadata")
+            token_count = result["first_prompt_tokens"]
+            if token_count is not None and (
+                not isinstance(token_count, int)
+                or isinstance(token_count, bool)
+                or token_count < 0
+            ):
+                raise ValueError("sealed returned trace has malformed secondary metadata")
+            if not isinstance(result["skill_loaded_before_first_read"], bool):
+                raise ValueError("sealed returned trace has malformed secondary metadata")
         metadata.append({
             "trial": trial.__dict__,
             "context_lines": analysis.CONTEXT_LINES[trial.task],

@@ -125,6 +125,13 @@ expose the measure remains missing rather than being classified as no load. The
 execution retains every admitted terminal result with the parent reason codes,
 plus actual first-provider-request input tokens when available.
 
+Every returned pass or artifact-failure trace must contain both registered
+secondary observations. A present result object is likewise required to contain
+a Boolean guide-load observation and a nonnegative integer input-token count,
+or `null` only when token usage was unavailable. Only timeout, provider-error,
+or infrastructure-invalid traces may omit the result object and retain both
+observations as missing.
+
 For every worker payload that returns, the captured first provider request must
 equal its sealed request or the whole reproduction is quarantined. The inherited
 worker writes that capture only after `agent.invoke` returns. An admitted
@@ -222,7 +229,10 @@ only after the bound launcher has returned because the kernel cannot remove a
 cgroup that still has members. Any other membership-read failure is rejected.
 Wrapper interruption kills the complete bound scope through the cgroup's
 atomic `cgroup.kill` control, reaps its launcher, and verifies no scope member
-remains before quarantine and lock release. One signal guard remains active
+remains before quarantine and lock release. If that bound control has vanished,
+cleanup proceeds only when the membership interface also returns `ENOENT` or
+`ENODEV`, proving that the kernel collected the cgroup; a readable cgroup without
+its atomic control fails closed. One signal guard remains active
 through child cleanup and post-run reconciliation. Repeated signals are coalesced
 until cleanup begins, then kernel-level deferral protects the kill, reap, and
 quarantine sequence until it is durable. A failure before binding can stop only
@@ -311,6 +321,8 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
+Trial metadata must contain both secondary keys; pass and artifact-failure rows
+require a Boolean guide-load observation.
 Before calling the parent archive, the wrapper strictly parses the live evidence,
 requires `output/bundle.json` to match both the registered parent bundle digest
 and exact file SHA-256, and rescans every persisted outcome for a terminal

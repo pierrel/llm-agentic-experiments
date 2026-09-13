@@ -220,6 +220,34 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "network namespace differs"):
                 runner._verify_server_listener(proc)
 
+    def test_server_identity_normalizes_the_model_argument_once(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "model.gguf"
+            model.write_bytes(b"weights")
+            executable = Path("/proc/self/exe").resolve()
+            code = "import time; time.sleep(30)"
+            process = subprocess.Popen([
+                str(executable), "-c", code, "--model", str(model),
+                "--host", "127.0.0.1",
+            ])
+            try:
+                with patch.object(
+                    runner, "_verify_server_listener"
+                ), patch.object(
+                    runner, "_git_identity", return_value={"commit": "1" * 40}
+                ), patch.object(
+                    runner, "_sha256", return_value="2" * 64
+                ):
+                    identity = runner._server_identity(process.pid, model, root)
+            finally:
+                process.terminate()
+                process.wait(timeout=10)
+        self.assertEqual(identity["argv"], [
+            executable.name, "-c", code, "--model", model.name,
+            "--host", "127.0.0.1",
+        ])
+
     def test_manifest_pins_the_exact_authoritative_parent(self) -> None:
         manifest = runner._load_manifest(ROOT)
         parent = manifest["parent"]
@@ -847,15 +875,26 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 timeout=runner.BATCH_SCOPE_TIMEOUT_SECONDS
             )
             self.assertEqual(terminate.call_args.args, (process, scope))
-            self.assertTrue(terminate.call_args.kwargs["unit"].startswith("reach-v8-r2-"))
-            self.assertEqual(terminate.call_args.kwargs["env"], {})
             self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
 
-    def test_bound_scope_cleanup_rejects_a_missing_atomic_kill_control(self) -> None:
+    def test_bound_scope_cleanup_accepts_a_kernel_collected_cgroup(self) -> None:
+        process = Mock()
+        process.pid = 123
+        process.communicate.return_value = ("", "")
+        with TemporaryDirectory() as temporary:
+            with patch.object(runner.os, "killpg") as kill_group:
+                runner._kill_scope(process, Path(temporary) / "missing-scope")
+        kill_group.assert_called_once_with(123, signal.SIGKILL)
+        process.communicate.assert_called_once_with(timeout=10)
+
+    def test_bound_scope_cleanup_rejects_a_live_scope_without_atomic_kill(self) -> None:
         process = Mock()
         with TemporaryDirectory() as temporary:
+            scope = Path(temporary) / "live.scope"
+            scope.mkdir()
+            (scope / "cgroup.procs").write_text("")
             with self.assertRaisesRegex(RuntimeError, "kill control is unavailable"):
-                runner._kill_scope(process, Path(temporary) / "missing-scope")
+                runner._kill_scope(process, scope)
         process.communicate.assert_not_called()
 
     def test_normal_scope_completion_accepts_kernel_collected_cgroup(self) -> None:
@@ -934,7 +973,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 runner, "_scope_cgroup", return_value=scope
             ), patch.object(runner, "_kill_scope") as atomic_kill:
                 runner._kill_unbound_scope(process, "live", {})
-        atomic_kill.assert_called_once_with(process, scope, unit="live", env={})
+        atomic_kill.assert_called_once_with(process, scope)
         process.communicate.assert_not_called()
 
     def test_scope_bootstrap_never_releases_payload_on_pipe_eof(self) -> None:
@@ -1155,7 +1194,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             output = Path(temporary)
             traces = output / "traces"
             traces.mkdir()
-            (traces / f"{trial.sha256}.json").write_bytes(canonical_json({
+            trace_path = traces / f"{trial.sha256}.json"
+            trace_path.write_bytes(canonical_json({
                 "trial_sha256": trial.sha256,
                 "result": {
                     "first_prompt_tokens": 123,
@@ -1168,9 +1208,74 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 one_trial_bundle,
                 [{"trial_sha256": trial.sha256, "outcome": "pass", "detail": "ok"}],
             ))
-        self.assertEqual(metadata[0]["first_prompt_tokens"], 123)
-        self.assertTrue(metadata[0]["skill_loaded_before_first_read"])
-        self.assertEqual(metadata[0]["outcome"], "pass")
+            self.assertEqual(metadata[0]["first_prompt_tokens"], 123)
+            self.assertTrue(metadata[0]["skill_loaded_before_first_read"])
+            self.assertEqual(metadata[0]["outcome"], "pass")
+
+            missing = object()
+            malformed_results = (
+                missing,
+                [],
+                {"first_prompt_tokens": 123},
+                {"first_prompt_tokens": True, "skill_loaded_before_first_read": False},
+                {"first_prompt_tokens": -1, "skill_loaded_before_first_read": False},
+                {"first_prompt_tokens": "123", "skill_loaded_before_first_read": False},
+                {"first_prompt_tokens": 123, "skill_loaded_before_first_read": None},
+                {"first_prompt_tokens": 123, "skill_loaded_before_first_read": "true"},
+                {"first_prompt_tokens": 123, "skill_loaded_before_first_read": 1},
+            )
+            for result in malformed_results:
+                with self.subTest(result=result):
+                    trace = {"trial_sha256": trial.sha256}
+                    if result is not missing:
+                        trace["result"] = result
+                    trace_path.write_bytes(canonical_json(trace) + b"\n")
+                    with self.assertRaisesRegex(ValueError, "secondary metadata"):
+                        runner._trial_metadata_from_traces(
+                            output,
+                            one_trial_bundle,
+                            [{
+                                "trial_sha256": trial.sha256,
+                                "outcome": "artifact_failure",
+                                "detail": "failed",
+                            }],
+                        )
+
+            trace_path.write_bytes(canonical_json({
+                "trial_sha256": trial.sha256,
+                "result": {
+                    "first_prompt_tokens": None,
+                    "skill_loaded_before_first_read": False,
+                },
+            }) + b"\n")
+            metadata = json.loads(runner._trial_metadata_from_traces(
+                output,
+                one_trial_bundle,
+                [{
+                    "trial_sha256": trial.sha256,
+                    "outcome": "artifact_failure",
+                    "detail": "token usage unavailable",
+                }],
+            ))
+            self.assertIsNone(metadata[0]["first_prompt_tokens"])
+            self.assertFalse(metadata[0]["skill_loaded_before_first_read"])
+
+            trace_path.write_bytes(canonical_json({
+                "trial_sha256": trial.sha256,
+                "worker_error": "provider failed",
+                "trace": [],
+            }) + b"\n")
+            metadata = json.loads(runner._trial_metadata_from_traces(
+                output,
+                one_trial_bundle,
+                [{
+                    "trial_sha256": trial.sha256,
+                    "outcome": "provider_error",
+                    "detail": "provider failed",
+                }],
+            ))
+            self.assertIsNone(metadata[0]["first_prompt_tokens"])
+            self.assertIsNone(metadata[0]["skill_loaded_before_first_read"])
 
     def test_canonical_workspace_is_derived_and_cannot_be_substituted(self) -> None:
         workspace = runner._canonical_workspace_root(ROOT)
@@ -2030,16 +2135,33 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             ) - int(was_loaded),
         )
 
-    def test_capsule_rejects_boolean_or_negative_token_counts(self) -> None:
+    def test_capsule_rejects_invalid_returned_secondary_metadata(self) -> None:
         manifest = runner._load_manifest(ROOT)
+        missing = object()
+        cases = (
+            ("boolean-token", "first_prompt_tokens", True, "token count"),
+            ("negative-token", "first_prompt_tokens", -1, "token count"),
+            ("missing-token", "first_prompt_tokens", missing, "observations are missing"),
+            (
+                "missing-process", "skill_loaded_before_first_read", missing,
+                "observations are missing",
+            ),
+            (
+                "null-process", "skill_loaded_before_first_read", None,
+                "process measure is missing",
+            ),
+        )
         with TemporaryDirectory() as temporary:
-            for value in (True, -1):
-                with self.subTest(value=value):
-                    capsule = Path(temporary) / str(value)
+            for case, field, value, message in cases:
+                with self.subTest(case=case):
+                    capsule = Path(temporary) / case
                     shutil.copytree(HISTORICAL, capsule)
                     metadata_path = capsule / "trial-metadata.json"
                     metadata = json.loads(metadata_path.read_text())
-                    metadata[0]["first_prompt_tokens"] = value
+                    if value is missing:
+                        metadata[0].pop(field)
+                    else:
+                        metadata[0][field] = value
                     metadata_path.write_bytes(canonical_json(metadata) + b"\n")
                     run_path = capsule / "run.json"
                     run = json.loads(run_path.read_text())
@@ -2048,7 +2170,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     run_path.write_bytes(
                         canonical_json(run | {"record_sha256": digest(run)}) + b"\n"
                     )
-                    with self.assertRaisesRegex(ValueError, "token count"):
+                    with self.assertRaisesRegex(ValueError, message):
                         analysis._verify_capsule(
                             capsule,
                             bundle_sha256=manifest["parent"]["bundle_sha256"],
