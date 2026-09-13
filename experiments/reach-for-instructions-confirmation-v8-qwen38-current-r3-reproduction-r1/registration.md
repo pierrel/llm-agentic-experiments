@@ -26,11 +26,14 @@ check once, saves its self-digested proof inside the private runtime root, and
 subsequent pre/post attestations require that proof plus the still-clean local
 tagged checkout. They do not depend on a later mutable branch lookup.
 The annotated tag message is canonical JSON binding the exact candidate commit,
-tree, coordinator, and accepted scientific, statistical, harness, and minimum-
-setup Terra review artifact hashes plus the final Sol design-signoff artifact
-hash. The runner requires the registered reviewer model for every entry and an
-accepted disposition before preparation, so publication is also the executable
-review-admission gate.
+tree, coordinator, and the complete accepted scientific, statistical, harness,
+and minimum-setup Terra review artifact texts plus the final Sol design-signoff
+artifact text. The runner recomputes every artifact hash, requires each result to
+end in `ACCEPTED`, requires the registered reviewer model for every entry, and
+requires the Sol artifact to name the digest of the four embedded Terra
+approvals before preparation. The tag object is therefore the durable artifact
+container and executable review-admission gate rather than an opaque assertion
+that external artifacts exist.
 
 Execution is bound to the registered immutable coordinator identity
 `01a09689-f137-7cf1-a5c0-f32e7537fefa`. A different `CODEX_THREAD_ID` cannot
@@ -159,6 +162,9 @@ that always supplies `-S`. The registered dependency-tree directory is opened an
 held independently, then added explicitly to `PYTHONPATH`. It is not selected as
 a virtual environment or processed as a site directory, so its `.pth`,
 `sitecustomize`, and `usercustomize` files cannot execute at startup.
+The inherited exact parent replaces `PYTHONPATH` with its two source roots before
+each worker. The pinned launcher restores the descriptor-bound dependency path
+from the wrapper's fixed environment before starting system Python with `-S`.
 At preparation, the exact gate and deployment environment are copied into a private
 worker-workspace whose directories and gate are mode 0500 and whose environment is
 mode 0400. The manifest fixes both file digests. Each invocation opens the snapshot,

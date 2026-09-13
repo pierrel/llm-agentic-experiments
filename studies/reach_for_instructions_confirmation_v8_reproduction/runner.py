@@ -70,9 +70,17 @@ CANONICAL_ASSIST_SITE_PACKAGES_SHA256 = (
 CANONICAL_PYTHON_PATH_SHA256 = (
     "c03c93ec8cafc307d5de617b0988d1c401bf0aae3f19e8b03174a9bc0f3cb5d7"
 )
-PYTHON_LAUNCHER = b'#!/bin/sh\nexec /usr/bin/python3.14 -S "$@"\n'
+PYTHON_LAUNCHER = b'''#!/bin/sh
+test -n "${REACH_REPRODUCTION_SITE_PACKAGES-}" || exit 126
+case ":${PYTHONPATH-}:" in
+  *":${REACH_REPRODUCTION_SITE_PACKAGES}:"*) ;;
+  *) PYTHONPATH="${PYTHONPATH:+${PYTHONPATH}:}${REACH_REPRODUCTION_SITE_PACKAGES}" ;;
+esac
+export PYTHONPATH
+exec /usr/bin/python3.14 -S "$@"
+'''
 PYTHON_LAUNCHER_SHA256 = (
-    "95978039ce0f1be9755f26b347ce84cd40ef4c7dac97c94a5ebbfb3e1a89270b"
+    "6404791c0db83b83b9b054ff5c8f4e663b6c0c024d1919a1ed4bc82a64014284"
 )
 SYSTEM_PYTHON = Path("/usr/bin/python3.14")
 REQUIRED_REVIEW_MODELS = {
@@ -289,9 +297,10 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
         valid_shape = (
             isinstance(approval, dict)
             and set(approval) == {
-                "candidate_commit", "candidate_tree", "coordination_thread_id", "reviews", "schema"
+                "candidate_commit", "candidate_tree", "coordination_thread_id", "reviews",
+                "schema", "terra_approvals_sha256",
             }
-            and approval["schema"] == "reach-v8-r3-reproduction-review-approval-v1"
+            and approval["schema"] == "reach-v8-r3-reproduction-review-approval-v2"
             and approval["candidate_commit"] == commit
             and approval["candidate_tree"] == tree
             and approval["coordination_thread_id"] == COORDINATION_THREAD_ID
@@ -307,13 +316,29 @@ def _verify_review_approval(approval: Any, *, commit: str, tree: str) -> None:
         review = reviews[lens]
         if (
             not isinstance(review, dict)
-            or set(review) != {"disposition", "model", "result_sha256"}
+            or set(review) != {"disposition", "model", "result", "result_sha256"}
             or review["disposition"] != "accepted"
             or review["model"] != model
+            or not isinstance(review["result"], str)
+            or not 1 <= len(review["result"].encode()) <= 65_536
+            or review["result"].rstrip().splitlines()[-1:] != ["ACCEPTED"]
             or not isinstance(review["result_sha256"], str)
             or re.fullmatch(r"[0-9a-f]{64}", review["result_sha256"]) is None
+            or hashlib.sha256(review["result"].encode()).hexdigest()
+            != review["result_sha256"]
         ):
             raise ValueError("registration tag review approval differs")
+    terra_reviews = {
+        lens: reviews[lens] for lens in REQUIRED_REVIEW_MODELS
+        if lens != "design-final"
+    }
+    terra_digest = digest(terra_reviews)
+    if (
+        approval["terra_approvals_sha256"] != terra_digest
+        or f"TERRA_APPROVALS_SHA256={terra_digest}"
+        not in reviews["design-final"]["result"].splitlines()
+    ):
+        raise ValueError("registration tag Sol approval is not Terra-dependent")
 
 
 def _verify_local_registration(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
@@ -546,6 +571,8 @@ def _prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) ->
 def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> None:
     """Prepare the fixed runtime with termination cleanup active from entry."""
     with _termination_interrupts():
+        if os.environ.get("CODEX_THREAD_ID") != COORDINATION_THREAD_ID:
+            raise ValueError("prepare coordinator identity differs from registration")
         _prepare_runtime(root, assist_repository, runtime_root)
 
 
@@ -652,6 +679,7 @@ print(json.dumps({
         "python_no_user_site": os.environ.get("PYTHONNOUSERSITE"),
         "python_path": os.environ.get("PYTHONPATH"),
         "python_safe_path": os.environ.get("PYTHONSAFEPATH"),
+        "reach_reproduction_site_packages": os.environ.get("REACH_REPRODUCTION_SITE_PACKAGES"),
         "xdg_runtime_dir": os.environ.get("XDG_RUNTIME_DIR"),
     },
     "modules": modules,
@@ -686,7 +714,7 @@ def _environment_identity(
         or stat.S_IMODE(deploy_environment.stat().st_mode) != 0o400
     ):
         raise ValueError("worker deployment snapshot must be a real mode-0400 file")
-    source_path = f"{execution_root}:{assist_source}"
+    source_path = f"{execution_root}:{assist_source}:{site_packages}"
     python_command = (
         [str(assist_python), "-c", _ENVIRONMENT_SCRIPT]
         if launcher
@@ -737,6 +765,7 @@ def _environment_identity(
         "python_no_user_site": "1",
         "python_path": source_path,
         "python_safe_path": "1",
+        "reach_reproduction_site_packages": str(site_packages),
         "xdg_runtime_dir": f"/run/user/{os.getuid()}",
     }:
         raise ValueError("worker environment differs from the exact runtime profile")
@@ -747,6 +776,7 @@ def _environment_identity(
     value["environment"]["python_path"] = [
         "exact-parent-checkout", "exact-assist-checkout", "exact-dependency-tree"
     ]
+    value["environment"]["reach_reproduction_site_packages"] = "exact-dependency-tree"
     value["environment"]["xdg_runtime_dir"] = "user-runtime"
     value["python_environment"] = python_environment
     return value
@@ -771,6 +801,7 @@ def _execution_environment(
         "PYTHONNOUSERSITE": "1",
         "PYTHONPATH": f"{execution_root}:{assist_source}:{site_packages}",
         "PYTHONSAFEPATH": "1",
+        "REACH_REPRODUCTION_SITE_PACKAGES": str(site_packages),
         "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
         "no_proxy": "127.0.0.1,localhost",
     }

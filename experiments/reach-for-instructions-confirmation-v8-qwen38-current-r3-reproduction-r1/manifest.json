@@ -26,12 +26,12 @@
       "worker_workspace_relative": "worker-workspace"
     },
     "files": {
-      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "0a932fb262b137e0bc45f4f7a17743567273c6bfcdb9cd5ddaea5891dafc2f69",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "8abf96f504a50d4d37873741347c8719c5dd23a55533e71f0cb1d51aad9f2a53",
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "a59355a88b06cef467bf9e70ec87983bafd050d12379f29baccada1b22d0bb1c",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "6c56cb2e25adcc296f62c2a76ef108775fd6905db239c018ec73ad558bc987e4",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "7b721f9cf95091e7d911e4a8291a14bb46fd462190f122b24fc1a62e1806cf24",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "3de7eceea4801d00fc56c9687a207ce1a79829b5632c78bf777b497ad6d6874d",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "a498fdf82efab109365592ebe46a3184cc25d5a65e28e0e8b0c0c1e69a949375"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "a98a7a997c548a772baa9d262affa6dc500bd04b9adf057be8c3922edc45f4c1"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -156,6 +156,7 @@
             "exact-dependency-tree"
           ],
           "python_safe_path": "1",
+          "reach_reproduction_site_packages": "exact-dependency-tree",
           "xdg_runtime_dir": "user-runtime"
         },
         "modules": {
@@ -182,7 +183,7 @@
         },
         "python_environment": {
           "executable_path_sha256": "c03c93ec8cafc307d5de617b0988d1c401bf0aae3f19e8b03174a9bc0f3cb5d7",
-          "launcher_sha256": "95978039ce0f1be9755f26b347ce84cd40ef4c7dac97c94a5ebbfb3e1a89270b",
+          "launcher_sha256": "6404791c0db83b83b9b054ff5c8f4e663b6c0c024d1919a1ed4bc82a64014284",
           "site_packages_path_sha256": "be8f93081203b389ed84a4213f6e98f019638c1c9cd275e6be6fd7384571c4d0",
           "site_packages_relative": "lib/python3.14/site-packages",
           "startup_mode": "fixed-system-interpreter-minus-S-with-explicit-pythonpath"
@@ -262,5 +263,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "f3a6a230e58dc00437a8fdac1cf1f0effe9d28f62c9101431b92a56b19253d7a"
+  "sha256": "2b6127897747191100c3da1a5001973b89f4e2ad0ed025d8dc95e2d8a5a082d9"
 }

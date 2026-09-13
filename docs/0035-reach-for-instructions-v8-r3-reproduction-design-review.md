@@ -54,6 +54,9 @@ The reproduction adds no model-visible treatment. Its wrapper:
    directory added explicitly to `PYTHONPATH`;
    a caller-selected virtual environment and its `.pth`/`sitecustomize` startup
    surface never become interpreter inputs.
+   When the unchanged parent worker command resets `PYTHONPATH` to its two source
+   roots, the launcher restores the descriptor-bound dependency path from the
+   wrapper's fixed environment before executing the interpreter.
    The production-thread root is resolved only from the Assist service environment,
    checked against its registered path digest, and passed explicitly to the gate.
    Preparation copies the hash-pinned gate and mode-0600 deployment environment into
@@ -161,7 +164,10 @@ Each accepted review is recorded against the exact preregistration commit and
 tree in the effort evidence ledger and retained as a durable review artifact. A
 changed commit invalidates those approvals and requires another review. A final
 independent Sol design signoff follows Terra convergence. The annotated
-registration tag contains the SHA-256 of all four accepted Terra artifacts and
-the Sol signoff, plus their required model identities and the exact candidate
-commit/tree. Runtime registration verification rejects any missing or non-accepted
-approval before preparation. No model work begins before that tag is published.
+registration tag embeds the complete text and SHA-256 of all four accepted Terra
+artifacts and the Sol signoff, plus their required model identities and the exact
+candidate commit/tree. Runtime registration verification recomputes every hash,
+requires an accepted final line, and requires the Sol result to name the digest
+of the four embedded Terra approvals. It rejects any missing, non-accepted,
+opaque, or non-dependent approval before preparation. No model work begins before
+that tag is published.

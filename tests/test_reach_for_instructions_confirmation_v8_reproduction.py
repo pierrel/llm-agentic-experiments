@@ -557,7 +557,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     }
                 }
             }
-            with patch.object(
+            with patch.dict(
+                os.environ, {"CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID}
+            ), patch.object(
                 runner, "_canonical_workspace_root", return_value=workspace
             ), patch.object(runner, "_load_manifest", return_value=manifest), patch.object(
                 runner, "_verify_publication", return_value={}
@@ -769,6 +771,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(environment["CODEX_THREAD_ID"], runner.COORDINATION_THREAD_ID)
         self.assertEqual(environment["PYTHONPATH"], "/execution:/assist:/dependencies")
         self.assertEqual(
+            environment["REACH_REPRODUCTION_SITE_PACKAGES"], "/dependencies"
+        )
+        self.assertEqual(
             {key: environment[key] for key in runner.SAFE_GIT_ENVIRONMENT},
             runner.SAFE_GIT_ENVIRONMENT,
         )
@@ -803,6 +808,7 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 site_packages=root,
                 production_threads_path_sha256="0" * 64,
             )
+            environment["PYTHONPATH"] = "/execution:/assist"
             result = runner._run_integrity_command(
                 [str(launcher), "-c", "pass"], env=environment
             )
@@ -1086,22 +1092,56 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(command.call_args.args[:3], ("git", "ls-remote", runner.PUBLICATION_REMOTE))
 
     def test_registration_approval_binds_every_required_review(self) -> None:
+        terra_result = "Independent Terra review\nACCEPTED"
+        terra_reviews = {
+            lens: {
+                "disposition": "accepted",
+                "model": model,
+                "result": terra_result,
+                "result_sha256": hashlib.sha256(terra_result.encode()).hexdigest(),
+            }
+            for lens, model in runner.REQUIRED_REVIEW_MODELS.items()
+            if lens != "design-final"
+        }
+        terra_digest = digest(terra_reviews)
+        sol_result = f"Dependent Sol review\nTERRA_APPROVALS_SHA256={terra_digest}\nACCEPTED"
         approval = {
             "candidate_commit": "1" * 40,
             "candidate_tree": "2" * 40,
             "coordination_thread_id": runner.COORDINATION_THREAD_ID,
-            "reviews": {
-                lens: {
+            "reviews": terra_reviews | {
+                "design-final": {
                     "disposition": "accepted",
-                    "model": model,
-                    "result_sha256": "3" * 64,
+                    "model": runner.REQUIRED_REVIEW_MODELS["design-final"],
+                    "result": sol_result,
+                    "result_sha256": hashlib.sha256(sol_result.encode()).hexdigest(),
                 }
-                for lens, model in runner.REQUIRED_REVIEW_MODELS.items()
             },
-            "schema": "reach-v8-r3-reproduction-review-approval-v1",
+            "schema": "reach-v8-r3-reproduction-review-approval-v2",
+            "terra_approvals_sha256": terra_digest,
         }
         runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
         approval["reviews"]["scientific-validity"]["disposition"] = "revisions-required"
+        with self.assertRaisesRegex(ValueError, "review approval differs"):
+            runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
+
+    def test_registration_approval_rejects_opaque_or_non_dependent_results(self) -> None:
+        result = "Review\nACCEPTED"
+        reviews = {
+            lens: {
+                "disposition": "accepted", "model": model, "result": result,
+                "result_sha256": "3" * 64,
+            }
+            for lens, model in runner.REQUIRED_REVIEW_MODELS.items()
+        }
+        approval = {
+            "candidate_commit": "1" * 40,
+            "candidate_tree": "2" * 40,
+            "coordination_thread_id": runner.COORDINATION_THREAD_ID,
+            "reviews": reviews,
+            "schema": "reach-v8-r3-reproduction-review-approval-v2",
+            "terra_approvals_sha256": "4" * 64,
+        }
         with self.assertRaisesRegex(ValueError, "review approval differs"):
             runner._verify_review_approval(approval, commit="1" * 40, tree="2" * 40)
 
@@ -1119,10 +1159,19 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         def preflight(*_args, **_kwargs):
             self.assertEqual(active, [True])
 
-        with patch.object(runner, "_termination_interrupts", side_effect=guard), patch.object(
+        with patch.dict(
+            os.environ, {"CODEX_THREAD_ID": runner.COORDINATION_THREAD_ID}
+        ), patch.object(runner, "_termination_interrupts", side_effect=guard), patch.object(
             runner, "_prepare_runtime", side_effect=preflight
         ):
             runner.prepare_runtime(Path("/root"), Path("/assist"), Path("/runtime"))
+
+        with patch.dict(os.environ, {}, clear=True), patch.object(
+            runner, "_prepare_runtime"
+        ) as prepare:
+            with self.assertRaisesRegex(ValueError, "prepare coordinator identity"):
+                runner.prepare_runtime(Path("/root"), Path("/assist"), Path("/runtime"))
+        prepare.assert_not_called()
 
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:
         with TemporaryDirectory() as temporary:
