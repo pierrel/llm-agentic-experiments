@@ -544,6 +544,10 @@ def _production_threads_directory(expected_sha256: str) -> Path:
 def _verify_server_listener(proc: Path) -> None:
     """Require the attested process to own the fixed IPv4 listening socket."""
     try:
+        process_namespace = proc / "ns" / "net"
+        wrapper_namespace = Path("/proc/self/ns/net")
+        if not process_namespace.samefile(wrapper_namespace):
+            raise ValueError("llama server network namespace differs from the worker")
         with (proc / "net" / "tcp").open() as source:
             listeners = {
                 fields[9]
@@ -563,6 +567,8 @@ def _verify_server_listener(proc: Path) -> None:
                     break
             except FileNotFoundError:
                 continue
+        if not process_namespace.samefile(wrapper_namespace):
+            raise ValueError("llama server network namespace changed during attestation")
     except OSError as error:
         raise ValueError("model endpoint ownership is unavailable") from error
     if not owns_listener:

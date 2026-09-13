@@ -239,7 +239,8 @@ observed server: llama.cpp source commit
 `b97a9b61c878c52f1025dbe3f3494cc44e9611449cfeab4a0f1a25c84dea7f3a`,
 and the normalized launch arguments in `manifest.json`. The actual PID and
 process start identity are captured before and after every bounded invocation,
-and that exact process must own the unique IPv4 listener at `127.0.0.1:8000`.
+and that exact process, in the same network namespace as the wrapper and workers,
+must own the unique IPv4 listener at `127.0.0.1:8000`.
 The 17,559,178,144-byte model and server binary are re-hashed each time, and all
 identity attestation bytes must remain identical across the execution.
 

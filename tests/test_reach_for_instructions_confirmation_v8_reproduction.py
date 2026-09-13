@@ -201,6 +201,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             proc = Path(temporary) / "proc"
             (proc / "net").mkdir(parents=True)
             (proc / "fd").mkdir()
+            (proc / "ns").mkdir()
+            (proc / "ns" / "net").symlink_to("/proc/self/ns/net")
             (proc / "net" / "tcp").write_text(
                 "sl local_address rem_address st tx_queue tr retrnsmt uid timeout inode\n"
                 "0: 0100007F:1F40 00000000:0000 0A 0 0 0 1000 0 12345\n"
@@ -211,6 +213,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             descriptor.unlink()
             descriptor.symlink_to("socket:[99999]")
             with self.assertRaisesRegex(ValueError, "does not own"):
+                runner._verify_server_listener(proc)
+            descriptor.unlink()
+            descriptor.symlink_to("socket:[12345]")
+            (proc / "ns" / "net").unlink()
+            (proc / "ns" / "net").touch()
+            with self.assertRaisesRegex(ValueError, "network namespace differs"):
                 runner._verify_server_listener(proc)
 
     def test_manifest_pins_the_exact_authoritative_parent(self) -> None:
