@@ -1583,6 +1583,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     output,
                     [admission, {"admitted": False, "trial_sha256": "trial-2"}],
                 )
+            self.assertIsNone(runner._denial_retry_not_before(
+                output,
+                [admission, {"admitted": True, "trial_sha256": "trial-1"}],
+            ))
         thread = "thread-1"
         intervals = [
             {
@@ -1634,6 +1638,100 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 thread_id=thread,
                 schedule_size=1,
             )
+
+    def test_live_cooldowns_match_the_latest_attested_boundaries(self) -> None:
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            batch_path = output / "batch-cooldown.json"
+            batch_path.write_bytes(canonical_json({
+                "completed_outcomes": 24,
+                "not_before_unix": 1000.0,
+            }) + b"\n")
+            os.utime(batch_path, ns=(900_000_000_000, 900_000_000_000))
+            (output / "denial-cooldown.json").write_bytes(canonical_json({
+                "admission_count": 1,
+                "not_before_unix": 700.0,
+                "trial_sha256": "trial-1",
+            }) + b"\n")
+            admissions = [
+                {"admitted": False, "trial_sha256": "trial-1"},
+                {"admitted": True, "trial_sha256": "trial-1"},
+            ]
+            denial_interval = {
+                "admissions_after": 1,
+                "batch_cooldown_mtime_ns": None,
+                "next_batch_not_before_unix": None,
+                "next_denial_not_before_unix": 700.0,
+                "outcomes_after": 0,
+            }
+            batch_interval = {
+                "admissions_after": 2,
+                "batch_cooldown_mtime_ns": 900_000_000_000,
+                "next_batch_not_before_unix": 1000.0,
+                "next_denial_not_before_unix": None,
+                "outcomes_after": 24,
+            }
+            self.assertEqual(
+                runner._verify_live_cooldowns(
+                    output, admissions, [denial_interval, batch_interval]
+                ),
+                ([batch_interval], None),
+            )
+            batch_path.write_bytes(canonical_json({
+                "completed_outcomes": 23,
+                "not_before_unix": 1000.0,
+            }) + b"\n")
+            with self.assertRaisesRegex(ValueError, "batch cooldown"):
+                runner._verify_live_cooldowns(
+                    output, admissions, [denial_interval, batch_interval]
+                )
+            batch_path.write_bytes(canonical_json({
+                "completed_outcomes": 24,
+                "not_before_unix": 1000.0,
+            }) + b"\n")
+            os.utime(batch_path, ns=(900_000_000_000, 900_000_000_000))
+            (output / "denial-cooldown.json").write_bytes(canonical_json({
+                "admission_count": 1,
+                "not_before_unix": 701.0,
+                "trial_sha256": "trial-1",
+            }) + b"\n")
+            with self.assertRaisesRegex(ValueError, "denial cooldown"):
+                runner._verify_live_cooldowns(
+                    output, admissions, [denial_interval, batch_interval]
+                )
+
+    def test_archive_rechecks_live_cooldowns_before_copying(self) -> None:
+        scoped = Mock()
+        manifest = {"execution": {"coordination_thread_id": "thread"}}
+        with patch.object(
+            runner, "_verify_archive_runtime"
+        ), patch.object(
+            runner, "verify_attestation_inventory", return_value=([], [])
+        ), patch.object(
+            runner.StudyBundle, "read_verified",
+            return_value=SimpleNamespace(schedule=()),
+        ), patch.object(
+            runner, "_verified_progress", return_value=([], [])
+        ), patch.object(
+            runner, "verify_execution_intervals", return_value=[]
+        ), patch.object(
+            runner, "_verify_live_cooldowns", side_effect=ValueError("changed cooldown")
+        ), patch.object(runner, "_run_scoped", scoped):
+            with self.assertRaisesRegex(ValueError, "changed cooldown"):
+                runner._archive_and_analyze_locked(
+                    ROOT,
+                    Path("output"),
+                    Path("capsule"),
+                    Path("analysis"),
+                    Path("attestations"),
+                    manifest=manifest,
+                    registration=TEST_REGISTRATION,
+                    execution_root=Path("execution"),
+                    assist_source=Path("assist"),
+                    assist_python=Path("python"),
+                    workspace_root=Path("workspace"),
+                )
+        scoped.assert_not_called()
 
     def test_process_rate_uses_only_observed_secondary_measurements(self) -> None:
         manifest = runner._load_manifest(ROOT)

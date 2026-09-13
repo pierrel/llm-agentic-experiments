@@ -1151,13 +1151,17 @@ def _verified_progress(
     return admission_records, outcomes
 
 
-def _denial_retry_not_before(
+def _read_denial_cooldown(
     output: Path, admissions: list[dict[str, Any]]
-) -> float | int | None:
-    """Validate and return the latest still-applicable denial boundary."""
+) -> dict[str, Any] | None:
+    """Return the cooldown bound to the latest persisted denial, if any."""
     path = output / "denial-cooldown.json"
+    denial_counts = [
+        index for index, admission in enumerate(admissions, start=1)
+        if admission.get("admitted") is False
+    ]
     if not path.exists():
-        if admissions and admissions[-1].get("admitted") is False:
+        if denial_counts:
             raise ValueError("production-denial cooldown is missing")
         return None
     try:
@@ -1176,14 +1180,21 @@ def _denial_retry_not_before(
         or not 1 <= record["admission_count"] <= len(admissions)
     ):
         raise ValueError("production-denial cooldown is malformed")
-    denial = admissions[record["admission_count"] - 1]
-    if denial.get("admitted") is not False or denial.get("trial_sha256") != record["trial_sha256"]:
-        raise ValueError("production-denial cooldown differs from admissions")
-    if (
-        admissions[-1].get("admitted") is False
-        and record["admission_count"] != len(admissions)
-    ):
+    if not denial_counts or record["admission_count"] != denial_counts[-1]:
         raise ValueError("production-denial cooldown differs from latest denial")
+    denial = admissions[denial_counts[-1] - 1]
+    if denial.get("trial_sha256") != record["trial_sha256"]:
+        raise ValueError("production-denial cooldown differs from admissions")
+    return record
+
+
+def _denial_retry_not_before(
+    output: Path, admissions: list[dict[str, Any]]
+) -> float | int | None:
+    """Validate and return the latest still-applicable denial boundary."""
+    record = _read_denial_cooldown(output, admissions)
+    if record is None:
+        return None
     if record["admission_count"] == len(admissions):
         return record["not_before_unix"]
     return None
@@ -1666,6 +1677,51 @@ def _read_batch_cooldown(path: Path) -> dict[str, int | float]:
     return value
 
 
+def _verify_live_cooldowns(
+    output: Path,
+    admissions: list[dict[str, Any]],
+    intervals: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], float | int | None]:
+    """Match the live cooldown files to their latest attested boundaries."""
+    batch_intervals = [
+        interval for interval in intervals
+        if interval["next_batch_not_before_unix"] is not None
+    ]
+    batch_path = output / "batch-cooldown.json"
+    if batch_intervals:
+        expected_batch = batch_intervals[-1]
+        batch = _read_batch_cooldown(batch_path)
+        if (
+            batch["completed_outcomes"] != expected_batch["outcomes_after"]
+            or batch["not_before_unix"]
+            != expected_batch["next_batch_not_before_unix"]
+            or batch_path.stat().st_mtime_ns
+            != expected_batch["batch_cooldown_mtime_ns"]
+        ):
+            raise ValueError("sealed batch cooldown differs from its attestation")
+    elif batch_path.exists():
+        raise ValueError("sealed batch cooldown exists before a batch boundary")
+
+    denial = _read_denial_cooldown(output, admissions)
+    denial_intervals = [
+        interval for interval in intervals
+        if interval["next_denial_not_before_unix"] is not None
+    ]
+    if (denial is None) != (not denial_intervals):
+        raise ValueError("production-denial cooldown differs from its attestation")
+    if denial is not None:
+        expected_denial = denial_intervals[-1]
+        if (
+            denial["admission_count"] != expected_denial["admissions_after"]
+            or denial["not_before_unix"]
+            != expected_denial["next_denial_not_before_unix"]
+        ):
+            raise ValueError("production-denial cooldown differs from its attestation")
+        if denial["admission_count"] == len(admissions):
+            return batch_intervals, denial["not_before_unix"]
+    return batch_intervals, None
+
+
 def _fidelity_error(records: list[dict[str, Any]]) -> bool:
     phrases = (
         "provider request capture", "provider request differs", "worker rendered provider request",
@@ -1928,7 +1984,6 @@ def _run_batch_locked(
         prior_admissions, existing_outcomes = _verified_progress(output, bundle)
         if _fidelity_error(existing_outcomes):
             raise ValueError("persisted provider-request fidelity failure")
-        denial_not_before = _denial_retry_not_before(output, prior_admissions)
     except Exception as error:
         _quarantine(output, "persisted reproduction progress is invalid")
         raise ValueError("persisted reproduction progress is invalid") from error
@@ -1947,39 +2002,15 @@ def _run_batch_locked(
                 thread_id=thread_id,
                 schedule_size=len(bundle.schedule),
             )
-        batch_intervals = [
-            interval for interval in prior_intervals
-            if interval["next_batch_not_before_unix"] is not None
-        ]
+        batch_intervals, denial_not_before = _verify_live_cooldowns(
+            output, prior_admissions, prior_intervals
+        )
         attested_batch_not_before = (
             batch_intervals[-1]["next_batch_not_before_unix"] if batch_intervals else None
         )
-        attested_batch_mtime_ns = (
-            batch_intervals[-1]["batch_cooldown_mtime_ns"] if batch_intervals else None
-        )
-        attested_batch_boundary = (
-            batch_intervals[-1]["outcomes_after"] if batch_intervals else 0
-        )
-        cooldown = output / "batch-cooldown.json"
-        if not attested_batch_boundary and cooldown.exists():
-            raise ValueError("sealed batch cooldown exists before a batch boundary")
-        batch_file_not_before: float | int | None = None
-        batch_file_mtime_ns: int | None = None
-        if attested_batch_boundary:
-            value = _read_batch_cooldown(cooldown)
-            if (
-                value["completed_outcomes"] != attested_batch_boundary
-            ):
-                raise ValueError("sealed batch cooldown differs from run progress")
-            batch_file_not_before = value["not_before_unix"]
-            batch_file_mtime_ns = cooldown.stat().st_mtime_ns
         attested_denial_not_before = (
             prior_intervals[-1]["next_denial_not_before_unix"] if prior_intervals else None
         )
-        if batch_file_not_before != attested_batch_not_before:
-            raise ValueError("sealed batch cooldown differs from its attestation")
-        if batch_file_mtime_ns != attested_batch_mtime_ns:
-            raise ValueError("sealed batch cooldown timestamp differs from its attestation")
         if denial_not_before != attested_denial_not_before:
             raise ValueError("production-denial cooldown differs from its attestation")
         now = time.time()
@@ -2352,6 +2383,7 @@ def _archive_and_analyze_locked(
         thread_id=manifest["execution"]["coordination_thread_id"],
         schedule_size=len(bundle.schedule),
     )
+    _verify_live_cooldowns(output, admissions, intervals)
     expected_metadata = _trial_metadata_from_traces(output, bundle, outcomes)
     worker_workspace = execution_root.parent / "worker-workspace"
     with _bound_invocation_paths(

@@ -276,6 +276,8 @@ admission is a denial, its cooldown must bind that exact latest admission count
 and trial; an older valid cooldown cannot authorize another attempt. The wrapper
 also rescans all persisted outcomes for provider-request fidelity failures before
 admission rather than checking only outcomes returned by the current invocation.
+Archive repeats the live batch- and denial-cooldown reconciliation against the
+complete attestation history before copying or sealing the cohort.
 Any other unadmitted failure, nonzero parent invocation, malformed event slice,
 detected request-fidelity error, unexpected episode count, registration/import/dependency/
 model/server drift, or before/after attestation mismatch quarantines the entire
