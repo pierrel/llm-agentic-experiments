@@ -47,7 +47,10 @@ RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 HASH_CHUNK_BYTES = 1024 * 1024
 EVENT_READ_BYTES = 64 * 1024
 EVENT_RECORD_BYTES = 1024 * 1024
+EVENT_SLICE_BYTES = 16 * 1024 * 1024
+EVENT_SLICE_RECORDS = 16 * 1024
 MAX_ATTESTED_EVENTS = 2 * BATCH_EPISODES
+MODEL_LISTENER = "0100007F:1F40"
 
 # systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
@@ -349,6 +352,12 @@ import base64, csv, hashlib, importlib, importlib.metadata, json, os, pathlib, s
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 roots = __RUNTIME_ROOT_DISTRIBUTIONS__
+def file_sha256(path):
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            value.update(chunk)
+    return value
 distributions = {}
 pending = list(roots)
 while pending:
@@ -367,7 +376,7 @@ while pending:
     with record_path.open(newline="") as source:
         for relative, encoded, _size in csv.reader(source):
             path = pathlib.Path(dist.locate_file(relative))
-            actual_digest = hashlib.sha256(path.read_bytes()).digest()
+            actual_digest = file_sha256(path).digest()
             if encoded:
                 algorithm, value = encoded.split("=", 1)
                 actual = base64.urlsafe_b64encode(actual_digest).rstrip(b"=").decode()
@@ -376,7 +385,7 @@ while pending:
             verified.append((relative, actual_digest.hex()))
     distributions[name] = {
         "version": dist.version,
-        "record_sha256": hashlib.sha256(record_path.read_bytes()).hexdigest(),
+        "record_sha256": file_sha256(record_path).hexdigest(),
         "verified_files_sha256": hashlib.sha256(json.dumps(sorted(verified), separators=(",", ":")).encode()).hexdigest(),
     }
     for raw in dist.requires or ():
@@ -388,7 +397,7 @@ modules = {}
 for name in ("studies.reach_for_instructions_confirmation_v8.runner", "harness.bundle", "assist", "assist.model_manager"):
     module = importlib.import_module(name)
     path = pathlib.Path(module.__file__).resolve()
-    modules[name] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    modules[name] = {"path": str(path), "sha256": file_sha256(path).hexdigest()}
 python = pathlib.Path(sys.executable).resolve()
 print(json.dumps({
     "distributions": {
@@ -408,7 +417,7 @@ print(json.dumps({
         "xdg_runtime_dir": os.environ.get("XDG_RUNTIME_DIR"),
     },
     "modules": modules,
-    "python": {"version": sys.version, "sha256": hashlib.sha256(python.read_bytes()).hexdigest()},
+    "python": {"version": sys.version, "sha256": file_sha256(python).hexdigest()},
 }, sort_keys=True, separators=(",", ":")))
 '''.replace("__RUNTIME_ROOT_DISTRIBUTIONS__", repr(RUNTIME_ROOT_DISTRIBUTIONS))
 
@@ -532,6 +541,34 @@ def _production_threads_directory(expected_sha256: str) -> Path:
     return path
 
 
+def _verify_server_listener(proc: Path) -> None:
+    """Require the attested process to own the fixed IPv4 listening socket."""
+    try:
+        with (proc / "net" / "tcp").open() as source:
+            listeners = {
+                fields[9]
+                for line in source
+                if len(fields := line.split()) >= 10
+                and fields[1] == MODEL_LISTENER
+                and fields[3] == "0A"
+            }
+        if len(listeners) != 1:
+            raise ValueError("model endpoint is not uniquely listening")
+        target = f"socket:[{listeners.pop()}]"
+        owns_listener = False
+        for descriptor in (proc / "fd").iterdir():
+            try:
+                if os.readlink(descriptor) == target:
+                    owns_listener = True
+                    break
+            except FileNotFoundError:
+                continue
+    except OSError as error:
+        raise ValueError("model endpoint ownership is unavailable") from error
+    if not owns_listener:
+        raise ValueError("attested server does not own the model endpoint")
+
+
 def _server_identity(server_pid: int, model_path: Path, llama_source: Path) -> dict[str, Any]:
     proc = Path("/proc") / str(server_pid)
     try:
@@ -571,6 +608,12 @@ def _server_identity(server_pid: int, model_path: Path, llama_source: Path) -> d
             raise ValueError("attested model is not the model loaded by the server")
     except OSError as error:
         raise ValueError("llama server model identity is unavailable") from error
+    _verify_server_listener(proc)
+    try:
+        if (proc / "stat").read_text().split()[21] != start_ticks:
+            raise ValueError("llama server process changed during attestation")
+    except (OSError, IndexError) as error:
+        raise ValueError("llama server process identity is unavailable") from error
     return {
         "pid": server_pid,
         "start_ticks": start_ticks,
@@ -838,9 +881,12 @@ def _read_appended_events(
         or _descriptor_sha256(descriptor, prefix_size) != prefix_sha256
     ):
         raise ValueError("coordination event log changed non-append-only")
+    if complete_size - prefix_size > EVENT_SLICE_BYTES:
+        raise ValueError("coordination event slice is too large")
     records: list[dict[str, Any]] = []
     buffer = b""
     offset = prefix_size
+    record_count = 0
     while offset < complete_size:
         chunk = os.pread(
             descriptor, min(EVENT_READ_BYTES, complete_size - offset), offset
@@ -853,6 +899,9 @@ def _read_appended_events(
         lines = (buffer + chunk).split(b"\n")
         buffer = lines.pop()
         for line in lines:
+            record_count += 1
+            if record_count > EVENT_SLICE_RECORDS:
+                raise ValueError("coordination event slice has too many records")
             if len(line) > EVENT_RECORD_BYTES:
                 raise ValueError("coordination event record is too large")
             try:

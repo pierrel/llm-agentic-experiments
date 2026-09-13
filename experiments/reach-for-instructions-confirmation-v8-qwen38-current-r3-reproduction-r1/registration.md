@@ -185,7 +185,10 @@ the still-gated bootstrap and can never release the parent payload.
 
 The wrapper hashes that exact shared gate before and after every invocation and
 opens its sibling `.coordination/events.jsonl` once before execution, then reads the
-appended evidence from that same inode. A different
+appended evidence from that same inode. The prior prefix is fingerprinted and all
+file hashes are streamed in 1 MiB chunks. Each appended event record is at most
+1 MiB, and the complete invocation slice is limited to 16 MiB and 16,384 records;
+exceeding a bound is malformed event evidence and quarantines the cohort. A different
 tool or caller-selected event log cannot authorize an admission or retry. The
 shared workspace itself is derived from the registered worktree's Git common
 directory; a caller-supplied copied workspace cannot substitute its own lock or
@@ -235,7 +238,8 @@ observed server: llama.cpp source commit
 `5f17bef5a18d0da06d59744b46b8f2203d889c83`, server binary SHA-256
 `b97a9b61c878c52f1025dbe3f3494cc44e9611449cfeab4a0f1a25c84dea7f3a`,
 and the normalized launch arguments in `manifest.json`. The actual PID and
-process start identity are captured before and after every bounded invocation.
+process start identity are captured before and after every bounded invocation,
+and that exact process must own the unique IPv4 listener at `127.0.0.1:8000`.
 The 17,559,178,144-byte model and server binary are re-hashed each time, and all
 identity attestation bytes must remain identical across the execution.
 

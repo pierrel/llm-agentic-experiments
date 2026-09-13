@@ -184,6 +184,35 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(path.mode, "rb")
         self.assertEqual(set(source.read_sizes), {runner.HASH_CHUNK_BYTES})
 
+        analysis_source = Source()
+        analysis_path = File()
+        analysis_path.open = lambda mode: analysis_source
+        self.assertEqual(
+            analysis._sha256(analysis_path), hashlib.sha256(payload).hexdigest()
+        )
+        self.assertEqual(set(analysis_source.read_sizes), {analysis.HASH_CHUNK_BYTES})
+
+    def test_environment_attestation_script_streams_every_file_hash(self) -> None:
+        self.assertNotIn("read_bytes()", runner._ENVIRONMENT_SCRIPT)
+        self.assertIn('source.read(1024 * 1024)', runner._ENVIRONMENT_SCRIPT)
+
+    def test_server_listener_must_belong_to_the_attested_process(self) -> None:
+        with TemporaryDirectory() as temporary:
+            proc = Path(temporary) / "proc"
+            (proc / "net").mkdir(parents=True)
+            (proc / "fd").mkdir()
+            (proc / "net" / "tcp").write_text(
+                "sl local_address rem_address st tx_queue tr retrnsmt uid timeout inode\n"
+                "0: 0100007F:1F40 00000000:0000 0A 0 0 0 1000 0 12345\n"
+            )
+            descriptor = proc / "fd" / "3"
+            descriptor.symlink_to("socket:[12345]")
+            runner._verify_server_listener(proc)
+            descriptor.unlink()
+            descriptor.symlink_to("socket:[99999]")
+            with self.assertRaisesRegex(ValueError, "does not own"):
+                runner._verify_server_listener(proc)
+
     def test_manifest_pins_the_exact_authoritative_parent(self) -> None:
         manifest = runner._load_manifest(ROOT)
         parent = manifest["parent"]
@@ -949,6 +978,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             try:
                 with self.assertRaisesRegex(ValueError, "too large"):
                     runner._read_appended_events(descriptor, prefix_identity, "thread")
+            finally:
+                os.close(descriptor)
+
+    def test_event_slice_has_total_byte_and_record_bounds(self) -> None:
+        empty = (0, hashlib.sha256(b"").hexdigest(), True)
+        with patch.object(
+            runner.os, "fstat",
+            return_value=SimpleNamespace(st_size=runner.EVENT_SLICE_BYTES + 1),
+        ):
+            with self.assertRaisesRegex(ValueError, "slice is too large"):
+                runner._read_appended_events(7, empty, "thread")
+
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_bytes(b"{}\n" * (runner.EVENT_SLICE_RECORDS + 1))
+            descriptor = os.open(events, os.O_RDONLY)
+            try:
+                with self.assertRaisesRegex(ValueError, "too many records"):
+                    runner._read_appended_events(descriptor, empty, "thread")
             finally:
                 os.close(descriptor)
 

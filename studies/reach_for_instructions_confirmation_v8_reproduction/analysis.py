@@ -19,10 +19,15 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
 
 CONTEXT_LINES = {"C-low": 0, "C-medium": 900, "C-high": 3600}
 CONDITIONS = ("G01", "G02")
+HASH_CHUNK_BYTES = 1024 * 1024
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(HASH_CHUNK_BYTES):
+            value.update(chunk)
+    return value.hexdigest()
 
 
 def _json(path: Path) -> Any:
