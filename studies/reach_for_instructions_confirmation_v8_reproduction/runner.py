@@ -74,6 +74,7 @@ PYTHON_LAUNCHER = b'#!/bin/sh\nexec /usr/bin/python3.14 -S "$@"\n'
 PYTHON_LAUNCHER_SHA256 = (
     "95978039ce0f1be9755f26b347ce84cd40ef4c7dac97c94a5ebbfb3e1a89270b"
 )
+SYSTEM_PYTHON = Path("/usr/bin/python3.14")
 REQUIRED_REVIEW_MODELS = {
     "harness-integrity": "gpt-5.6-terra",
     "minimum-adequate-setup": "gpt-5.6-terra",
@@ -663,8 +664,11 @@ def _environment_identity(
     *, assist_python: Path, workspace_root: Path, execution_root: Path,
     assist_source: Path, production_threads_path_sha256: str,
     worker_workspace: Path | None = None, site_packages: Path | None = None,
+    launcher: bool = False,
 ) -> dict[str, Any]:
-    python_environment = _python_environment_identity(assist_python)
+    python_environment = _python_environment_identity(
+        SYSTEM_PYTHON if launcher else assist_python
+    )
     site_packages = site_packages or (
         Path(pwd.getpwuid(os.getuid()).pw_dir) / ASSIST_SITE_PACKAGES_RELATIVE
     )
@@ -683,12 +687,17 @@ def _environment_identity(
     ):
         raise ValueError("worker deployment snapshot must be a real mode-0400 file")
     source_path = f"{execution_root}:{assist_source}"
+    python_command = (
+        [str(assist_python), "-c", _ENVIRONMENT_SCRIPT]
+        if launcher
+        else [str(assist_python.resolve(strict=True)), "-S", "-c", _ENVIRONMENT_SCRIPT]
+    )
     result = _run_integrity_command(
         [
             "sh", "-c",
             _ENVIRONMENT_SHELL,
             "sh", str(deploy_environment), source_path,
-            str(assist_python.resolve(strict=True)), "-S", "-c", _ENVIRONMENT_SCRIPT,
+            *python_command,
         ], cwd=workspace_root,
         env=env, text=True,
         timeout_seconds=INTEGRITY_COMMAND_TIMEOUT_SECONDS,
@@ -1703,6 +1712,7 @@ def _bound_execution_environment(
         production_threads_path_sha256=expected["production_threads_path_sha256"],
         worker_workspace=bound["worker"],
         site_packages=bound["site_packages"],
+        launcher=True,
     )
     for key in ("distributions", "environment", "modules", "python", "python_environment"):
         if identity[key] != expected[key]:
