@@ -161,6 +161,9 @@ The inherited archive worker also runs in a transient scope using the same gated
 startup and whole-cgroup cleanup mechanism. Terminating signals during any part
 of the archive transaction become cleanup-bearing interruptions; the worker tree
 is killed and reaped before lock release, and the raw cohort is quarantined.
+The complete bounded parent invocation has an 18,000-second scope deadline and
+the archive worker a 900-second deadline. Expiry uses the same whole-cgroup
+kill/reap/quarantine path; it never creates or retries a scored outcome.
 
 Every model-capable worker remains inside the shared workspace
 `tools/agentic resource run llm` gate. One wrapper invocation admits at most 24
@@ -192,9 +195,12 @@ exceeding a bound is malformed event evidence and quarantines the cohort. A diff
 tool or caller-selected event log cannot authorize an admission or retry. The
 shared workspace itself is derived from the registered worktree's Git common
 directory. The wrapper derives its source checkout from its own imported module,
-requires `--root` to name that exact path, and strips caller-supplied `GIT_*`
-repository and configuration overrides from every fixed `/usr/bin/git` command.
-A caller-supplied
+requires `--root` to be that exact lexical path, and requires registered SHA-256
+digests of the canonical workspace and Git-common absolute paths. It strips
+caller-supplied `GIT_*` repository/configuration overrides from every fixed
+`/usr/bin/git` command and disables local fsmonitor, untracked-cache, and hook
+execution. Those safe Git variables are also fixed in the inherited parent and
+worker environment after deployment-environment loading. A caller-supplied
 copied workspace cannot substitute its own lock or event namespace.
 
 A production-priority denial is administrative missingness and retries the same

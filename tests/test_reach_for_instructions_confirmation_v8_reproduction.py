@@ -195,6 +195,9 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
     def test_environment_attestation_script_streams_every_file_hash(self) -> None:
         self.assertNotIn("read_bytes()", runner._ENVIRONMENT_SCRIPT)
         self.assertIn('source.read(1024 * 1024)', runner._ENVIRONMENT_SCRIPT)
+        for key, value in runner.SAFE_GIT_ENVIRONMENT.items():
+            self.assertIn(f'${{{key}-}}', runner._ENVIRONMENT_SHELL)
+            self.assertIn(f"{key}={value}", runner._ENVIRONMENT_SHELL)
 
     def test_server_listener_must_belong_to_the_attested_process(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -613,6 +616,37 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             self.assertEqual(cleanup_state, ["entered", "exited"])
             terminate.assert_called_once()
             self.assertIs(terminate.call_args.args[0], process)
+
+    def test_scope_deadline_kills_and_quarantines_the_bound_cgroup(self) -> None:
+        process = Mock()
+        process.communicate.side_effect = subprocess.TimeoutExpired(
+            ["parent"], runner.BATCH_SCOPE_TIMEOUT_SECONDS
+        )
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / runner.STUDY
+            output.mkdir(mode=0o700)
+            scope = Path(temporary) / "scope"
+            with patch.object(
+                runner.subprocess, "Popen", return_value=process
+            ), patch.object(
+                runner, "_bind_scope", return_value=scope
+            ), patch.object(runner, "_release_scope"), patch.object(
+                runner, "_kill_scope"
+            ) as terminate:
+                with self.assertRaisesRegex(ValueError, "could not be launched"):
+                    runner._run_scoped(
+                        ["/unused-parent"],
+                        cwd=Path(temporary),
+                        env={},
+                        output=output,
+                        stage="parent runner",
+                        timeout_seconds=runner.BATCH_SCOPE_TIMEOUT_SECONDS,
+                    )
+            self.assertTrue((output / runner.INVALID).exists())
+            process.communicate.assert_called_once_with(
+                timeout=runner.BATCH_SCOPE_TIMEOUT_SECONDS
+            )
+            terminate.assert_called_once_with(process, scope)
             self.assertEqual(terminate.call_args.args[1], Path(temporary) / "scope")
 
     def test_bound_scope_cleanup_rejects_a_missing_atomic_kill_control(self) -> None:
@@ -693,6 +727,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(environment["AGENTIC_PRODUCTION_THREADS_DIR"], "/production")
         self.assertEqual(environment["PATH"], "/usr/bin:/bin")
         self.assertEqual(environment["CODEX_THREAD_ID"], runner.COORDINATION_THREAD_ID)
+        self.assertEqual(
+            {key: environment[key] for key in runner.SAFE_GIT_ENVIRONMENT},
+            runner.SAFE_GIT_ENVIRONMENT,
+        )
 
     def test_production_status_directory_is_hash_pinned_from_systemd(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -895,6 +933,24 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "registered reproduction checkout"):
                 runner._canonical_workspace_root(Path(temporary))
         command.assert_not_called()
+        with patch.object(runner, "_command") as command:
+            with self.assertRaisesRegex(ValueError, "registered reproduction checkout"):
+                runner._canonical_workspace_root(runner.SOURCE_ROOT / "unused" / "..")
+        command.assert_not_called()
+
+        with TemporaryDirectory() as temporary:
+            clone_root = Path(temporary) / "clone"
+            common = clone_root / ".git"
+            (clone_root.parent / "tools").mkdir()
+            (clone_root.parent / "tools" / "agentic").touch()
+            common.mkdir(parents=True)
+            with patch.object(
+                runner, "SOURCE_ROOT", clone_root
+            ), patch.object(
+                runner, "_command", return_value=str(common)
+            ):
+                with self.assertRaisesRegex(ValueError, "workspace identity differs"):
+                    runner._canonical_workspace_root(clone_root)
 
         completed = subprocess.CompletedProcess([], 0, "verified\n", "")
         with patch.dict(
@@ -905,9 +961,12 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(execute.call_args.args[0][0], runner.GIT_BINARY)
         git_environment = execute.call_args.kwargs["env"]
         self.assertNotIn("GIT_DIR", git_environment)
-        self.assertNotIn("GIT_CONFIG_COUNT", git_environment)
+        self.assertEqual(git_environment["GIT_CONFIG_COUNT"], "3")
         self.assertEqual(git_environment["GIT_CONFIG_GLOBAL"], "/dev/null")
         self.assertEqual(git_environment["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(git_environment["GIT_CONFIG_KEY_0"], "core.fsmonitor")
+        self.assertEqual(git_environment["GIT_CONFIG_KEY_2"], "core.hooksPath")
+        self.assertEqual(git_environment["GIT_CONFIG_VALUE_2"], "/dev/null")
         self.assertEqual(git_environment["UNRELATED"], "kept")
 
     def test_event_slice_rejects_a_rewritten_prefix(self) -> None:

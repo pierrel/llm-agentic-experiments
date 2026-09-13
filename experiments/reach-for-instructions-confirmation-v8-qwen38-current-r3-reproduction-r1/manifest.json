@@ -27,11 +27,11 @@
     },
     "files": {
       "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "8a1e436369cb342fdbfbb289eb0e99e3ebe10696439accde82a69a5336c18046",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "5197dd76915d7d2ee0751bbfbde5edd47d09db9aa7a46a37fb4327aef931133f",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1/registration.md": "b3a1b82671f5767f373cfe84d1edc9ebd7c975248c38a696ac5d3fe5611dc7ee",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "7b721f9cf95091e7d911e4a8291a14bb46fd462190f122b24fc1a62e1806cf24",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "758c8f4742ca2466c8fa8146a69fa121f420f7b05093089b9ae9978788810ee8",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "718eccdfc872cb763b5ab3f26163651c2d22d758c2d5b581ef989fdea71ec5e4"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "2a7c59ffb3f6f0596475d0f2896f0def2ef34d6b3afef1ccedc6eeb4703a81e9"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -135,6 +135,16 @@
           "agentic_production_threads_dir": "registered-systemd-directory",
           "assist_model_url": "http://127.0.0.1:8000/v1",
           "dbus_session_bus_address": "user-runtime-bus",
+          "git_config_count": "3",
+          "git_config_global": "/dev/null",
+          "git_config_key_0": "core.fsmonitor",
+          "git_config_key_1": "core.untrackedCache",
+          "git_config_key_2": "core.hooksPath",
+          "git_config_nosystem": "1",
+          "git_config_value_0": "false",
+          "git_config_value_1": "false",
+          "git_config_value_2": "/dev/null",
+          "git_terminal_prompt": "0",
           "path": [
             "/usr/bin",
             "/bin"
@@ -244,5 +254,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r1"
   },
-  "sha256": "70edfbfe1c133ce0c4069e1f8f304b14ca7f74072047a226a179b8f1a86fe181"
+  "sha256": "0f15ad7ba182a96e3d51a00aab6e2aa0bc65b4921301af697fb90fa0b5a0775b"
 }

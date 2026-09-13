@@ -53,6 +53,22 @@ MAX_ATTESTED_EVENTS = 2 * BATCH_EPISODES
 MODEL_LISTENER = "0100007F:1F40"
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 GIT_BINARY = "/usr/bin/git"
+CANONICAL_GIT_COMMON_SHA256 = "4ec5804c9e8fe8ab2ce302ffcee710702e46712c98b1852ddffaaf4a2f87a352"
+CANONICAL_WORKSPACE_SHA256 = "20019c25d374d76060ac0b3b62eb95e4a0703fc69135092b70f444c7cc18f3d1"
+BATCH_SCOPE_TIMEOUT_SECONDS = 18_000
+ARCHIVE_SCOPE_TIMEOUT_SECONDS = 900
+SAFE_GIT_ENVIRONMENT = {
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_CONFIG_COUNT": "3",
+    "GIT_CONFIG_KEY_0": "core.fsmonitor",
+    "GIT_CONFIG_VALUE_0": "false",
+    "GIT_CONFIG_KEY_1": "core.untrackedCache",
+    "GIT_CONFIG_VALUE_1": "false",
+    "GIT_CONFIG_KEY_2": "core.hooksPath",
+    "GIT_CONFIG_VALUE_2": "/dev/null",
+}
 
 # systemd-run contracts each $$ pair before the shell expands the remainder to its PID.
 _SCOPE_BOOTSTRAP = (
@@ -88,11 +104,7 @@ def _verify_no_symlink_components(label: str, path: Path, base: Path) -> None:
 def _git_environment() -> dict[str, str]:
     """Return the caller environment without Git repository/config overrides."""
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    env.update({
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_TERMINAL_PROMPT": "0",
-    })
+    env.update(SAFE_GIT_ENVIRONMENT)
     return env
 
 
@@ -165,7 +177,7 @@ def _git_identity(root: Path) -> dict[str, str]:
 
 def _canonical_workspace_root(root: Path) -> Path:
     """Locate the one shared workspace from this registered worktree's Git metadata."""
-    if Path(os.path.abspath(root)) != SOURCE_ROOT:
+    if root != SOURCE_ROOT:
         raise ValueError("root is not this registered reproduction checkout")
     common = Path(
         _command("git", "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=root)
@@ -176,6 +188,12 @@ def _canonical_workspace_root(root: Path) -> Path:
     workspace = (
         git_directory.parent if common != git_directory else git_directory.parent.parent
     ).resolve()
+    if (
+        hashlib.sha256(str(common).encode()).hexdigest() != CANONICAL_GIT_COMMON_SHA256
+        or hashlib.sha256(str(workspace).encode()).hexdigest()
+        != CANONICAL_WORKSPACE_SHA256
+    ):
+        raise ValueError("registered shared workspace identity differs")
     gate = workspace / "tools" / "agentic"
     _verify_no_symlink_components("canonical shared LLM gate", gate, workspace)
     if not gate.is_file() or gate.is_symlink():
@@ -374,6 +392,31 @@ def prepare_runtime(root: Path, assist_repository: Path, runtime_root: Path) -> 
                 shutil.rmtree(staging)
 
 
+_ENVIRONMENT_SHELL = (
+    'set -a; . "$1"; '
+    'test "${GIT_CONFIG_GLOBAL-}" = /dev/null '
+    '&& test "${GIT_CONFIG_NOSYSTEM-}" = 1 '
+    '&& test "${GIT_TERMINAL_PROMPT-}" = 0 '
+    '&& test "${GIT_CONFIG_COUNT-}" = 3 '
+    '&& test "${GIT_CONFIG_KEY_0-}" = core.fsmonitor '
+    '&& test "${GIT_CONFIG_VALUE_0-}" = false '
+    '&& test "${GIT_CONFIG_KEY_1-}" = core.untrackedCache '
+    '&& test "${GIT_CONFIG_VALUE_1-}" = false '
+    '&& test "${GIT_CONFIG_KEY_2-}" = core.hooksPath '
+    '&& test "${GIT_CONFIG_VALUE_2-}" = /dev/null || exit 126; '
+    'PYTHONPATH="$2"; '
+    'GIT_CONFIG_GLOBAL=/dev/null; GIT_CONFIG_NOSYSTEM=1; '
+    'GIT_TERMINAL_PROMPT=0; GIT_CONFIG_COUNT=3; '
+    'GIT_CONFIG_KEY_0=core.fsmonitor; GIT_CONFIG_VALUE_0=false; '
+    'GIT_CONFIG_KEY_1=core.untrackedCache; GIT_CONFIG_VALUE_1=false; '
+    'GIT_CONFIG_KEY_2=core.hooksPath; GIT_CONFIG_VALUE_2=/dev/null; '
+    'export PYTHONPATH GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM '
+    'GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 '
+    'GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1 '
+    'GIT_CONFIG_KEY_2 GIT_CONFIG_VALUE_2; shift 2; exec "$@"'
+)
+
+
 _ENVIRONMENT_SCRIPT = r'''
 import base64, csv, hashlib, importlib, importlib.metadata, json, os, pathlib, sys
 from packaging.requirements import Requirement
@@ -437,6 +480,16 @@ print(json.dumps({
         "agentic_production_threads_dir": os.environ.get("AGENTIC_PRODUCTION_THREADS_DIR"),
         "assist_model_url": os.environ.get("ASSIST_MODEL_URL"),
         "dbus_session_bus_address": os.environ.get("DBUS_SESSION_BUS_ADDRESS"),
+        "git_config_count": os.environ.get("GIT_CONFIG_COUNT"),
+        "git_config_global": os.environ.get("GIT_CONFIG_GLOBAL"),
+        "git_config_key_0": os.environ.get("GIT_CONFIG_KEY_0"),
+        "git_config_key_1": os.environ.get("GIT_CONFIG_KEY_1"),
+        "git_config_key_2": os.environ.get("GIT_CONFIG_KEY_2"),
+        "git_config_nosystem": os.environ.get("GIT_CONFIG_NOSYSTEM"),
+        "git_config_value_0": os.environ.get("GIT_CONFIG_VALUE_0"),
+        "git_config_value_1": os.environ.get("GIT_CONFIG_VALUE_1"),
+        "git_config_value_2": os.environ.get("GIT_CONFIG_VALUE_2"),
+        "git_terminal_prompt": os.environ.get("GIT_TERMINAL_PROMPT"),
         "path": os.environ.get("PATH"),
         "python_no_user_site": os.environ.get("PYTHONNOUSERSITE"),
         "python_path": os.environ.get("PYTHONPATH"),
@@ -471,7 +524,7 @@ def _environment_identity(
     result = subprocess.run(
         [
             "sh", "-c",
-            'set -a; . "$1"; PYTHONPATH="$2"; export PYTHONPATH; shift 2; exec "$@"',
+            _ENVIRONMENT_SHELL,
             "sh", str(deploy_environment), source_path,
             str(assist_python), "-c", _ENVIRONMENT_SCRIPT,
         ], cwd=workspace_root,
@@ -498,6 +551,16 @@ def _environment_identity(
         "agentic_production_threads_dir": env["AGENTIC_PRODUCTION_THREADS_DIR"],
         "assist_model_url": "http://127.0.0.1:8000/v1",
         "dbus_session_bus_address": f"unix:path=/run/user/{os.getuid()}/bus",
+        "git_config_count": "3",
+        "git_config_global": "/dev/null",
+        "git_config_key_0": "core.fsmonitor",
+        "git_config_key_1": "core.untrackedCache",
+        "git_config_key_2": "core.hooksPath",
+        "git_config_nosystem": "1",
+        "git_config_value_0": "false",
+        "git_config_value_1": "false",
+        "git_config_value_2": "/dev/null",
+        "git_terminal_prompt": "0",
         "path": "/usr/bin:/bin",
         "python_no_user_site": "1",
         "python_path": source_path,
@@ -520,7 +583,7 @@ def _execution_environment(
 ) -> dict[str, str]:
     """Build the fixed minimal environment used by parent-runner subprocesses."""
     production_threads = _production_threads_directory(production_threads_path_sha256)
-    return {
+    env = {
         "AGENTIC_ROOT": str(workspace_root),
         "AGENTIC_PRODUCTION_THREADS_DIR": str(production_threads),
         "CODEX_THREAD_ID": COORDINATION_THREAD_ID,
@@ -535,6 +598,8 @@ def _execution_environment(
         "XDG_RUNTIME_DIR": f"/run/user/{os.getuid()}",
         "no_proxy": "127.0.0.1,localhost",
     }
+    env.update(SAFE_GIT_ENVIRONMENT)
+    return env
 
 
 def _production_threads_directory(expected_sha256: str) -> Path:
@@ -1166,7 +1231,8 @@ def _kill_unbound_scope(
 
 
 def _run_scoped(
-    command: list[str], *, cwd: Path, env: dict[str, str], output: Path, stage: str
+    command: list[str], *, cwd: Path, env: dict[str, str], output: Path, stage: str,
+    timeout_seconds: int = BATCH_SCOPE_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     """Run and reap one child tree under the caller's termination guard."""
     _scope_capability()
@@ -1199,7 +1265,7 @@ def _run_scoped(
         _release_scope(release_write)
         os.close(release_write)
         release_write = -1
-        stdout, stderr = process.communicate()
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
         _verify_scope_empty(scope)
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except BaseException as error:
@@ -1614,6 +1680,7 @@ def _run_batch_locked(
                 env=env,
                 output=output,
                 stage="parent runner",
+                timeout_seconds=BATCH_SCOPE_TIMEOUT_SECONDS,
             )
             finished_at = _time_bound()
         new_events = _read_appended_events(event_descriptor, prefix, thread_id)
@@ -1904,6 +1971,7 @@ def _archive_and_analyze_locked(
             env=env,
             output=output,
             stage="archive worker",
+            timeout_seconds=ARCHIVE_SCOPE_TIMEOUT_SECONDS,
         )
         if result.returncode:
             raise ValueError("parent archive returned a nonzero status")
