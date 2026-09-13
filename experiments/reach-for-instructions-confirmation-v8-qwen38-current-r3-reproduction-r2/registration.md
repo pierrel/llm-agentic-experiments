@@ -311,6 +311,10 @@ identity attestation bytes must remain identical across the execution.
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
 binds its trial metadata, and the runtime attestation inventory is complete.
+Before calling the parent archive, the wrapper strictly parses the live evidence,
+requires `output/bundle.json` to match both the registered parent bundle digest
+and exact file SHA-256, and rescans every persisted outcome for a terminal
+provider-request fidelity failure.
 Before calling the parent archive, the wrapper independently recomputes the exact
 secondary metadata bytes from the raw trace bodies and sealed outcomes. The parent
 archive must verify those trace hashes and copy metadata that exactly matches the

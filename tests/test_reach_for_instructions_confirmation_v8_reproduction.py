@@ -1970,6 +1970,16 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                         Path("attestations"), **common,
                     )
 
+            with self.subTest(case="bundle-file"), patch.object(
+                runner.StudyBundle, "read_verified",
+                return_value=SimpleNamespace(schedule=(), sha256="bundle"),
+            ), patch.object(runner, "_sha256", return_value="wrong"):
+                with self.assertRaisesRegex(ValueError, "parent bundle"):
+                    runner._archive_and_analyze_locked(
+                        ROOT, Path("output"), Path("capsule"), Path("analysis"),
+                        Path("attestations"), **common,
+                    )
+
             with self.subTest(case="fidelity"), patch.object(
                 runner.StudyBundle, "read_verified",
                 return_value=SimpleNamespace(schedule=(), sha256="bundle"),

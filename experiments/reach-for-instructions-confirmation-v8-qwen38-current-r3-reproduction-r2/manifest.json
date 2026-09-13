@@ -28,7 +28,7 @@
     "files": {
       "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "44c137ce886b606b6f4856c2f76ce73a6f097853390d60cd96ff6a90a942e206",
       "docs/0036-reach-for-instructions-v8-r3-reproduction-r2.md": "290661b2cc95be033e8e82c321b469ec1d850a7403749f709f7cf4f8cd7d8644",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2/registration.md": "7077e904826f1aeab7234d76aa4d3e7f5eebf1258a80dbf1bd3ff3efbbd160d8",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2/registration.md": "2e4e06079ce443c984d6358e2c69df09ce90a173adcd6b81f86e75be97f287d1",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "d60772ae1b6be93efe9f2097b18833505844876485ba0e4c22befe0fe78a37e5",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "aa55589b6d1176d288c3d28e6435f99768211a4fff03d7402e95e76e5a8a2fa9",
@@ -264,5 +264,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2"
   },
-  "sha256": "7664735d85c631622924db28e50df95eff5b89d613458d4d5e18fd2421bab30c"
+  "sha256": "b96e46181d08c91c2aaef29a1301927eb533dacb04fe4f0634e7c19448986a76"
 }
