@@ -810,7 +810,11 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             )
             environment["PYTHONPATH"] = "/execution:/assist"
             result = runner._run_integrity_command(
-                [str(launcher), "-c", "pass"], env=environment
+                [
+                    str(launcher), "-c",
+                    f"import sys; assert {str(root)!r} in sys.path",
+                ],
+                env=environment,
             )
             self.assertEqual(result.returncode, 0)
             self.assertFalse(marker.exists())
