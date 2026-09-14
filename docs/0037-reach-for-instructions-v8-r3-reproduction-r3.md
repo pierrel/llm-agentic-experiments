@@ -31,9 +31,9 @@ outcome content to r3.
 
 ## Administrative recovery
 
-R3 carries the exact r2 candidate tree forward before changing only the
+R3 carries the exact r2 candidate tree forward before changing the
 administrative identity surface already represented by the version-one
-reproduction manifest:
+reproduction manifest and one terminal-state integrity path:
 
 1. A fresh study ID, branch, annotated tag, runtime, raw output, attestations,
    capsule, registration, and registry row prevent any r1 or r2 state reuse.
@@ -46,6 +46,8 @@ reproduction manifest:
    reasoning-on, no-reasoning-preserve, low-effort profile. This preparation
    and review changes no server state; any future profile switch is a separate
    workspace-orchestrator operation.
+5. A verified 72/72 cohort returns `complete` without another server
+   attestation, parent launch, or empty evidence interval.
 
 No new manifest schema, execution path, authorization subsystem, status API, or
 predecessor runtime contract is added. R2 provenance belongs in this design and
@@ -72,6 +74,10 @@ The design reviewers' concrete findings were resolved as follows:
 - Same-UID identity spoofing is outside the documented cooperative protocol's
   security boundary. The bounded shared event slice is retained because it
   fail-closes on ambiguous gate evidence without changing a treatment.
+- The r2 design's shorthand that the final seal excludes only two interpretive
+  files omitted the seal's necessary self-reference exclusion. The active r3
+  registration distinguishes root `reproduction-seal.json` from the two
+  content exclusions; no evidence file is newly omitted.
 
 The separate process retrospective requested for this recovery is operational,
 not scientific. It is recorded and verified through the meta-repository's

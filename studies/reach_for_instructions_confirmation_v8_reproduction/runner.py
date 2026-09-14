@@ -2012,7 +2012,7 @@ def _run_batch_locked(
     llama_source: Path,
     events: Path,
 ) -> str:
-    """Run one inherited bounded invocation or fail closed without reinterpretation."""
+    """Return complete for a verified cohort or run one inherited bounded invocation."""
     thread_id = manifest["execution"]["coordination_thread_id"]
     try:
         bundle = StudyBundle.read_verified(execution_root / manifest["parent"]["bundle_path"])
@@ -2048,6 +2048,8 @@ def _run_batch_locked(
         )
         if denial_not_before != attested_denial_not_before:
             raise ValueError("production-denial cooldown differs from its attestation")
+        if remaining == 0:
+            return "complete"
         now = time.time()
         if attested_denial_not_before is not None and now < attested_denial_not_before:
             return "denial-cooldown"
@@ -2240,7 +2242,7 @@ def _run_batch(
     llama_source: Path,
     events: Path,
 ) -> str:
-    """Serialize and run one inherited bounded invocation."""
+    """Serialize a completed-cohort check or one inherited bounded invocation."""
     _verify_run_scope(
         root, output, attestations, execution_root, assist_source, workspace_root, events
     )
@@ -2297,7 +2299,7 @@ def run_batch(
     llama_source: Path,
     events: Path,
 ) -> str:
-    """Run one batch with termination handling active before path or Git checks."""
+    """Check completion or run one batch with termination handling already active."""
     with _termination_interrupts():
         return _run_batch(
             root,

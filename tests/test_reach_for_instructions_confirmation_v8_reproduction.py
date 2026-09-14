@@ -301,6 +301,10 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2/"
             "manifest.json"
         )
+        self.assertEqual(
+            hashlib.sha256(predecessor_path.read_bytes()).hexdigest(),
+            "149f639a8e20fbd6b492af8e21e8fdb496d7ff6c8d9c6b3b393f12eb8065551d",
+        )
         predecessor = json.loads(predecessor_path.read_text())["manifest"]
 
         normalized = []
@@ -311,6 +315,31 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             copy["runtime"]["expected_attestation"].pop("shared_gate")
             normalized.append(copy)
         self.assertEqual(*normalized)
+
+        source = Path(runner.__file__).read_text()
+        replacements = {
+            "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3":
+                "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2",
+            'PUBLICATION_BRANCH = "reach-experiment-reproduction-v3"':
+                'PUBLICATION_BRANCH = "reach-experiment-reproduction-v2"',
+            "01a04877-df08-7401-aeb5-91fdee52c9b0":
+                "01a09689-f137-7cf1-a5c0-f32e7537fefa",
+            'unit = f"reach-v8-r3-': 'unit = f"reach-v8-r2-',
+            '        if remaining == 0:\n            return "complete"\n': "",
+            '    """Return complete for a verified cohort or run one inherited bounded invocation."""\n':
+                '    """Run one inherited bounded invocation or fail closed without reinterpretation."""\n',
+            '    """Serialize a completed-cohort check or one inherited bounded invocation."""\n':
+                '    """Serialize and run one inherited bounded invocation."""\n',
+            '    """Check completion or run one batch with termination handling already active."""\n':
+                '    """Run one batch with termination handling active before path or Git checks."""\n',
+        }
+        for new, old in replacements.items():
+            self.assertEqual(source.count(new), 1)
+            source = source.replace(new, old)
+        self.assertEqual(
+            hashlib.sha256(source.encode()).hexdigest(),
+            "61fa4457d172967b22f916e1c7647470a58a811486f3357eda5b429cdaaa877f",
+        )
 
     def test_locked_analysis_keeps_runs_and_all_six_cells_separate(self) -> None:
         manifest = runner._load_manifest(ROOT)
@@ -630,6 +659,51 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             (output / "outcomes.jsonl").write_bytes(b"\n".join(encoded) + b"\n")
             with self.assertRaisesRegex(ValueError, "outcome record"):
                 runner._verified_progress(output, bundle)
+
+    def test_complete_batch_returns_without_new_runtime_evidence(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        completed = [{} for _ in bundle.schedule]
+        attest = Mock()
+        parent = Mock()
+        with TemporaryDirectory() as temporary, patch.object(
+            runner.StudyBundle, "read_verified", return_value=bundle
+        ), patch.object(
+            runner, "_verified_progress", return_value=(completed, completed)
+        ), patch.object(
+            runner,
+            "_prepare_attestation_directory",
+            return_value=[{"next_denial_not_before_unix": None}],
+        ), patch.object(
+            runner, "verify_execution_intervals"
+        ), patch.object(
+            runner, "_verify_live_cooldowns", return_value=([], None)
+        ), patch.object(
+            runner, "attest", attest
+        ), patch.object(
+            runner, "_run_scoped", parent
+        ):
+            output = Path(temporary)
+            result = runner._run_batch_locked(
+                ROOT,
+                output,
+                output / "attestations",
+                manifest={
+                    "execution": {"coordination_thread_id": "thread"},
+                    "parent": {"bundle_path": "bundle.json"},
+                },
+                registration=TEST_REGISTRATION,
+                execution_root=output / "execution",
+                assist_source=output / "assist",
+                assist_python=output / "python",
+                workspace_root=output / "workspace",
+                model_path=output / "model",
+                server_pid=1,
+                llama_source=output / "llama",
+                events=output / "events.jsonl",
+            )
+        self.assertEqual(result, "complete")
+        attest.assert_not_called()
+        parent.assert_not_called()
 
     def test_progress_guard_requires_a_request_for_every_non_infrastructure_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")

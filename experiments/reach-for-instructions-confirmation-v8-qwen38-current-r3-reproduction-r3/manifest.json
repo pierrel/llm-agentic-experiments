@@ -28,12 +28,12 @@
     "files": {
       "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "44c137ce886b606b6f4856c2f76ce73a6f097853390d60cd96ff6a90a942e206",
       "docs/0036-reach-for-instructions-v8-r3-reproduction-r2.md": "290661b2cc95be033e8e82c321b469ec1d850a7403749f709f7cf4f8cd7d8644",
-      "docs/0037-reach-for-instructions-v8-r3-reproduction-r3.md": "e78531e9354c9f48d6716647e3f15b9c4494449ccc889d55f9fe33b35b595f66",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3/registration.md": "deca3ee5e369788debddefa58945f1aea17f0a3ed76eb88594f4b257315330c1",
+      "docs/0037-reach-for-instructions-v8-r3-reproduction-r3.md": "4bff59b111bf7c4977726a2eb4e10bd26f37b6f9f5d0abdfd5fe904543522347",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3/registration.md": "f3b372840a2abe2ec26b87993d6f2b1506facfc5cc9b483c1e7e44e36d9cb1d0",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "df88afe41fea450c2d2134b202dc5d92307247957c2c4905b0a5ead72e5f9ee1",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "aa55589b6d1176d288c3d28e6435f99768211a4fff03d7402e95e76e5a8a2fa9",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "6e31db4fcfe1a63d067a39576db760d7f3aa7072dfa6c687fda0817f4ae5d5e9"
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "499fc0f775fbc6a9a38b07f4c55e0cd7156dd60bdbccfaf77b2b5ae5375cbe3b"
     },
     "historical_comparator": {
       "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
@@ -265,5 +265,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3"
   },
-  "sha256": "cb2c50e9dfe37be10f5d6ecbb54163a1a1b64b3a2c56ec70ce41d8c21afc247b"
+  "sha256": "4b51c2bcb4ed4e138907c79fca8a3dad245454309ddcc5de2413761c2c92feb7"
 }

@@ -218,6 +218,9 @@ Every model-capable worker remains inside the shared workspace
 terminal episodes. Any invocation that records 24 terminal episodes while the
 schedule remains incomplete keeps the parent's recorded 900-second cooldown.
 There is no result-based stop and no replacement of admitted outcomes.
+After all 72 outcomes and their existing runtime evidence verify, another
+`run-batch` returns `complete` without a fresh server attestation, parent launch,
+or empty evidence interval.
 One separate nonblocking reproduction lock covers the complete wrapper
 transaction from persisted-progress inspection through before/after identity,
 parent execution, event reconciliation, and cooldown recording. It does not
@@ -340,9 +343,11 @@ failure permanently quarantines the raw cohort.
 Before locked analysis summarizes an outcome, the wrapper copies the verified attestation
 inventory into the capsule and writes a self-digested provenance record binding
 every copied file, the capsule run record, manifest, and coordinator identity.
-The final evidence seal excludes only root-level `learning.md` and
-`assist-roadmap-proposal.md`, which are later interpretation. Identically named
-files below an evidence subdirectory remain sealed.
+The final evidence-seal inventory structurally excludes its own root
+`reproduction-seal.json` to avoid self-reference. Its only content exclusions
+are root-level `learning.md` and `assist-roadmap-proposal.md`, which are later
+interpretation. Identically named files below an evidence subdirectory remain
+sealed.
 The only historical comparator is the preregistered parent capsule
 `results/reach-for-instructions-confirmation-v8-qwen38-current-r3/`, pinned by
 its run-file SHA-256
