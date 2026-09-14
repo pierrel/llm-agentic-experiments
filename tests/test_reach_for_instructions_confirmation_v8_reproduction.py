@@ -260,6 +260,58 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         self.assertEqual(bundle.sha256, parent["bundle_sha256"])
         self.assertEqual(len(bundle.schedule), 72)
 
+    def test_manifest_pins_fresh_r3_administrative_identity(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        execution = manifest["execution"]
+        publication = manifest["registration"]
+        expected = manifest["runtime"]["expected_attestation"]
+
+        self.assertEqual(
+            manifest["study_id"],
+            "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+        )
+        self.assertEqual(
+            execution["coordination_thread_id"],
+            "01a04877-df08-7401-aeb5-91fdee52c9b0",
+        )
+        self.assertEqual(
+            publication,
+            {
+                "publication_branch": "reach-experiment-reproduction-v3",
+                "publication_remote": "https://github.com/pierrel/llm-agentic-experiments.git",
+                "tag": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+            },
+        )
+        self.assertTrue(str(execution["runtime_relative"]).endswith("reproduction-r3"))
+        self.assertTrue(str(execution["output_relative"]).endswith("reproduction-r3"))
+        self.assertTrue(str(execution["capsule_relative"]).endswith("reproduction-r3"))
+        self.assertEqual(
+            expected["shared_gate"]["sha256"],
+            "64d4981b432300fa7f6d1089d72e40059aa68819bf1952f2169ab114a954b0d2",
+        )
+        self.assertEqual(
+            expected["server"]["argv"][-5:],
+            ["--reasoning", "on", "--no-reasoning-preserve", "--reasoning-effort", "low"],
+        )
+
+    def test_r3_changes_no_scientific_manifest_value_from_r2(self) -> None:
+        current = runner._load_manifest(ROOT)
+        predecessor_path = ROOT / (
+            "experiments/"
+            "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2/"
+            "manifest.json"
+        )
+        predecessor = json.loads(predecessor_path.read_text())["manifest"]
+
+        normalized = []
+        for value in (predecessor, current):
+            copy = json.loads(json.dumps(value))
+            for key in ("execution", "files", "registration", "study_id"):
+                copy.pop(key)
+            copy["runtime"]["expected_attestation"].pop("shared_gate")
+            normalized.append(copy)
+        self.assertEqual(*normalized)
+
     def test_locked_analysis_keeps_runs_and_all_six_cells_separate(self) -> None:
         manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:

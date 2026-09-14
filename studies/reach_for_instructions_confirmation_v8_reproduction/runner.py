@@ -103,13 +103,13 @@ from studies.reach_for_instructions_confirmation_v8_reproduction.integrity impor
 )
 
 
-STUDY = "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r2"
+STUDY = "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3"
 MANIFEST = Path("experiments") / STUDY / "manifest.json"
 INVALID = "REPRODUCTION_INVALID.json"
 REGISTRATION_TAG = f"{STUDY}"
-PUBLICATION_BRANCH = "reach-experiment-reproduction-v2"
+PUBLICATION_BRANCH = "reach-experiment-reproduction-v3"
 PUBLICATION_REMOTE = "https://github.com/pierrel/llm-agentic-experiments.git"
-COORDINATION_THREAD_ID = "01a09689-f137-7cf1-a5c0-f32e7537fefa"
+COORDINATION_THREAD_ID = "01a04877-df08-7401-aeb5-91fdee52c9b0"
 RUNTIME_RELATIVE = Path(".coordination") / STUDY
 RUNTIME_ROOT_DISTRIBUTIONS = ("deepagents", "langchain-openai")
 HASH_CHUNK_BYTES = 1024 * 1024
@@ -1631,7 +1631,7 @@ def _run_scoped(
 ) -> subprocess.CompletedProcess[str]:
     """Run and reap one child tree under the caller's termination guard."""
     _scope_capability()
-    unit = f"reach-v8-r2-{os.getpid()}-{time.monotonic_ns()}"
+    unit = f"reach-v8-r3-{os.getpid()}-{time.monotonic_ns()}"
     ready_read, ready_write = os.pipe()
     release_read, release_write = os.pipe()
     scoped_command = [
