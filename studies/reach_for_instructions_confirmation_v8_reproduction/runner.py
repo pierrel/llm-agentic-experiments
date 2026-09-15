@@ -90,6 +90,7 @@ if __name__ == "__main__":
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
 from harness.records import AdmissionLog, RecordChain
+from harness.runner import _artifact_digests
 from studies.reach_for_instructions_confirmation_v8_reproduction import analysis
 from studies.reach_for_instructions_confirmation_v8_reproduction.integrity import (
     BATCH_EPISODES,
@@ -1159,6 +1160,14 @@ def _verified_progress(
     return admission_records, outcomes
 
 
+def _verify_completed_artifacts(output: Path, bundle: StudyBundle) -> None:
+    """Require the parent's final seals and exact artifacts for a complete cohort."""
+    admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)
+    outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256)
+    artifacts = _artifact_digests(bundle, output / "traces", output / "report.json")
+    outcomes.verify_finalized(bundle.schedule, admissions, artifacts)
+
+
 def _preflight_live_json(output: Path) -> None:
     """Reject ambiguous active evidence before invoking a permissive parent reader."""
     json_paths = [
@@ -2049,6 +2058,7 @@ def _run_batch_locked(
         if denial_not_before != attested_denial_not_before:
             raise ValueError("production-denial cooldown differs from its attestation")
         if remaining == 0:
+            _verify_completed_artifacts(output, bundle)
             return "complete"
         now = time.time()
         if attested_denial_not_before is not None and now < attested_denial_not_before:
@@ -2225,7 +2235,14 @@ def _run_batch_locked(
     if len(new_outcomes) != expected:
         _quarantine(output, "bounded invocation ended without its registered outcomes")
         raise ValueError("bounded invocation ended early; reproduction quarantined")
-    return "complete" if len(outcomes) == len(bundle.schedule) else "batch-complete"
+    if len(outcomes) == len(bundle.schedule):
+        try:
+            _verify_completed_artifacts(output, bundle)
+        except Exception as error:
+            _quarantine(output, "completed reproduction artifacts are invalid")
+            raise ValueError("completed reproduction artifacts are invalid") from error
+        return "complete"
+    return "batch-complete"
 
 
 def _run_batch(

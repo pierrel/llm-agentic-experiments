@@ -24,7 +24,10 @@ DENIAL = re.compile(
 
 
 def strict_json_loads(source: str | bytes) -> Any:
-    """Decode JSON evidence while rejecting ambiguous duplicate members."""
+    """Decode RFC-compliant JSON evidence without ambiguous duplicate members."""
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-standard JSON constant: {value}")
+
     def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         value: dict[str, Any] = {}
         for name, item in pairs:
@@ -34,7 +37,11 @@ def strict_json_loads(source: str | bytes) -> Any:
         return value
 
     try:
-        return json.loads(source, object_pairs_hook=unique_object)
+        return json.loads(
+            source,
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
+        )
     except (UnicodeDecodeError, ValueError) as error:
         raise ValueError("JSON evidence is malformed or ambiguous") from error
 
@@ -108,6 +115,8 @@ def events_match_admissions(
     thread_id: str,
 ) -> bool:
     """Require one complete shared-resource transaction per admitted episode."""
+    if not new_admissions:
+        return False
     relevant = [
         event for event in new_events
         if event.get("thread") == thread_id and event.get("resource") == "llm"

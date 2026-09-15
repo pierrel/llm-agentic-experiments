@@ -36,6 +36,7 @@ translates recurring technical terms.
 | [0035 Exact V8-r3 reproduction](0035-reach-for-instructions-v8-r3-reproduction-design-review.md) | Exact parent target and r1 reproduction integrity controls. |
 | [0036 Exact V8-r3 reproduction r2](0036-reach-for-instructions-v8-r3-reproduction-r2.md) | Fresh preregistration after r1's administrative quarantine and three narrow integrity corrections. |
 | [0037 Exact V8-r3 reproduction r3](0037-reach-for-instructions-v8-r3-reproduction-r3.md) | Fresh unexecuted successor bound to the current coordinator and shared admission gate. |
+| [0038 Exact V8-r3 reproduction r3 review corrections](0038-reach-for-instructions-v8-r3-reproduction-r3-review-corrections.md) | Pre-admission final-seal, strict-JSON, and nonempty runtime-interval corrections. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 

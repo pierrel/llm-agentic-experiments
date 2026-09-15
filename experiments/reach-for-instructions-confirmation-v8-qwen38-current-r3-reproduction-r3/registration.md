@@ -218,9 +218,11 @@ Every model-capable worker remains inside the shared workspace
 terminal episodes. Any invocation that records 24 terminal episodes while the
 schedule remains incomplete keeps the parent's recorded 900-second cooldown.
 There is no result-based stop and no replacement of admitted outcomes.
-After all 72 outcomes and their existing runtime evidence verify, another
-`run-batch` returns `complete` without a fresh server attestation, parent launch,
-or empty evidence interval.
+The invocation that records the 72nd outcome verifies the parent admission and
+outcome seals plus the exact report and trace digests before returning
+`complete`. After all 72 outcomes and their existing runtime evidence verify,
+another `run-batch` re-verifies the same final evidence without a fresh server
+attestation, parent launch, or empty evidence interval.
 One separate nonblocking reproduction lock covers the complete wrapper
 transaction from persisted-progress inspection through before/after identity,
 parent execution, event reconciliation, and cooldown recording. It does not
@@ -285,6 +287,9 @@ and outcome records must also retain the exact parent schemas, scheduled trial
 identity, field types, and outcome semantics in addition to valid hash chains.
 Every non-infrastructure outcome must carry the parent's request-start marker;
 an infrastructure-invalid outcome must not carry it.
+Every persisted JSON value is decoded without duplicate members or non-standard
+numeric constants. Every runtime interval must contain at least one admission;
+an empty interval can never attest a completed or resumed invocation.
 Before any resumed launch, nonempty persisted admissions or outcomes must have
 a complete corresponding runtime-attestation interval prefix. When the latest
 admission is a denial, its cooldown must bind that exact latest admission count

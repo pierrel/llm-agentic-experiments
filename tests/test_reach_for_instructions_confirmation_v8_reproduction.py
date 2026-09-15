@@ -325,7 +325,25 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             "01a04877-df08-7401-aeb5-91fdee52c9b0":
                 "01a09689-f137-7cf1-a5c0-f32e7537fefa",
             'unit = f"reach-v8-r3-': 'unit = f"reach-v8-r2-',
-            '        if remaining == 0:\n            return "complete"\n': "",
+            "from harness.runner import _artifact_digests\n": "",
+            '        if remaining == 0:\n'
+            '            _verify_completed_artifacts(output, bundle)\n'
+            '            return "complete"\n': "",
+            '    if len(outcomes) == len(bundle.schedule):\n'
+            '        try:\n'
+            '            _verify_completed_artifacts(output, bundle)\n'
+            '        except Exception as error:\n'
+            '            _quarantine(output, "completed reproduction artifacts are invalid")\n'
+            '            raise ValueError("completed reproduction artifacts are invalid") from error\n'
+            '        return "complete"\n'
+            '    return "batch-complete"\n':
+                '    return "complete" if len(outcomes) == len(bundle.schedule) else "batch-complete"\n',
+            '\n\ndef _verify_completed_artifacts(output: Path, bundle: StudyBundle) -> None:\n'
+            '    """Require the parent\'s final seals and exact artifacts for a complete cohort."""\n'
+            '    admissions = AdmissionLog(output / "admissions.jsonl", bundle.sha256)\n'
+            '    outcomes = RecordChain(output / "outcomes.jsonl", bundle.sha256)\n'
+            '    artifacts = _artifact_digests(bundle, output / "traces", output / "report.json")\n'
+            '    outcomes.verify_finalized(bundle.schedule, admissions, artifacts)\n': "",
             '    """Return complete for a verified cohort or run one inherited bounded invocation."""\n':
                 '    """Run one inherited bounded invocation or fail closed without reinterpretation."""\n',
             '    """Serialize a completed-cohort check or one inherited bounded invocation."""\n':
@@ -665,10 +683,13 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
         completed = [{} for _ in bundle.schedule]
         attest = Mock()
         parent = Mock()
+        completed_artifacts = Mock()
         with TemporaryDirectory() as temporary, patch.object(
             runner.StudyBundle, "read_verified", return_value=bundle
         ), patch.object(
             runner, "_verified_progress", return_value=(completed, completed)
+        ), patch.object(
+            runner, "_verify_completed_artifacts", completed_artifacts
         ), patch.object(
             runner,
             "_prepare_attestation_directory",
@@ -702,8 +723,98 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 events=output / "events.jsonl",
             )
         self.assertEqual(result, "complete")
+        completed_artifacts.assert_called_once_with(output, bundle)
         attest.assert_not_called()
         parent.assert_not_called()
+
+    def test_complete_batch_requires_parent_final_seals_and_artifacts(self) -> None:
+        bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
+        seal = json.loads((HISTORICAL / "outcomes.jsonl.seal").read_text())
+        with TemporaryDirectory() as temporary:
+            output = Path(temporary) / "output"
+            shutil.copytree(HISTORICAL, output)
+            (output / "outcomes.jsonl.seal").unlink()
+            with patch.object(
+                runner, "_artifact_digests", return_value=seal["artifacts"]
+            ), self.assertRaises(FileNotFoundError):
+                runner._verify_completed_artifacts(output, bundle)
+
+    def test_newly_completed_batch_requires_parent_final_seals_and_artifacts(self) -> None:
+        trial = SimpleNamespace(sha256="trial-1")
+        bundle = SimpleNamespace(schedule=(trial,), sha256="bundle")
+        admission = {"admitted": True, "trial_sha256": trial.sha256}
+        outcome = {"outcome": "pass", "trial_sha256": trial.sha256}
+        events = [
+            {"event": "resource_started", "resource": "llm", "thread": "thread"},
+            {
+                "event": "resource_finished",
+                "exit_code": 0,
+                "resource": "llm",
+                "thread": "thread",
+            },
+        ]
+        completed_artifacts = Mock(side_effect=FileNotFoundError("missing seal"))
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "output"
+            output.mkdir(mode=0o700)
+            attestations = root / "attestations"
+            attestations.mkdir()
+            event_log = root / "events.jsonl"
+            event_log.write_text("\n")
+            bound = {
+                "assist": root / "assist",
+                "execution": root / "execution",
+                "python": root / "python",
+                "worker": root / "worker",
+            }
+            with patch.object(
+                runner.StudyBundle, "read_verified", return_value=bundle
+            ), patch.object(
+                runner, "_verified_progress",
+                side_effect=[([], []), ([admission], [outcome])],
+            ), patch.object(
+                runner, "_prepare_attestation_directory", return_value=[]
+            ), patch.object(
+                runner, "_verify_live_cooldowns", return_value=([], None)
+            ), patch.object(
+                runner, "attest", return_value=b"{}\n"
+            ), patch.object(
+                runner, "_bound_invocation_paths", return_value=nullcontext(bound)
+            ), patch.object(
+                runner, "_bound_execution_environment", return_value={}
+            ), patch.object(
+                runner, "_run_scoped",
+                return_value=subprocess.CompletedProcess([], 0, "", ""),
+            ), patch.object(
+                runner, "_read_appended_events", return_value=events
+            ), patch.object(
+                runner, "verify_attestation_inventory", return_value=([], [{}])
+            ), patch.object(
+                runner, "verify_execution_intervals"
+            ), patch.object(
+                runner, "_verify_completed_artifacts", completed_artifacts
+            ), self.assertRaisesRegex(ValueError, "completed reproduction artifacts"):
+                runner._run_batch_locked(
+                    ROOT,
+                    output,
+                    attestations,
+                    manifest={
+                        "execution": {"coordination_thread_id": "thread"},
+                        "parent": {"bundle_path": "bundle.json"},
+                    },
+                    registration=TEST_REGISTRATION,
+                    execution_root=root / "execution",
+                    assist_source=root / "assist",
+                    assist_python=root / "python",
+                    workspace_root=root,
+                    model_path=root / "model",
+                    server_pid=1,
+                    llama_source=root / "llama",
+                    events=event_log,
+                )
+            self.assertTrue((output / runner.INVALID).exists())
+        completed_artifacts.assert_called_once_with(output, bundle)
 
     def test_progress_guard_requires_a_request_for_every_non_infrastructure_outcome(self) -> None:
         bundle = StudyBundle.read_verified(HISTORICAL / "bundle.json")
@@ -762,6 +873,14 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             new_admissions=[{"admitted": True}], new_outcomes=[{"outcome": "timeout"}],
             new_events=events[:1], thread_id=thread
         ))
+        self.assertFalse(events_match_admissions(
+            new_admissions=[], new_outcomes=[], new_events=[], thread_id=thread
+        ))
+
+    def test_strict_json_rejects_nonstandard_numeric_constants(self) -> None:
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.assertRaisesRegex(ValueError, "malformed or ambiguous"):
+                runner.strict_json_loads(f'{{"value": {constant}}}')
 
     def test_only_exact_corroborated_production_denial_can_retry(self) -> None:
         thread = "thread-1"
