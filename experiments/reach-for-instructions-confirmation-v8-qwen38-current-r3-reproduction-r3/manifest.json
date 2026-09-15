@@ -1,0 +1,273 @@
+{
+  "manifest": {
+    "analysis": {
+      "binary_replication_threshold": null,
+      "pool_runs": false,
+      "report": [
+        "six-cell denominators, pass counts, rates, and reason codes",
+        "G02 minus G01 pass-rate percentage points within each context dose",
+        "guide-load process counts, observed denominators, missing counts, and observed-case rates",
+        "first-provider-request input-token values and ranges",
+        "provider-request fidelity observed and unobserved counts",
+        "outcome counts by within-pair position"
+      ]
+    },
+    "execution": {
+      "analysis_file": "reproduction-analysis.json",
+      "assist_relative": "assist",
+      "attestations_relative": "attestations",
+      "capsule_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+      "capsule_relative": "capsule/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+      "coordination_thread_id": "01a04877-df08-7401-aeb5-91fdee52c9b0",
+      "execution_relative": "experiment",
+      "output_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+      "output_relative": "raw/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+      "runtime_relative": ".coordination/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3",
+      "worker_workspace_relative": "worker-workspace"
+    },
+    "files": {
+      "docs/0035-reach-for-instructions-v8-r3-reproduction-design-review.md": "44c137ce886b606b6f4856c2f76ce73a6f097853390d60cd96ff6a90a942e206",
+      "docs/0036-reach-for-instructions-v8-r3-reproduction-r2.md": "290661b2cc95be033e8e82c321b469ec1d850a7403749f709f7cf4f8cd7d8644",
+      "docs/0037-reach-for-instructions-v8-r3-reproduction-r3.md": "4bff59b111bf7c4977726a2eb4e10bd26f37b6f9f5d0abdfd5fe904543522347",
+      "docs/0038-reach-for-instructions-v8-r3-reproduction-r3-review-corrections.md": "98a1b334c7dc91505dde9088830d230614480ee53d2132fc23b84e803fb9c9f7",
+      "docs/0039-reach-for-instructions-v8-r3-reproduction-r3-event-correction.md": "d1bbc5d2720d8a8b7ec1e98a639890da9448a74410578c4e4a6185173a79cb4d",
+      "docs/0040-reach-for-instructions-v8-r3-reproduction-r3-numeric-correction.md": "d769b2a6c53ff9b2d735452028019a1aef90bb04ea8b1df5502029d66d285bab",
+      "docs/0041-reach-for-instructions-v8-r3-reproduction-r3-capsule-path-correction.md": "1bc28e59b96a678b7d606e196979a5efb2be28bdbff7c26968b0d599ed0e7a32",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3/registration.md": "4a37569582090af39bf21fb8c2607ec4f88fa7e71c4de9807710eb93649c0225",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "e4f38c28136f01e5eb269093fa08c5d42b8b9df7d9c1ca207dbef109b80e391a",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "c2aaa4eac7f637b97fa53fa92692b7f963c1325124399c1a6e1a1caa0a642a6a",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "b67b0832838578c04e63b264562c44f3ab5a8da5acd0bbbf3412b75ea7882f79"
+    },
+    "historical_comparator": {
+      "admissions_seal_file_sha256": "98be6fed74a5770d1665fee651eab63aa779d906718c263fe6cd7f5f56cab2b7",
+      "capsule": "results/reach-for-instructions-confirmation-v8-qwen38-current-r3",
+      "outcomes_seal_file_sha256": "b34c64594308d07c6865a9bae718f8a1af0cd46323be4eb1027c618480850f5b",
+      "report_file_sha256": "5dd241c65a3311cd68816d32c57dd5f4fea13124babf8179e80f76b692917576",
+      "run_file_sha256": "d073940d4e3fc32efa0519a2956e27e6164a44ffa005d30fb73baa05fdc82676",
+      "run_record_sha256": "838c0a4e2d8ebff69f28c102e5e3e2ab2d354d797aa8d8111e14576c43442eca",
+      "trial_metadata_file_sha256": "865cf5a52cdedfeea6635d642f68fcd5df7612904e3d25a3a1d19c9fcb4aa731"
+    },
+    "parent": {
+      "bundle_file_sha256": "4bf6462dd04645a239227c9c4182339c7e2dc1218839cae2b4c8d9cc3d25666d",
+      "bundle_path": "experiments/reach-for-instructions-confirmation-v8-qwen38-current/bundle.json",
+      "bundle_sha256": "13f853ad3c04150741c8a94a8f4dd8afb5c2eeeeb7a4666b2ead5a0d12cf5044",
+      "commit": "3ac6975e46f6c217feb8237ca15e4c65eea3065d",
+      "source_commit_in_bundle": "0517d907e7c30610bd9984355827e02aca1d09f5",
+      "tag": "reach-for-instructions-confirmation-v8-qwen38-current-r3",
+      "tag_kind": "lightweight",
+      "tree": "4754881f77f97dc036ca1bdaa8a568ce45674c94"
+    },
+    "registration": {
+      "publication_branch": "reach-experiment-reproduction-v3",
+      "publication_remote": "https://github.com/pierrel/llm-agentic-experiments.git",
+      "tag": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3"
+    },
+    "runtime": {
+      "assist_commit": "54b7b1049f43b86a0907203872b7b9c9ae8fb9a4",
+      "assist_tree": "e3df40b30613c94a6d3455e920748b4c155a84a1",
+      "expected_attestation": {
+        "deployment_environment": {
+          "sha256": "2fcd27991ce85056d0b37ad620518bee574fde1251a6e9dc2cbe236404226fd6"
+        },
+        "distributions": {
+          "closure_sha256": "fd9ab3c0947550dcb0be40a05bafdfe5110a86124c2e78426ad17addde3f8d9d",
+          "packages": [
+            "annotated-types",
+            "anthropic",
+            "anyio",
+            "bracex",
+            "certifi",
+            "cffi",
+            "charset-normalizer",
+            "cryptography",
+            "deepagents",
+            "distro",
+            "docstring-parser",
+            "filetype",
+            "google-auth",
+            "google-genai",
+            "h11",
+            "httpcore",
+            "httpx",
+            "idna",
+            "jiter",
+            "jsonpatch",
+            "jsonpointer",
+            "langchain",
+            "langchain-anthropic",
+            "langchain-core",
+            "langchain-google-genai",
+            "langchain-openai",
+            "langchain-protocol",
+            "langgraph",
+            "langgraph-checkpoint",
+            "langgraph-prebuilt",
+            "langgraph-sdk",
+            "langsmith",
+            "openai",
+            "orjson",
+            "ormsgpack",
+            "packaging",
+            "pyasn1",
+            "pyasn1-modules",
+            "pycparser",
+            "pydantic",
+            "pydantic-core",
+            "pyyaml",
+            "regex",
+            "requests",
+            "requests-toolbelt",
+            "sniffio",
+            "tenacity",
+            "tiktoken",
+            "tqdm",
+            "typing-extensions",
+            "typing-inspection",
+            "urllib3",
+            "uuid-utils",
+            "wcmatch",
+            "websockets",
+            "xxhash",
+            "zstandard"
+          ],
+          "roots": [
+            "deepagents",
+            "langchain-openai"
+          ]
+        },
+        "environment": {
+          "agentic_root": "canonical-workspace",
+          "agentic_production_threads_dir": "registered-systemd-directory",
+          "assist_model_url": "http://127.0.0.1:8000/v1",
+          "dbus_session_bus_address": "user-runtime-bus",
+          "git_config_count": "3",
+          "git_config_global": "/dev/null",
+          "git_config_key_0": "core.fsmonitor",
+          "git_config_key_1": "core.untrackedCache",
+          "git_config_key_2": "core.hooksPath",
+          "git_config_nosystem": "1",
+          "git_config_value_0": "false",
+          "git_config_value_1": "false",
+          "git_config_value_2": "/dev/null",
+          "git_terminal_prompt": "0",
+          "path": [
+            "/usr/bin",
+            "/bin"
+          ],
+          "python_no_user_site": "1",
+          "python_path": [
+            "exact-parent-checkout",
+            "exact-assist-checkout",
+            "exact-dependency-tree"
+          ],
+          "python_safe_path": "1",
+          "reach_reproduction_site_packages": "exact-dependency-tree",
+          "xdg_runtime_dir": "user-runtime"
+        },
+        "modules": {
+          "assist": {
+            "path": "assist/__init__.py",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "assist.model_manager": {
+            "path": "assist/model_manager.py",
+            "sha256": "a1d4283b07fb7ee3b693f9c10307a67c33cb57fb722bf3ecb1625a9b4023bf52"
+          },
+          "harness.bundle": {
+            "path": "harness/bundle.py",
+            "sha256": "164bc89a0368b4fa2acda299b9aa3608ad6c8df2059cc62f6781646c03911474"
+          },
+          "studies.reach_for_instructions_confirmation_v8.runner": {
+            "path": "studies/reach_for_instructions_confirmation_v8/runner.py",
+            "sha256": "15fba57ff0c2d5acb0e8c08bb8cddd165bc23e9b40fa68025195537ceec47f59"
+          }
+        },
+        "python": {
+          "sha256": "d78f9cf7178ecff09963551399855543c297f37ac207e626228bfe43cb26a70c",
+          "version": "3.14.7 (main, Aug 10 2026, 07:46:56) [GCC 16.1.1 20260728]"
+        },
+        "python_environment": {
+          "executable_path_sha256": "c03c93ec8cafc307d5de617b0988d1c401bf0aae3f19e8b03174a9bc0f3cb5d7",
+          "launcher_sha256": "6404791c0db83b83b9b054ff5c8f4e663b6c0c024d1919a1ed4bc82a64014284",
+          "site_packages_path_sha256": "be8f93081203b389ed84a4213f6e98f019638c1c9cd275e6be6fd7384571c4d0",
+          "site_packages_relative": "lib/python3.14/site-packages",
+          "startup_mode": "fixed-system-interpreter-minus-S-with-explicit-pythonpath"
+        },
+        "process_scope": {
+          "cgroup_kill_mode": "0200",
+          "cgroup_kill_owner": "runtime-user",
+          "slice": "app.slice",
+          "systemctl_sha256": "afe98ef3d55f504b37c6e7eb7da21a639ae7fb558f4c9024c89abb580a703255",
+          "systemd_run_sha256": "e14f7e69b1c30ae2135de4abc8df315fe2f23a92ab5ee39d41d4fa5f0b0c6339"
+        },
+        "production_threads_path_sha256": "d52678e3676af1ab2056a34ac1329c545fe117225b7c6a725c411b6321d11f15",
+        "shared_gate": {
+          "sha256": "64d4981b432300fa7f6d1089d72e40059aa68819bf1952f2169ab114a954b0d2"
+        },
+        "server": {
+          "argv": [
+            "llama-server",
+            "--model",
+            "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000",
+            "--cors-origins",
+            "localhost",
+            "--ctx-size",
+            "131072",
+            "--cache-type-k",
+            "q4_0",
+            "--cache-type-v",
+            "q4_0",
+            "--n-gpu-layers",
+            "all",
+            "--parallel",
+            "1",
+            "--flash-attn",
+            "on",
+            "--batch-size",
+            "2048",
+            "--ubatch-size",
+            "256",
+            "--fit",
+            "on",
+            "--fit-target",
+            "1536",
+            "--threads",
+            "8",
+            "--jinja",
+            "--reasoning",
+            "on",
+            "--no-reasoning-preserve",
+            "--reasoning-effort",
+            "low"
+          ],
+          "binary_sha256": "b97a9b61c878c52f1025dbe3f3494cc44e9611449cfeab4a0f1a25c84dea7f3a",
+          "model": {
+            "name": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+            "sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e",
+            "size": 17559178144
+          },
+          "source": {
+            "commit": "192067b72d1b7a3653b3f0c59190303b18596637",
+            "status": "",
+            "tree": "5f17bef5a18d0da06d59744b46b8f2203d889c83"
+          }
+        }
+      },
+      "model": {
+        "id": "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "reasoning_enabled": true,
+        "server_context_tokens": 131072,
+        "temperature": 0.1,
+        "weights_sha256": "3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e"
+      }
+    },
+    "schema": "reach-v8-exact-reproduction-manifest-v1",
+    "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3"
+  },
+  "sha256": "ecb93fef3b139cf90d4cc4eba6458aa4c580c26f0edecd629818f096e51a90e3"
+}

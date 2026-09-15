@@ -33,6 +33,13 @@ translates recurring technical terms.
 | [0027 Reach-for-instructions confirmation v2 design review](0027-reach-for-instructions-confirmation-v2-design-review.md) | Fresh calibration rerun after V1's preflight was too narrow. |
 | [0028 Access-transition oracle calibration gate](0028-access-transition-oracle-calibration-gate.md) | Condition-blind prerequisite before a future Qwen3.8 confirmation. |
 | [0029 Reach-for-instructions confirmation V3: Qwen3.8](0029-reach-for-instructions-confirmation-v3-qwen38.md) | Fresh model-specific confirmation after the standalone calibration gate passes. |
+| [0035 Exact V8-r3 reproduction](0035-reach-for-instructions-v8-r3-reproduction-design-review.md) | Exact parent target and r1 reproduction integrity controls. |
+| [0036 Exact V8-r3 reproduction r2](0036-reach-for-instructions-v8-r3-reproduction-r2.md) | Fresh preregistration after r1's administrative quarantine and three narrow integrity corrections. |
+| [0037 Exact V8-r3 reproduction r3](0037-reach-for-instructions-v8-r3-reproduction-r3.md) | Fresh unexecuted successor bound to the current coordinator and shared admission gate. |
+| [0038 Exact V8-r3 reproduction r3 review corrections](0038-reach-for-instructions-v8-r3-reproduction-r3-review-corrections.md) | Pre-admission final-seal, strict-JSON, and nonempty runtime-interval corrections. |
+| [0039 Exact V8-r3 reproduction r3 event correction](0039-reach-for-instructions-v8-r3-reproduction-r3-event-correction.md) | Same-thread unexpected LLM events retained for fail-closed validation. |
+| [0040 Exact V8-r3 reproduction r3 numeric correction](0040-reach-for-instructions-v8-r3-reproduction-r3-numeric-correction.md) | Overflowing JSON numbers rejected as non-finite evidence. |
+| [0041 Exact V8-r3 reproduction r3 capsule-path correction](0041-reach-for-instructions-v8-r3-reproduction-r3-capsule-path-correction.md) | Symlinked capsule evidence rejected before analysis reads. |
 | [Result capsules](../results/README.md) | Committed run history, evidence, learnings, and product/blog handoffs. |
 | [Hypothesis seeds](../seeds/README.md) | Product claims captured as testable research leads. |
 
