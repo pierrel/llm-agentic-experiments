@@ -32,9 +32,10 @@
       "docs/0038-reach-for-instructions-v8-r3-reproduction-r3-review-corrections.md": "98a1b334c7dc91505dde9088830d230614480ee53d2132fc23b84e803fb9c9f7",
       "docs/0039-reach-for-instructions-v8-r3-reproduction-r3-event-correction.md": "d1bbc5d2720d8a8b7ec1e98a639890da9448a74410578c4e4a6185173a79cb4d",
       "docs/0040-reach-for-instructions-v8-r3-reproduction-r3-numeric-correction.md": "d769b2a6c53ff9b2d735452028019a1aef90bb04ea8b1df5502029d66d285bab",
-      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3/registration.md": "17be9bf3ec6d05c05eae7ca0c5356c7972d4cc8fe2f2d80bd28ca06a1110740e",
+      "docs/0041-reach-for-instructions-v8-r3-reproduction-r3-capsule-path-correction.md": "1bc28e59b96a678b7d606e196979a5efb2be28bdbff7c26968b0d599ed0e7a32",
+      "experiments/reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3/registration.md": "4a37569582090af39bf21fb8c2607ec4f88fa7e71c4de9807710eb93649c0225",
       "studies/reach_for_instructions_confirmation_v8_reproduction/__init__.py": "e229947dd82fc313c7455651e29956a800b798b8688a2227a1937bb52b42f44a",
-      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "df88afe41fea450c2d2134b202dc5d92307247957c2c4905b0a5ead72e5f9ee1",
+      "studies/reach_for_instructions_confirmation_v8_reproduction/analysis.py": "e4f38c28136f01e5eb269093fa08c5d42b8b9df7d9c1ca207dbef109b80e391a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/integrity.py": "c2aaa4eac7f637b97fa53fa92692b7f963c1325124399c1a6e1a1caa0a642a6a",
       "studies/reach_for_instructions_confirmation_v8_reproduction/runner.py": "b67b0832838578c04e63b264562c44f3ab5a8da5acd0bbbf3412b75ea7882f79"
     },
@@ -268,5 +269,5 @@
     "schema": "reach-v8-exact-reproduction-manifest-v1",
     "study_id": "reach-for-instructions-confirmation-v8-qwen38-current-r3-reproduction-r3"
   },
-  "sha256": "07b619da155b51c56f52e1276f556b096acc10692a6a12a2b3fe70be90a431ed"
+  "sha256": "ecb93fef3b139cf90d4cc4eba6458aa4c580c26f0edecd629818f096e51a90e3"
 }

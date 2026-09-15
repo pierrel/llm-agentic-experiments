@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import os
 from pathlib import Path
+import stat
 from typing import Any
 
 from harness.bundle import StudyBundle, atomic_write, canonical_json, digest
@@ -46,6 +48,26 @@ def _verify_json_lines(path: Path) -> None:
         raise ValueError(f"invalid JSONL: {path}") from error
 
 
+def _verify_capsule_entries(capsule: Path) -> None:
+    """Require a completely traversable tree of real directories and files."""
+    def traversal_failed(error: OSError) -> None:
+        raise ValueError("capsule evidence tree cannot be traversed") from error
+
+    for directory, directories, files in os.walk(
+        capsule, topdown=True, onerror=traversal_failed, followlinks=False
+    ):
+        for name in directories + files:
+            path = Path(directory) / name
+            try:
+                mode = path.lstat().st_mode
+            except OSError as error:
+                raise ValueError("capsule evidence tree cannot be traversed") from error
+            if stat.S_ISLNK(mode):
+                raise ValueError("capsule must not contain symlinked evidence")
+            if not stat.S_ISDIR(mode) and not stat.S_ISREG(mode):
+                raise ValueError("capsule must contain only regular evidence")
+
+
 def _verify_capsule(
     capsule: Path,
     *,
@@ -61,6 +83,7 @@ def _verify_capsule(
     """Return verified outcomes and metadata from one complete archived run."""
     if capsule.is_symlink() or not capsule.is_dir():
         raise ValueError("capsule must be a real directory")
+    _verify_capsule_entries(capsule)
     run_path = capsule / "run.json"
     run = _json(run_path)
     for name in (

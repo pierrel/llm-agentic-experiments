@@ -586,6 +586,53 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                     bundle_sha256=manifest["parent"]["bundle_sha256"],
                 )
 
+    def test_capsule_rejects_symlinked_evidence_before_reading_it(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = Path(temporary) / "capsule"
+            shutil.copytree(HISTORICAL, capsule)
+            run_path = capsule / "run.json"
+            external = Path(temporary) / "external-run.json"
+            run_path.replace(external)
+            run_path.symlink_to(external)
+            with self.assertRaisesRegex(ValueError, "symlinked evidence"):
+                analysis._verify_capsule(
+                    capsule,
+                    bundle_sha256=manifest["parent"]["bundle_sha256"],
+                )
+
+    def test_capsule_rejects_special_evidence_before_reading_it(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = Path(temporary) / "capsule"
+            shutil.copytree(HISTORICAL, capsule)
+            run_path = capsule / "run.json"
+            run_path.unlink()
+            os.mkfifo(run_path)
+            with self.assertRaisesRegex(ValueError, "only regular evidence"):
+                analysis._verify_capsule(
+                    capsule,
+                    bundle_sha256=manifest["parent"]["bundle_sha256"],
+                )
+
+    def test_capsule_rejects_an_unreadable_descendant_tree(self) -> None:
+        manifest = runner._load_manifest(ROOT)
+        with TemporaryDirectory() as temporary:
+            capsule = Path(temporary) / "capsule"
+            shutil.copytree(HISTORICAL, capsule)
+            hidden = capsule / "hidden"
+            hidden.mkdir()
+            (hidden / "external").symlink_to(Path(temporary) / "outside")
+            hidden.chmod(0)
+            try:
+                with self.assertRaisesRegex(ValueError, "cannot be traversed"):
+                    analysis._verify_capsule(
+                        capsule,
+                        bundle_sha256=manifest["parent"]["bundle_sha256"],
+                    )
+            finally:
+                hidden.chmod(0o700)
+
     def test_capsule_rejects_duplicate_jsonl_seal_members(self) -> None:
         manifest = runner._load_manifest(ROOT)
         with TemporaryDirectory() as temporary:

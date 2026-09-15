@@ -333,7 +333,9 @@ identity attestation bytes must remain identical across the execution.
 
 Analysis begins only after all 72 scheduled admissions and outcomes have valid
 final seals, all trace/report hashes verify, the capsule `run.json` self-digest
-binds its trial metadata, and the runtime attestation inventory is complete.
+binds its trial metadata, the capsule contains only real directories and
+regular nonsymlinked evidence files, and the runtime attestation inventory is
+complete.
 Trial metadata must contain both secondary keys; pass and artifact-failure rows
 require a Boolean guide-load observation.
 Before calling the parent archive, the wrapper strictly parses the live evidence,
