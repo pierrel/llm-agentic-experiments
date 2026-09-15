@@ -1400,9 +1400,6 @@ def _read_appended_events(
             if (
                 record.get("thread") == thread_id
                 and record.get("resource") == "llm"
-                and record.get("event") in {
-                    "production_admission_denied", "resource_started", "resource_finished"
-                }
             ):
                 records.append(record)
                 if len(records) > MAX_ATTESTED_EVENTS:
@@ -2197,11 +2194,7 @@ def _run_batch_locked(
         except Exception as error:
             _quarantine(output, "production-denial cooldown could not be recorded")
             raise ValueError("production-denial cooldown could not be recorded") from error
-    attested_events = [
-        event for event in new_events
-        if event.get("thread") == thread_id and event.get("resource") == "llm"
-        and event.get("event") in {"production_admission_denied", "resource_started", "resource_finished"}
-    ]
+    attested_events = new_events
     interval = {
         "admissions_after": len(admissions),
         "admissions_before": len(prior_admissions),

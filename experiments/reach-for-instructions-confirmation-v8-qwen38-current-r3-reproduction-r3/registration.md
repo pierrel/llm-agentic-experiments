@@ -274,7 +274,9 @@ a parent-recorded timeout may lack the finish event because the inherited runner
 terminates the admitted process group at its safety limit. Each retained event
 slice records the parent invocation's UTC bounds and exact admission/outcome
 counts before and after it; all resource events must be ordered and fall within
-the seconds containing those bounds. The wrapper persists a 600-second
+the seconds containing those bounds. The reader retains every event for this
+coordinator thread and the `llm` resource so bounded validation rejects an
+unexpected event name rather than omitting it. The wrapper persists a 600-second
 `not_before` record after each
 corroborated denial and inherits the parent's persisted 900-second boundary
 after each full incomplete batch. For a batch boundary, the wrapper attests the

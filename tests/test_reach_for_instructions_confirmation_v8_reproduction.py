@@ -350,6 +350,21 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 '    """Serialize and run one inherited bounded invocation."""\n',
             '    """Check completion or run one batch with termination handling already active."""\n':
                 '    """Run one batch with termination handling active before path or Git checks."""\n',
+            '                record.get("thread") == thread_id\n'
+            '                and record.get("resource") == "llm"\n'
+            '            ):\n':
+                '                record.get("thread") == thread_id\n'
+                '                and record.get("resource") == "llm"\n'
+                '                and record.get("event") in {\n'
+                '                    "production_admission_denied", "resource_started", "resource_finished"\n'
+                '                }\n'
+                '            ):\n',
+            '    attested_events = new_events\n':
+                '    attested_events = [\n'
+                '        event for event in new_events\n'
+                '        if event.get("thread") == thread_id and event.get("resource") == "llm"\n'
+                '        and event.get("event") in {"production_admission_denied", "resource_started", "resource_finished"}\n'
+                '    ]\n',
         }
         for new, old in replacements.items():
             self.assertEqual(source.count(new), 1)
@@ -1910,6 +1925,31 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
                 self.assertEqual(
                     runner._read_appended_events(descriptor, prefix_identity, "thread"),
                     [{"event": "resource_started", "resource": "llm", "thread": "thread"}],
+                )
+            finally:
+                os.close(descriptor)
+
+    def test_event_slice_retains_unexpected_same_thread_llm_events(self) -> None:
+        with TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            relevant = {
+                "event": "resource_cancelled", "resource": "llm", "thread": "thread"
+            }
+            events.write_bytes(
+                canonical_json(relevant) + b"\n"
+                + canonical_json({
+                    "event": "resource_started", "resource": "other", "thread": "thread"
+                }) + b"\n"
+                + canonical_json({
+                    "event": "resource_started", "resource": "llm", "thread": "other"
+                }) + b"\n"
+            )
+            descriptor = os.open(events, os.O_RDONLY)
+            empty = (0, hashlib.sha256(b"").hexdigest(), True)
+            try:
+                self.assertEqual(
+                    runner._read_appended_events(descriptor, empty, "thread"),
+                    [relevant],
                 )
             finally:
                 os.close(descriptor)
