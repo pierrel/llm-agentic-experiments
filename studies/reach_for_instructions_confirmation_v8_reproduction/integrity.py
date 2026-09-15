@@ -24,9 +24,15 @@ DENIAL = re.compile(
 
 
 def strict_json_loads(source: str | bytes) -> Any:
-    """Decode RFC-compliant JSON evidence without ambiguous duplicate members."""
+    """Decode JSON evidence without duplicate members or non-finite numbers."""
     def reject_constant(value: str) -> None:
         raise ValueError(f"non-standard JSON constant: {value}")
+
+    def finite_float(value: str) -> float:
+        parsed = float(value)
+        if not math.isfinite(parsed):
+            raise ValueError(f"non-finite JSON number: {value}")
+        return parsed
 
     def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         value: dict[str, Any] = {}
@@ -41,6 +47,7 @@ def strict_json_loads(source: str | bytes) -> Any:
             source,
             object_pairs_hook=unique_object,
             parse_constant=reject_constant,
+            parse_float=finite_float,
         )
     except (UnicodeDecodeError, ValueError) as error:
         raise ValueError("JSON evidence is malformed or ambiguous") from error

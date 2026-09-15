@@ -289,8 +289,9 @@ and outcome records must also retain the exact parent schemas, scheduled trial
 identity, field types, and outcome semantics in addition to valid hash chains.
 Every non-infrastructure outcome must carry the parent's request-start marker;
 an infrastructure-invalid outcome must not carry it.
-Every persisted JSON value is decoded without duplicate members or non-standard
-numeric constants. Every runtime interval must contain at least one admission;
+Every persisted JSON value is decoded without duplicate members, non-standard
+numeric constants, or a numeric token that decodes to a non-finite value. Every
+runtime interval must contain at least one admission;
 an empty interval can never attest a completed or resumed invocation.
 Before any resumed launch, nonempty persisted admissions or outcomes must have
 a complete corresponding runtime-attestation interval prefix. When the latest

@@ -892,8 +892,8 @@ class ReachForInstructionsConfirmationV8ReproductionTest(unittest.TestCase):
             new_admissions=[], new_outcomes=[], new_events=[], thread_id=thread
         ))
 
-    def test_strict_json_rejects_nonstandard_numeric_constants(self) -> None:
-        for constant in ("NaN", "Infinity", "-Infinity"):
+    def test_strict_json_rejects_non_finite_numeric_values(self) -> None:
+        for constant in ("NaN", "Infinity", "-Infinity", "1e999", "-1e999"):
             with self.assertRaisesRegex(ValueError, "malformed or ambiguous"):
                 runner.strict_json_loads(f'{{"value": {constant}}}')
 
